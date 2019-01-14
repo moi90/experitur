@@ -6,6 +6,8 @@ from datetime import datetime
 from random import shuffle
 from etaprogress.progress import ProgressBar
 from timer_cm import Timer
+from experitur.helpers.merge_dicts import merge_dicts
+from importlib import import_module
 
 
 class ExperimentError(Exception):
@@ -31,30 +33,77 @@ class Experiment:
                 raise ExperimentError(
                     "{} contains an empty configuration!".format(filename))
 
-        return cfg
-
-    def run(self):
-        if isinstance(self.configuration, list):
-            for exp in self.configuration:
-                self._run_single(exp)
-        elif isinstance(self.configuration, dict):
-            self._run_single(self.configuration)
-        else:
+        if not isinstance(cfg, (list, dict)):
             raise ExperimentError(
                 "Configuration is expected to consist of a list or a dict!")
 
-    def _run_single(self, configuration):
-        configuration.setdefault("parameters", {})
+        if not isinstance(cfg, list):
+            cfg = [cfg]
+
+        return cfg
+
+    def run(self):
+        for exp_config in self.configuration:
+            # Fill in data from base experiments
+            exp_config = self._merge_base_experiment(exp_config)
+
+            self._run_single(exp_config)
+
+    def _merge_base_experiment(self, exp_config):
+        try:
+            base_id = exp_config["base"]
+        except KeyError:
+            return exp_config
+
+        base = None
+        for candidate in self.configuration:
+            if candidate.get("id") == base_id:
+                base = candidate
+
+        if base is None:
+            raise ExperimentError("Base ID {} not found!".format(base_id))
+
+        # Copy base and exp_config
+        base, exp_config = dict(base), dict(exp_config)
+        del base["id"]
+        del exp_config["base"]
+
+        merged = merge_dicts(dict(base), exp_config)
+
+        if "base" in merged:
+            # Recurse for multiple inheritance
+            return self._merge_base_experiment(merged)
+
+        return merged
+
+    def _run_single(self, exp_config):
+        exp_config.setdefault("parameters", {})
 
         independent_parameters = sorted(
-            k for k, v in configuration["parameters"].items() if len(v) > 1)
+            k for k, v in exp_config["parameters"].items() if len(v) > 1)
 
         print("Independent parameters:", independent_parameters)
 
-        parameter_grid = list(ParameterGrid(configuration["parameters"]))
+        parameter_grid = list(ParameterGrid(exp_config["parameters"]))
 
-        if configuration.get("shuffle_experiments", False):
+        if exp_config.get("shuffle_trials", False):
+            print("Trials are shuffled.")
             shuffle(parameter_grid)
+
+        run_module_name, run_function_name = exp_config["run"].split(":", 1)
+
+        try:
+            run_module = import_module(run_module_name)
+        except ModuleNotFoundError as e:
+            raise ExperimentError(
+                "Run module {} not found!".format(run_module_name)) from e
+
+        try:
+            run = getattr(run_module, run_function_name)
+        except AttributeError as e:
+            print(dir(run_module))
+            raise ExperimentError(
+                "Run function {}:{} not found!".format(run_module_name, run_function_name)) from e
 
         bar = ProgressBar(len(parameter_grid), max_width=40)
 
@@ -64,7 +113,7 @@ class Experiment:
                                  for k in independent_parameters)
                 ident = ident.replace("/", "_")
 
-                print("Experiment {}: {}".format(i, ident))
+                print("Trial {}: {}".format(i, ident))
                 print(bar)
 
                 p = RecursiveDict(p, allow_missing=True)
@@ -73,6 +122,6 @@ class Experiment:
 
                 with timer.child(ident):
                     # Run experiment
-                    ...
+                    run(**p)
 
                 bar.numerator += 1
