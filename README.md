@@ -31,8 +31,8 @@ Each experiment has a `run` setting. It points to a python function that receive
 id: example
 run: "experitur.examples.echo:run"
 parameter_grid:
-	a: [1,2]
-	b: [a,b]
+    a: [1,2]
+    b: [a,b]
 ---
 ```
 
@@ -90,14 +90,12 @@ The experiment section can hold multiple experiments in a list:
 
 ```yaml
 ---
--
-	id: experiment_1
-	parameter_grid:
-		...
--
-	id: experiment_2
-	parameter_grid:
-		...
+- id: experiment_1
+    parameter_grid:
+        ...
+- id: experiment_2
+    parameter_grid:
+        ...
 ---
 ```
 
@@ -107,16 +105,14 @@ One experiment may inherit the settings of another, using the `base` property:
 
 ```yaml
 ---
--
-	id: experiment_1
-	parameter_grid:
-		a: [1, 2, 3]
--
-	id: experiment_2
-	base: experiment_1
-	parameter_grid:
-		b: [x, y, z]
-		# In effect, experiment_2 also a parameter 'a' that takes the values 1,2,3.
+- id: experiment_1
+    parameter_grid:
+        a: [1, 2, 3]
+- id: experiment_2
+    base: experiment_1
+    parameter_grid:
+        b: [x, y, z]
+        # In effect, experiment_2 also a parameter 'a' that takes the values 1,2,3.
 ---
 ```
 
@@ -168,7 +164,7 @@ Recursive format strings work like `string.Formatter` with two excpetions:
 1. **Recursive field names:** The field name itself may be a format string:
 
    ```
-   format("{foo_{bar}}", bar="baz", foo_bar="foo") -> "foo"
+   format("{foo_{bar}}", bar="baz", foo_baz="foo") -> "foo"
    ```
 
 2. **Literal output:** If the format string consist solely of a replacement field and does not contain a format specification, no to-string conversion is performed:
