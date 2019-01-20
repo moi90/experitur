@@ -174,7 +174,7 @@ class Experiment:
 
                     # Run experiment
                     try:
-                        result = run(trial_dir=trial_dir, parameters=p)
+                        result = run(working_directory=trial_dir, parameters=p)
                     except (Exception, KeyboardInterrupt) as exc:
                         result = None
                         # TODO: Log e
