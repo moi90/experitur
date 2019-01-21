@@ -18,6 +18,9 @@ from experitur.helpers.merge_dicts import merge_dicts
 from experitur.recursive_formatter import RecursiveDict
 
 import pickle
+import copy
+
+import zipfile
 
 
 class ExperimentError(Exception):
@@ -84,8 +87,8 @@ class Experiment:
         if base is None:
             raise ExperimentError("Base ID {} not found!".format(base_id))
 
-        # Copy base and exp_config
-        base, exp_config = dict(base), dict(exp_config)
+        # Copy base and exp_config so nothing gets overwritten
+        base, exp_config = copy.deepcopy(base), copy.deepcopy(exp_config)
         del base["id"]
         del exp_config["base"]
 
@@ -167,32 +170,34 @@ class Experiment:
                     print("    {}: {}".format(k, v))
 
                 with timer.child(ident):
-                    with open(os.path.join(trial_dir, "call_parameters.pickle"), "wb") as f:
-                        # json.dump(p, f,
-                        #           indent="\t", sort_keys=True)
-                        pickle.dump(p, f, pickle.HIGHEST_PROTOCOL)
+                    trial_data = {}
+                    trial_data["parameters_pre"] = copy.deepcopy(p)
+                    trial_data["success"] = False
+
+                    result = None
 
                     # Run experiment
                     try:
                         result = run(working_directory=trial_dir, parameters=p)
                     except (Exception, KeyboardInterrupt) as exc:
-                        result = None
                         # TODO: Log e
                         print(exc)
-                        if exp_config.get("clean_on_error", False):
-                            print(
-                                "Cleaning up trial directory {}.".format(trial_dir))
-                            # ignore_errors, because sometimes, seemingly, a file handle may be left open ?!
-                            shutil.rmtree(trial_dir, ignore_errors=True)
+
+                        trial_data["error"] = ": ".join(
+                            filter(None, (exc.__class__.__name__, str(exc))))
 
                         if isinstance(exc, KeyboardInterrupt) or exp_config.get("raise_exceptions", True):
                             raise exc
+                    else:
+                        trial_data["success"] = True
+                    finally:
+                        trial_data["result"] = result
+                        trial_data["parameters_post"] = p
 
-                    with open(os.path.join(trial_dir, "results.pickle"), "wb") as f:
-                        # json.dump(result, f, indent="\t", sort_keys=True)
-                        pickle.dump(result, f, pickle.HIGHEST_PROTOCOL)
+                        with open(os.path.join(trial_dir, "experitur.yaml"), "w") as fp:
+                            yaml.dump(trial_data, fp)
 
-                    results.append(result)
+                        results.append(result)
 
                 bar.numerator += 1
 
