@@ -9,9 +9,10 @@ setup(
         'Click',
         'regex',
         'timer_cm',
-        'etaprogress',
+        'tqdm',
         'pyyaml',
         'sklearn',
+        'pandas',
     ],
     entry_points={
         'console_scripts': ['experitur=experitur.cli:cli'],

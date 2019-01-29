@@ -1,12 +1,19 @@
 from experitur.cli import run
 from click.testing import CliRunner
+import inspect
 
-example = \
-    """---
-- id: example
----
-# Example experiment
-"""
+example = inspect.cleandoc("""
+    ---
+    -
+        id: example
+        run: experitur.tests.test_cli:noop
+    ---
+    # Example experiment
+    """)
+
+
+def noop(wdir, parameters):
+    return parameters
 
 
 def test_run():

@@ -3,13 +3,14 @@ import os
 
 import yaml
 
-from .base import BaseBackend
+from .local_storage import LocalStorageBackend
 
 
-class FileBackend(BaseBackend):
+class FileBackend(LocalStorageBackend):
     def __init__(self, experiment_root):
+        super(FileBackend, self).__init__()
+
         self.experiment_root = experiment_root
-        self._trials = {}
 
         self.reload()
 
@@ -26,20 +27,3 @@ class FileBackend(BaseBackend):
                 if exc.errno == errno.ENOENT:
                     continue
                 raise
-
-    def find_trials_by_parameters(self, parameters):
-        result = {}
-
-        for trial_id, trial_data in self._trials.items():
-            trial_parameters = trial_data["parameters_post"]
-
-            if self._is_match(parameters, trial_parameters):
-                result[trial_id] = trial_data
-
-        return result
-
-    def get_trial_by_id(self, trial_id):
-        return self._trials[trial_id]
-
-    def trials(self):
-        return self._trials.items()

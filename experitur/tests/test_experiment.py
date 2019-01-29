@@ -81,11 +81,11 @@ def fixture_dict_simple(tmp_path):
     fn = tmp_path / "dict_simple.md"
     with open(fn, "w") as f:
         f.write(inspect.cleandoc("""
-        ---
-        id: dict_simple
-        ---
-        # Dict simple
-        """))
+                ---
+                id: dict_simple
+                ---
+                # Dict simple
+                """))
 
     return fn
 
@@ -102,6 +102,7 @@ def fixture_list_base(tmp_path):
         ---
         -
                 id: baseline
+                run: experitur.tests.test_experiment:noop
         -
                 id: derived
                 base: baseline
@@ -143,8 +144,28 @@ def test_list_base_notfound(list_base_notfound):
         exp.run()
 
 
-def test_experiment():
-    exp = Experiment(os.path.join(
-        os.path.dirname(__file__), "test_example.md"))
+@pytest.fixture(name="run_noop")
+def fixture_run_noop(tmp_path):
+    fn = tmp_path / "run_noop.md"
+    with open(fn, "w") as f:
+        f.write(inspect.cleandoc("""
+        ---
+        run: experitur.tests.test_experiment:noop
+        parameter_grid:
+                a: [1,2,3]
+        ---
+        # run_noop
+        """))
 
-    exp.run()
+    return fn
+
+
+def noop(trial_dir, parameters):
+    return parameters
+
+
+def test_run_noop(run_noop):
+    exp = Experiment(run_noop)
+
+    results = exp.run()
+    assert results == [{"a": 1}, {"a": 2}, {"a": 3}]

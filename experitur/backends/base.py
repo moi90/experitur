@@ -39,7 +39,7 @@ class BaseBackend(ABC):
 
         return False
 
-    def make_trial_id_simple(self, trial_parameters, independent_parameters):
+    def format_independent_parameters(self, trial_parameters, independent_parameters):
         if len(independent_parameters) > 0:
             trial_id = "_".join("{}-{!s}".format(k, trial_parameters[k])
                                 for k in independent_parameters)
@@ -50,7 +50,7 @@ class BaseBackend(ABC):
         return trial_id
 
     def make_trial_id(self, trial_parameters, independent_parameters):
-        trial_id = self.make_trial_id_simple(
+        trial_id = self.format_independent_parameters(
             trial_parameters, independent_parameters)
 
         try:

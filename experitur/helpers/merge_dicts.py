@@ -1,14 +1,10 @@
-def merge_dicts(a, b, path=None):
+def merge_dicts(a, b):
     """
-    Merges b into a.
-
-    Taken from https://stackoverflow.com/a/7205107/1116842
+    Recursively merge b into a.
     """
-    if path is None:
-        path = []
     for key in b:
         if key in a and isinstance(a[key], dict) and isinstance(b[key], dict):
-            merge_dicts(a[key], b[key], path + [str(key)])
+            merge_dicts(a[key], b[key])
         else:
             a[key] = b[key]
     return a
