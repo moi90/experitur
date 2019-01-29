@@ -1,6 +1,6 @@
 ---
 id: parsub
-run: "experitur.examples.echo:run"
+run: "echo:run"
 parameter_grid:
     a_1: [foo]
     a_2: [bar]
