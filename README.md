@@ -1,4 +1,7 @@
 # experitur
+
+[![Build Status](https://travis-ci.org/moi90/experitur.svg?branch=master)](https://travis-ci.org/moi90/experitur) [![codecov](https://codecov.io/gh/moi90/experitur/branch/master/graph/badge.svg)](https://codecov.io/gh/moi90/experitur) ![](https://img.shields.io/pypi/pyversions/experitur.svg?style=flat)
+
 Automates machine learning and other computer experiments. Includes grid search and resuming aborted experiments.
 
 ## Lab notebook
@@ -177,10 +180,10 @@ Recursive format strings work like `string.Formatter` with two excpetions:
 
 ## Installation
 
-Until `experitur` is packaged on [PyPI](https://pypi.org/), you can install it like so:
+`experitur` is packaged on [PyPI](https://pypi.org/).
 
 ```shell
-pip install git+https://github.com/moi90/experitur.git
+pip install experitur
 ```
 
 Be warned that this package is currently under heavy development and anything might change any time!
