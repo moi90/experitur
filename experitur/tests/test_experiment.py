@@ -102,7 +102,7 @@ def fixture_list_base(tmp_path):
         ---
         -
                 id: baseline
-                run: experitur.tests.test_experiment:noop
+                run: noop:noop
         -
                 id: derived
                 base: baseline
@@ -111,6 +111,12 @@ def fixture_list_base(tmp_path):
                 base: derived
         ---
         # Base
+        """))
+
+    with open(str(tmp_path / "noop.py"), "w") as f:
+        f.write(inspect.cleandoc("""
+        def noop(trial_dir, parameters):
+            return parameters
         """))
 
     return fn
@@ -150,18 +156,20 @@ def fixture_run_noop(tmp_path):
     with open(fn, "w") as f:
         f.write(inspect.cleandoc("""
         ---
-        run: experitur.tests.test_experiment:noop
+        run: noop:noop
         parameter_grid:
                 a: [1,2,3]
         ---
         # run_noop
         """))
 
+    with open(str(tmp_path / "noop.py"), "w") as f:
+        f.write(inspect.cleandoc("""
+        def noop(trial_dir, parameters):
+            return parameters
+        """))
+
     return fn
-
-
-def noop(trial_dir, parameters):
-    return parameters
 
 
 def test_run_noop(run_noop):
