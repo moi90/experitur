@@ -3,11 +3,17 @@ import pytest
 import random
 import string
 
+try:
+    choices = random.choices
+except AttributeError:
+    def choices(seq, k=1):
+        return [random.choice(seq) for i in range(k)]
+
 
 @pytest.fixture(name="prefixes")
 def fixture_prefixes():
     return [
-        ''.join(random.choices(string.ascii_uppercase + string.digits, k=N)) + '_'
+        ''.join(choices(string.ascii_uppercase + string.digits, k=N)) + '_'
         for N in range(1, 4)
     ]
 

@@ -6,7 +6,7 @@ import inspect
 
 @pytest.fixture(name="malformed_yaml")
 def fixture_malformed_yaml(tmp_path):
-    fn = tmp_path / "malformed_yaml.md"
+    fn = str(tmp_path / "malformed_yaml.md")
     with open(fn, "w") as f:
         f.write(inspect.cleandoc("""
         ---
@@ -20,7 +20,7 @@ def fixture_malformed_yaml(tmp_path):
 
 @pytest.fixture(name="no_yaml")
 def fixture_no_yaml(tmp_path):
-    fn = tmp_path / "no_yaml.md"
+    fn = str(tmp_path / "no_yaml.md")
     with open(fn, "w") as f:
         f.write(inspect.cleandoc("""
         # No YAML
@@ -31,7 +31,7 @@ def fixture_no_yaml(tmp_path):
 
 @pytest.fixture(name="empty_yaml")
 def fixture_empty_yaml(tmp_path):
-    fn = tmp_path / "empty_yaml.md"
+    fn = str(tmp_path / "empty_yaml.md")
     with open(fn, "w") as f:
         f.write(inspect.cleandoc("""
         ---
@@ -44,7 +44,7 @@ def fixture_empty_yaml(tmp_path):
 
 @pytest.fixture(name="no_list_dict")
 def fixture_no_list_dict(tmp_path):
-    fn = tmp_path / "no_list_dict.md"
+    fn = str(tmp_path / "no_list_dict.md")
     with open(fn, "w") as f:
         f.write(inspect.cleandoc("""
         ---
@@ -58,27 +58,27 @@ def fixture_no_list_dict(tmp_path):
 
 def test_malformed_yaml(malformed_yaml):
     with pytest.raises(ExperimentError):
-        exp = Experiment(malformed_yaml)
+        Experiment(malformed_yaml)
 
 
 def test_no_yaml(no_yaml):
     with pytest.raises(ExperimentError):
-        exp = Experiment(no_yaml)
+        Experiment(no_yaml)
 
 
 def test_empty_yaml(empty_yaml):
     with pytest.raises(ExperimentError):
-        exp = Experiment(empty_yaml)
+        Experiment(empty_yaml)
 
 
 def test_no_list_dict(no_list_dict):
     with pytest.raises(ExperimentError):
-        exp = Experiment(no_list_dict)
+        Experiment(no_list_dict)
 
 
 @pytest.fixture(name="dict_simple")
 def fixture_dict_simple(tmp_path):
-    fn = tmp_path / "dict_simple.md"
+    fn = str(tmp_path / "dict_simple.md")
     with open(fn, "w") as f:
         f.write(inspect.cleandoc("""
                 ---
@@ -96,7 +96,7 @@ def test_dict_simple(dict_simple):
 
 @pytest.fixture(name="list_base")
 def fixture_list_base(tmp_path):
-    fn = tmp_path / "list_base.md"
+    fn = str(tmp_path / "list_base.md")
     with open(fn, "w") as f:
         f.write(inspect.cleandoc("""
         ---
@@ -123,7 +123,7 @@ def test_list_base(list_base):
 
 @pytest.fixture(name="list_base_notfound")
 def fixture_list_base_notfound(tmp_path):
-    fn = tmp_path / "list_base_notfound.md"
+    fn = str(tmp_path / "list_base_notfound.md")
     with open(fn, "w") as f:
         f.write(inspect.cleandoc("""
         ---
@@ -146,7 +146,7 @@ def test_list_base_notfound(list_base_notfound):
 
 @pytest.fixture(name="run_noop")
 def fixture_run_noop(tmp_path):
-    fn = tmp_path / "run_noop.md"
+    fn = str(tmp_path / "run_noop.md")
     with open(fn, "w") as f:
         f.write(inspect.cleandoc("""
         ---
