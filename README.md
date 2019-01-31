@@ -185,6 +185,9 @@ pip install git+https://github.com/moi90/experitur.git
 
 Be warned that this package is currently under heavy development and anything might change any time!
 
+## Compatibility
+`experitur` is tested with Python 3.5, 3.6 and 3.7.
+
 ## Similar software
 
 - [Sacred](https://github.com/IDSIA/sacred)
