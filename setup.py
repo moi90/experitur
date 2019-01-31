@@ -5,7 +5,7 @@ with open("README.md", "r") as fp:
 
 setup(
     name='experitur',
-    version='0.1',
+    version='0.1.2',
     author='Simon-Martin Schroeder',
     author_email="martin.schroeder@nerdluecht.de",
     description="Automates machine learning and other computer experiments",
