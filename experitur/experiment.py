@@ -104,7 +104,7 @@ class Experiment:
                 self._run_single(
                     exp_config, skip_existing=skip_existing, halt_on_error=halt_on_error))
 
-            return results
+        return results
 
     def _merge_base_experiment(self, exp_config):
         try:
@@ -134,6 +134,8 @@ class Experiment:
         return merged
 
     def _run_single(self, exp_config, skip_existing=True, halt_on_error=True):
+        print("Running experiment {}...".format(exp_config["id"]))
+
         exp_config.setdefault("parameter_grid", {})
 
         _check_parameter_grid(exp_config["parameter_grid"])
@@ -178,7 +180,7 @@ class Experiment:
 
         results = []
 
-        with Timer("Overall") as timer:
+        with Timer("Total time") as timer:
             for i, trial_parameters in enumerate(parameter_grid):
                 trial_parameters = RecursiveDict(
                     trial_parameters, allow_missing=True).as_dict()
@@ -211,7 +213,9 @@ class Experiment:
                     trial_data = {
                         "parameters_pre": copy.deepcopy(trial_parameters),
                         "success": False,
-                        "time_start": datetime.datetime.now()
+                        "time_start": datetime.datetime.now(),
+                        "experiment_id": exp_config.get("id"),
+                        "trial_id": trial_id,
                     }
 
                     # Run experiment
@@ -232,7 +236,7 @@ class Experiment:
                         trial_data["success"] = True
                     finally:
                         trial_data["result"] = result
-                        trial_data["time_start"] = datetime.datetime.now()
+                        trial_data["time_end"] = datetime.datetime.now()
                         trial_data["parameters_post"] = trial_parameters
 
                         with open(os.path.join(trial_dir, "experitur.yaml"), "w") as fp:
@@ -241,6 +245,7 @@ class Experiment:
                         results.append(result)
 
         pbar.close()
+        print()
 
         return results
 
@@ -273,7 +278,11 @@ class Experiment:
             self._clean_experiment(
                 self.experiment_root, experiment_id, **kwargs)
         else:
-            for experiment_id in os.listdir(self.experiment_root):
+            for dirent in os.scandir(self.experiment_root):
+                if not dirent.is_dir():
+                    continue
+
+                experiment_id = dirent.name
                 self._clean_experiment(
                     self.experiment_root, experiment_id, **kwargs)
 
@@ -306,6 +315,7 @@ class Experiment:
 
         data = {k: _extract_results(v) for k, v in data.items()}
         data = pd.DataFrame.from_dict(data, orient="index")
+        data.index.name = "trial_id"
 
         # TODO: Remove columns that are not serializable in CSV
 
@@ -316,15 +326,20 @@ class Experiment:
 def _extract_results(trial):
     result = {}
 
-    for k, v in trial.get("parameters_post", {}).items():
-        result["p_{}".format(k)] = v
-
-    for k, v in trial.get("result", {}).items():
-        result["r_{}".format(k)] = v
-
     for k, v in trial.items():
-        if k in ("parameters_post", "parameters_pre", "result"):
+        if k in ("parameters_post", "parameters_pre", "result", "trial_id"):
             continue
-        result["m_{}".format(k)] = v
+        result["meta_{}".format(k)] = v
+
+    for k, v in trial.get("parameters_post", {}).items():
+        result["{}".format(k)] = v
+
+    trial_result = trial.get("result", {})
+
+    if isinstance(trial_result, dict):
+        for k, v in trial_result.items():
+            result["{}_".format(k)] = v
+    else:
+        result["result_"] = trial_result
 
     return result
