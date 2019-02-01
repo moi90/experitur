@@ -52,7 +52,7 @@ def clean(experiment_file, experiment_id=None, failed=True, all=False, empty=Fal
 @click.argument('experiment_file')
 @click.option('--failed/--no-failed', default=False)
 def collect(experiment_file, failed):
-    click.echo('Collecting failed results from {}...'.format(experiment_file))
+    click.echo('Collecting results from {}...'.format(experiment_file))
 
     experiment = Experiment(experiment_file)
 
