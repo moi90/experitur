@@ -1,9 +1,7 @@
 ---
-id: example
+id: example_experiment
 run: "echo:run"
 parameter_grid:
-    a: [1, 2, 3, 4]
+    a: [1, 2]
     b: [a, b]
-    c: [0]
-    d: [2]
 ---
