@@ -204,7 +204,7 @@ time_start: 2019-01-31 13:50:50.002264
 trial_id: a-1_b-a
 ```
 
-Most items should be self-explanatory. `parameters_pre` are the parameters passed to the run function,  `parameters_post` are the parameters after the run function had the chance to alter them.
+Most items should be self-explanatory. `parameters_pre` are the parameters passed to the run function,  `parameters_post` are the parameters after the run function had the chance to update them. `trial_id` is derived from the parameters that are varied in the parameter grid. This way, you can easily interpret the file structure.
 
 ## Collecting results
 
@@ -242,9 +242,7 @@ Your `run` function might call other functions that have default parameters.
 
 It is a good idea to make use of `set_default_parameters` and `apply_parameters` excessively. This way, your result files always contain the full set of parameters.
 
-## Trial IDs
-
-Each trial receives a trial ID that is derived from the parameters that are varied in the parameter grid. This way, you can easily interpret the file structure.
+For a simple example, see [examples/str_split.md](examples/str_split.md).
 
 ## Installation
 
