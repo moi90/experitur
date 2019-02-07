@@ -254,7 +254,13 @@ pip install experitur
 
 Be warned that this package is currently under heavy development and anything might change any time!
 
+## Examples
+
+-  [examples/str_split.md](examples/str_split.md): A very basic example showing the workings of `set_default_parameters` and `apply_parameters`.
+-  [examples/mnist.md](examples/mnist.md): Try different parameters of `sklearn.svm.SVC` to classify handwritten digits (the [MNIST](http://archive.ics.uci.edu/ml/datasets/Optical+Recognition+of+Handwritten+Digits) test set). Run the example, add more parameter values and see how `experitur` skips already existing configurations during the next run.
+
 ## Compatibility
+
 `experitur` is [tested](https://travis-ci.org/moi90/experitur) with Python 3.5, 3.6 and 3.7.
 
 ## Similar software
