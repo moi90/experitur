@@ -30,6 +30,14 @@ def noop(x, y, a, b, foo=None, bar=99):
     return (x, y, a, b, foo, bar)
 
 
+class NoopCls:
+    def __init__(self, x, y, a=1, b=2):
+        self.x = x
+        self.y = y
+        self.a = a
+        self.b = b
+
+
 def test_apply_parameters(recwarn):
     parameters = {
         "prefix_a": 1,
@@ -37,9 +45,16 @@ def test_apply_parameters(recwarn):
         "prefix_c": 3,  # c is not a parameter of noop
         "prefix2_a": 4  # prefix2 is not used
     }
+
+    # Ordinary case
     result = util.apply_parameters("prefix_", parameters, noop, 5, 6, foo=3)
     assert result == (5, 6, 1, 2, 3, 99)
 
+    # Class constructor
+    obj = util.apply_parameters("prefix_", parameters, NoopCls, 5, 6)
+    assert (obj.x, obj.y, obj.a, obj.b) == (5, 6, 1, 2)
+
+    # Redefine parameters with a keyword. A warning is expected.
     result = util.apply_parameters(
         "prefix_", parameters, noop, 5, 6, foo=3, a=10)
     assert result == (5, 6, 10, 2, 3, 99)
