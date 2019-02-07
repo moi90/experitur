@@ -6,3 +6,4 @@ htmlcov
 .tox
 build
 dist
+examples/*/
