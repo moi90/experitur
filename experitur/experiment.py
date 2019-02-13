@@ -91,26 +91,36 @@ class Experiment:
         sys.path.insert(0, root)
         for i, exp_config in enumerate(self.configuration):
             # Fill in data from base experiments
-            exp_config = self._merge_base_experiment(exp_config)
+            exp_config, parents = self._merge_base_experiment(exp_config)
 
             exp_config.setdefault("id", "_{}".format(i))
 
-            if "run" not in exp_config:
+            if exp_config.get("run") is None:
                 print("Experiment {} is abstract. Skipping.".format(
                     exp_config["id"]))
                 continue
 
             results.extend(
                 self._run_single(
-                    exp_config, skip_existing=skip_existing, halt_on_error=halt_on_error))
+                    exp_config, parents,
+                    skip_existing=skip_existing,
+                    halt_on_error=halt_on_error))
 
         return results
 
-    def _merge_base_experiment(self, exp_config):
+    def _merge_base_experiment(self, exp_config, parents=None):
+        """
+        Merge the configuration of base experiments.
+
+        Returns:
+            (exp_config, parents): tuple
+            parents
+        """
+        parents = parents or []
         try:
             base_id = exp_config["base"]
         except KeyError:
-            return exp_config
+            return exp_config, parents
 
         base = None
         for candidate in self.configuration:
@@ -120,20 +130,22 @@ class Experiment:
         if base is None:
             raise ExperimentError("Base ID {} not found!".format(base_id))
 
+        parents.insert(0, base["id"])
+
         # Copy base and exp_config so nothing gets overwritten
         base, exp_config = copy.deepcopy(base), copy.deepcopy(exp_config)
         del base["id"]
         del exp_config["base"]
 
-        merged = merge_dicts(dict(base), exp_config)
+        merged = merge_dicts(base, exp_config)
 
         if "base" in merged:
             # Recurse for multiple inheritance
-            return self._merge_base_experiment(merged)
+            return self._merge_base_experiment(merged, parents)
 
-        return merged
+        return merged, parents
 
-    def _run_single(self, exp_config, skip_existing=True, halt_on_error=True):
+    def _run_single(self, exp_config, parents, skip_existing=True, halt_on_error=True):
         print("Running experiment {}...".format(exp_config["id"]))
 
         exp_config.setdefault("parameter_grid", {})
@@ -175,7 +187,7 @@ class Experiment:
 
         backend = self._make_backend(exp_config["id"])
 
-        #bar = ProgressBar(len(parameter_grid), max_width=40)
+        # bar = ProgressBar(len(parameter_grid), max_width=40)
         pbar = tqdm(total=len(parameter_grid), unit="")
 
         results = []
@@ -193,8 +205,19 @@ class Experiment:
                         backend.format_independent_parameters(trial_parameters, independent_parameters)))
                     continue
 
+                # Generate a unique trial ID
                 trial_id = backend.make_trial_id(
                     trial_parameters, independent_parameters)
+
+                # Calculate the trial_ids of the parents
+                for parent in parents:
+                    parent_backend = self._make_backend(parent)
+                    parent_trials = parent_backend.find_trials_by_parameters(
+                        trial_parameters)
+
+                    if len(parent_trials) == 1:
+                        trial_parameters["_parent_{}".format(
+                            parent)] = parent_trials.popitem()[0]
 
                 trial_dir = os.path.join(experiment_path, trial_id)
 
