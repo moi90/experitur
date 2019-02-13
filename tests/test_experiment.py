@@ -100,14 +100,13 @@ def fixture_list_base(tmp_path):
     with open(fn, "w") as f:
         f.write(inspect.cleandoc("""
         ---
-        -
-                id: baseline
+        -       id: baseline
                 run: noop:noop
-        -
-                id: derived
+                parameter_grid:
+                        a: [1, 2]
+        -       id: derived
                 base: baseline
-        -
-                id: derived2
+        -       id: derived2
                 base: derived
         ---
         # Base
@@ -124,7 +123,14 @@ def fixture_list_base(tmp_path):
 
 def test_list_base(list_base):
     exp = Experiment(list_base)
-    exp.run()
+
+    print(exp.configuration)
+
+    results = exp.run()
+
+    assert len(results) == 6
+
+    print(results)
 
 
 @pytest.fixture(name="list_base_notfound")
