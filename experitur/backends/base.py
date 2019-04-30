@@ -34,6 +34,8 @@ class BaseBackend(ABC):
         Decide whether parameters_1 are a subset of parameters_2.
         """
 
+        # TODO: Ignore _underscore values as these are dynamically calculated
+
         if set(parameters_1.keys()) <= set(parameters_2.keys()):
             return all(v == parameters_2[k] for k, v in parameters_1.items())
 
