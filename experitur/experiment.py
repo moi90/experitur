@@ -187,7 +187,6 @@ class Experiment:
 
         backend = self._make_backend(exp_config["id"])
 
-        # bar = ProgressBar(len(parameter_grid), max_width=40)
         pbar = tqdm(total=len(parameter_grid), unit="")
 
         results = []
