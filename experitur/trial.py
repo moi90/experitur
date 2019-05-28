@@ -52,7 +52,7 @@ def _format_independent_parameters(trial_parameters, independent_parameters):
     return trial_id
 
 
-class TrialProxy:
+class TrialProxy(collections.abc.MutableMapping):
     """
     This is the trial object that the experiment interacts with.
     """
@@ -60,15 +60,44 @@ class TrialProxy:
     def __init__(self, trial):
         self._trial = trial
 
+    def __getitem__(self, name):
+        return self._trial.data["parameters"][name]
+
+    def __setitem__(self, name, value):
+        self._trial.data["parameters"][name] = value
+
+    def __delitem__(self, name):
+        del self._trial.data["parameters"][name]
+
+    def __iter__(self):
+        return iter(self._trial.data["parameters"])
+
+    def __len__(self):
+        return len(self._trial.data["parameters"])
+
     def __getattr__(self, name):
         """
         Magic attributes.
         """
 
+        # Name could be a data attribute
         if name in self._trial.data:
             return self._trial.data[name]
 
-    # see experitur.util
+        # Name could be a referenced experiment with matching parameters
+        trials = self._trial.store.match(
+            experiment=name, parameters=self.parameters)
+
+        if len(trials) == 1:
+            _, trial = trials.popitem()
+            return TrialProxy(trial)
+        elif len(trials) > 1:
+            msg = "Multiple matching parent experiments: " + \
+                ", ".join(trials.keys())
+            raise ValueError(msg)
+
+        raise KeyError
+
     def record_defaults(self, prefix, *args, **defaults):
         """
         Set default parameters.

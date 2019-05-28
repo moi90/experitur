@@ -1,11 +1,12 @@
 import glob
 import os.path
+
 import pytest
 
 from experitur.context import Context, push_context
 from experitur.experiment import Experiment
-from experitur.trial import (FileTrialStore, _callable_to_name,
-                             _format_independent_parameters, _match_parameters, Trial)
+from experitur.trial import (FileTrialStore, Trial, _callable_to_name,
+                             _format_independent_parameters, _match_parameters)
 
 
 def noop():
@@ -124,8 +125,15 @@ def test_trial(tmp_path):
             experiment = ctx.experiment("test", parameter_grid={
                                         "a": [1, 2], "b": [2, 3]})(test)
 
+            def test2(trial):
+                return trial.test["a"]
+
+            experiment2 = ctx.experiment("test2", parent=experiment)(test2)
+
             trial = trial_store.create({"a": 1, "b": 2}, experiment)
-
             result = trial.run()
-
             assert result == (1, 2, 3, 5)
+
+            trial2 = trial_store.create({"a": 1, "b": 2}, experiment2)
+            result = trial2.run()
+            assert result == 1
