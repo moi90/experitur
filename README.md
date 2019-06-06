@@ -4,49 +4,43 @@
 
 Automates machine learning and other computer experiments. Includes grid search and resuming aborted experiments. No lock-in, all your data is easily accessible in a text-based, machine-readable format.
 
-## Lab notebook
+## Experiment description
 
-Every experiment is described in a *lab book*. This is a text file with a YAML header, e.g. a Markdown file or a YAML file without further content:
+Every experiment is described in a regular python file. The `@experiment` decorator is used to mark experiment entry-points.
 
-```yaml
----
-# In this part of the document called the "experiment section", enclosed by "---", you describe the experiment(s).
-id: example
-parameter_grid:
-    parameter_1: [1,2,3]
-    parameter_2: [a,b,c]
----
-# An example experiment
-In this part of the document, you can write down any content you like. Markdown files are allowed to contain a YAML header, so this could be Markdown.
+```python
+from experitur import experiment
+
+@experiment(
+    parameter_grid={
+        "parameter_1": [1,2,3],
+        "parameter_2": ["a", "b", "c"],
+    })
+def example(trial):
+    """This is an example experiment."""
+    ...
 ```
 
 ### Parameter grid
 
 The core of an experiment is its *parameter grid*. It works like [`sklearn.model_selection.ParameterGrid`](https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.ParameterGrid.html). Each parameter has a list of values that it can take. A number of *trials* is generated from the cross product of the values of each parameter.
 
-### Run function
+### Entry point
 
-Each experiment has a `run` setting (unless it is an *abstract experiment*). It is a string pointing to a python function (i.e. `<fully.qualified.name>:<function_name>`). Upon execution, the function gets called with the working directory and the parameters of the current trial. It may return a result dictionary.
+An experiment is a regular function that is decorated with `@experiment` (unless it is *abstract* or *derived*). Upon execution, the function gets called with the current trial. It may return a result dictionary.
 
-**Signature:** `(working_directory: str, parameters: dict) -> dict`
-
-```yaml
----
-# examle_labbook.md
-id: example_experiment
-run: "echo:run"
-parameter_grid:
-    a: [1,2]
-    b: [a,b]
----
-```
+**Signature:** `(trial) -> dict`
 
 ```python
-# echo.py
-from pprint import pformat
+from experitur import experiment
 
-def run(working_directory, parameters):
-    print("working_directory:", working_directory)
+@experiment(
+    parameter_grid={
+        "parameter_1": [1,2,3],
+        "parameter_2": ["a", "b", "c"],
+    })
+def example(trial):
+    """This is an example experiment."""
     print("parameters:", pformat(parameters))
     return {}
 ```
@@ -54,114 +48,72 @@ def run(working_directory, parameters):
 Now, you can run the experiment:
 
 ```
-$ experitur run example_labbook.md
-Running example_labbook.md...
-Independent parameters: ['a', 'b']
-Trial a-1_b-a:   0%|                                                                                                                                           | 0/4 [00:00<?, ?/s]
-    a: 1
-    b: a
-working_directory: example_labbook/example_experiment/a-1_b-a
-parameters: {'a': 1, 'b': 'a'}
-Trial a-1_b-b:  50%|█████████████████████████████████████████████████████████████████▌                                                                 | 2/4 [00:01<00:01,  1.98/s]
-    a: 1
-    b: b
-working_directory: example_labbook/example_experiment/a-1_b-b
-parameters: {'a': 1, 'b': 'b'}
-Trial a-2_b-a:  75%|██████████████████████████████████████████████████████████████████████████████████████████████████▎                                | 3/4 [00:02<00:00,  1.52/s]
-    a: 2
-    b: a
-working_directory: example_labbook/example_experiment/a-2_b-a
-parameters: {'a': 2, 'b': 'a'}
-Trial a-2_b-b: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 4/4 [00:03<00:00,  1.31/s]
-    a: 2
-    b: b
-working_directory: example_labbook/example_experiment/a-2_b-b
-parameters: {'a': 2, 'b': 'b'}
-Overall: 4.035s
-  a-1_b-a: 1.009s (25%)
-  a-1_b-b: 1.008s (24%)
-  a-2_b-a: 1.007s (24%)
-  a-2_b-b: 1.007s (24%)
+$ experitur run example
+...
 ```
 
 As you can see, `run` was called four times with every combination of [1,2] x [a,b].
 
 ### Multiple experiments
 
-The experiment section can hold multiple experiments in a list:
+The Python file can contain multiple experiments:
 
-```yaml
----
-- id: experiment_1
-    parameter_grid:
-        ...
-- id: experiment_2
-    parameter_grid:
-        ...
----
+```python
+from experitur import experiment
+
+@experiment(...)
+def example1(trial):
+    ...
+    
+@experiment(...)
+def example2(trial):
+    ...
 ```
 
 ### Experiment inheritance
 
-One experiment may inherit the settings of another, using the `base` property:
+One experiment may inherit the settings of another, using the `parent` parameter.
 
-```yaml
----
-- id: experiment_1
-    parameter_grid:
-        a: [1, 2, 3]
-- id: experiment_2
-    base: experiment_1
-    parameter_grid:
-        b: [x, y, z]
-        # In effect, experiment_2 also a parameter 'a' that takes the values 1,2,3.
----
+```python
+from experitur import experiment
+
+@experiment(...)
+def example1(trial):
+    ...
+    
+# Derived  with own entry point:
+@experiment(parent=example1)
+def example2(trial):
+    ...
+    
+# Derived  with inherited entry point:
+example3 = experiment("example3", parent=example2)
 ```
 
 ### Parameter substitution
 
 `experitur` includes a recursive parameter substitution engine. Each value string is treated as a *recursive format string* and is resolved using the whole parameter set of a trial.
 
-```yaml
----
-id: parsub
-run: "echo:run"
-parameter_grid:
-    a_1: [foo]
-    a_2: [bar]
-    a: ["{a_{b}}"]
-    b: [1,2]
----
+```python
+@experiment(
+    parameter_grid={
+        "a1": [1],
+        "a2": [2],
+        "b": [1, 2],
+        "a": ["{a_{b}}"],
+    })
+def example(trial):
+    ...
 ```
 
 ```
-$ experitur run parsub.md
-Running parsub.md...
-Independent parameters: ['b']
-Trial 0: b-1
-  0% (0/2) [               ] eta --:-- /
-    a: foo
-    a_1: foo
-    a_2: bar
-    b: 1
-parsub/parsub/b-1
-{'a': 'foo', 'a_1': 'foo', 'a_2': 'bar', 'b': 1}
-Trial 1: b-2
- 50% (1/2) [#######        ] eta --:-- -
-    a: bar
-    a_1: foo
-    a_2: bar
-    b: 2
-parsub/parsub/b-2
-{'a': 'bar', 'a_1': 'foo', 'a_2': 'bar', 'b': 2}
-Overall: 0.002s
-  b-1: 0.000s (18%)
-  b-2: 0.000s (14%)
+$ experitur run parsub
+...
 ```
 
 This way, you can easily run complicated setups with settings that depend on other settings.
 
-Recursive format strings work like `string.Formatter` with two excpetions:
+Recursive format strings work like `string.Formatter` with two exceptions:
 
 1. **Recursive field names:** The field name itself may be a format string:
 
@@ -178,20 +130,20 @@ Recursive format strings work like `string.Formatter` with two excpetions:
    This allows the use of format strings for non-string values.
 
 ## Files
-When `experitur` executes a lab book, it creates the following file structure in the directory where the lab book is located:
+When `experitur` executes a script, it creates the following file structure in the directory where the lab book is located:
 
 ```
 /
-+- lab_book.md
-+- lab_book/
-|  +- experiment1_id/
-|  |  +- trial1_id/
++- script.py
++- script/
+|  +- experiment_id/
+|  |  +- trial_id/
 |  |  |  +- experitur.yaml
 |  |  ...
 |  ...
 ```
 
-`<lab_book_name>/<experiment_id>/<trial_id>/experitur.yaml` contains the parameters and the results from a trial, e.g.:
+`<script>/<experiment_id>/<trial_id>/experitur.yaml` contains the parameters and the results from a trial, e.g.:
 
 ```yaml
 experiment_id: example_experiment
@@ -204,11 +156,11 @@ time_start: 2019-01-31 13:50:50.002264
 trial_id: a-1_b-a
 ```
 
-Most items should be self-explanatory. `parameters_pre` are the parameters passed to the run function,  `parameters_post` are the parameters after the run function had the chance to update them. `trial_id` is derived from the parameters that are varied in the parameter grid. This way, you can easily interpret the file structure.
+Most items should be self-explanatory. `parameters` are the parameters passed to the run function,  `parameters_post` are the parameters after the run function had the chance to update them. `trial_id` is derived from the parameters that are varied in the parameter grid. This way, you can easily interpret the file structure.
 
 ## Collecting results
 
-Use `experitur collect <lab_book>.md` to collect all the results (including parameters and metadata) of all trials of a lab book into a single CSV file located at `<lab_book>/results.csv`.
+Use `experitur collect script` to collect all the results (including parameters and metadata) of all trials of a lab book into a single CSV file located at `script/results.csv`.
 
 ## Calling functions and default parameters
 Your `run` function might call other functions that have default parameters.

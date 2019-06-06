@@ -1,6 +1,7 @@
 import click
 
 from experitur.experiment import Experiment
+from experitur.dox import DOX
 
 
 @click.group()
@@ -8,17 +9,17 @@ def cli():
     pass
 
 
-# TODO: --reload: Rerun the experiment file until all trials are executed
+# TODO: --reload: Rerun the DOX file until all trials are executed
 @cli.command()
-@click.argument('experiment_file')
+@click.argument('dox_file')
 @click.option('--skip-existing/--no-skip-existing', default=True)
 @click.option('--halt/--no-halt', default=True)
-def run(experiment_file, skip_existing, halt):
-    click.echo('Running {}...'.format(experiment_file))
+def run(dox_file, skip_existing, halt):
+    click.echo('Running {}...'.format(dox_file))
 
-    experiment = Experiment(experiment_file)
+    dox = DOX(dox_file)
 
-    experiment.run(skip_existing=skip_existing, halt_on_error=halt)
+    dox.run(skip_existing=skip_existing, halt_on_error=halt)
 
 
 @cli.command()

@@ -13,7 +13,7 @@ class BaseBackend(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def find_trials_by_parameters(self, parameters):
+    def find_trials_by_parameters(self, callable, parameters):
         """
         Find trials with matching parameters.
 
@@ -90,3 +90,7 @@ class BaseBackend(ABC):
             except KeyError:
                 # If there is no existing trial with this id, it is unique
                 return test_trial_id
+
+    @abstractmethod
+    def save_trial(self, experiment_id, ):
+        raise NotImplementedError()

@@ -1,6 +1,11 @@
 from experitur.backends.local_storage import LocalStorageBackend
 from copy import deepcopy
 
+"""
+A LocalStorageBackend can:
+    - 
+"""
+
 
 class MockBackend(LocalStorageBackend):
     def reload(self):

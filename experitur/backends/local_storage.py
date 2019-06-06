@@ -1,10 +1,9 @@
+from experitur.backends.base import BaseBackend
 import errno
 import os
 from abc import abstractmethod
 
 import yaml
-
-from .base import BaseBackend
 
 
 class LocalStorageBackend(BaseBackend):
@@ -15,14 +14,24 @@ class LocalStorageBackend(BaseBackend):
     def reload(self):
         raise NotImplementedError
 
-    def find_trials_by_parameters(self, parameters):
+    def find_trials_by_parameters(self, clbl, parameters):
+        if callable(clbl):
+            clbl = clbl.__name__
+
+        if not isinstance(clbl, str):
+            raise ValueError("type(clbl) should be callable or str.")
+
         result = {}
 
         for trial_id, trial_data in self._trials.items():
-            trial_parameters = trial_data["parameters_post"]
+            print(trial_data)
+            if trial_data.get("callable") != clbl:
+                continue
 
-            if self._is_match(parameters, trial_parameters):
-                result[trial_id] = trial_data
+            if not self._is_match(parameters, trial_data["parameters_post"]):
+                continue
+
+            result[trial_id] = trial_data
 
         return result
 
@@ -31,3 +40,8 @@ class LocalStorageBackend(BaseBackend):
 
     def trials(self):
         return self._trials.items()
+
+    def add_trial(self, trial_dict):
+        if trial_dict.id in self._trials:
+            raise Exception(
+                "A trial with this ID already exists: {}".format(trial_dict.id))
