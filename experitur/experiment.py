@@ -17,6 +17,10 @@ class ExperimentError(ExperiturError):
     pass
 
 
+class StopExecution(ExperimentError):
+    pass
+
+
 def parameter_product(p):
     """Iterate over the points in the grid."""
 
@@ -58,7 +62,7 @@ class Experiment:
     def __init__(self, ctx, name=None, parameter_grid=None, parent=None):
         self.ctx = ctx
         self.name = name
-        self.parameter_grid = parameter_grid or {}
+        self.parameter_grid = {} if parameter_grid is None else parameter_grid
         self.parent = parent
 
         self.callable = None
@@ -95,7 +99,7 @@ class Experiment:
     def __str__(self):
         return self.name
 
-    def __repr__(self):
+    def __repr__(self):  # pragma: no cover
         return "Experiment(name={})".format(self.name)
 
     def run(self):
@@ -119,7 +123,7 @@ class Experiment:
         # For every point in the parameter grid create a trial
         parameters_per_trial = list(parameter_product(self.parameter_grid))
 
-        if self.ctx.shuffle_trials:
+        if self.ctx.config["shuffle_trials"]:
             print("Trials are shuffled.")
             random.shuffle(parameters_per_trial)
 
@@ -130,7 +134,7 @@ class Experiment:
             existing = self.ctx.store.match(
                 callable=self.callable, parameters=trial_parameters)
 
-            if self.ctx.skip_existing and len(existing):
+            if self.ctx.config["skip_existing"] and len(existing):
                 print("Skip existing configuration: {}".format(format_trial_parameters(
                     callable=self.callable, parameters=trial_parameters)))
                 continue
@@ -141,8 +145,13 @@ class Experiment:
                 "Trial {}".format(trial.id), refresh=True)
             pbar.update()
 
-            trial.run()
-            trial.save()
+            # Run the trial
+            try:
+                trial.run()
+            except Exception as exc:
+                print("Trail failed:", exc)
+                if self.ctx.config["halt_on_error"]:
+                    raise StopExecution from exc
 
     def merge(self, other):
         """
@@ -156,10 +165,6 @@ class Experiment:
 
             if ours is None and theirs is not None:
                 setattr(self, name, theirs)
-
-        if self.parameter_grid is None:
-            self.parameter_grid = other.parameter_grid
-            return
 
         # Merge parameter grid of other (and its parents)
         self.parameter_grid = merge_dicts(
