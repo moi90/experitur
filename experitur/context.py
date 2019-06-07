@@ -1,8 +1,19 @@
 import collections
+import os.path
 from contextlib import contextmanager
 
 from experitur import trial
-from experitur.experiment import Experiment
+from experitur.errors import ExperiturError
+from experitur.experiment import Experiment, StopExecution
+from experitur.helpers.merge_dicts import merge_dicts
+
+
+class ContextError(ExperiturError):
+    pass
+
+
+class DependencyError(ContextError):
+    pass
 
 
 def _format_dependencies(experiments):
@@ -23,8 +34,8 @@ def _order_experiments(experiments):
             exp for exp in experiments if exp.parent is None or exp.parent in done}
 
         if not ready:
-            raise ValueError("Dependencies can not be satisfied:\n" +
-                             _format_dependencies(experiments))
+            raise DependencyError("Dependencies can not be satisfied:\n" +
+                                  _format_dependencies(experiments))
 
         for exp in ready:
             experiments_ordered.append(exp)
@@ -35,7 +46,14 @@ def _order_experiments(experiments):
 
 
 class Context:
-    def __init__(self, wdir=None, store=None, shuffle_trials=True, skip_existing=True):
+    # Default configuration values
+    _default_config = {
+        "shuffle_trials": True,
+        "skip_existing": True,
+        "halt_on_error": True,
+    }
+
+    def __init__(self, wdir=None, config=None):
         self.registered_experiments = []
 
         if wdir is None:
@@ -43,13 +61,12 @@ class Context:
         else:
             self.wdir = wdir
 
-        if store is None:
-            self.store = trial.FileTrialStore(self)
-        else:
-            self.store = store
+        self.store = trial.FileTrialStore(self)
 
-        self.shuffle_trials = shuffle_trials
-        self.skip_existing = skip_existing
+        # Configuration
+        self.config = self._default_config.copy()
+        if config is not None:
+            merge_dicts(self.config, config)
 
     def _register_experiment(self, experiment):
         self.registered_experiments.append(experiment)
@@ -92,7 +109,52 @@ class Context:
         print("Running experiments:", ', '.join(
             exp.name for exp in ordered_experiments))
         for exp in ordered_experiments:
-            exp.run()
+            try:
+                exp.run()
+            except StopExecution:
+                break
+
+    def collect(self, results_fn, failed=False):
+        """
+        Collect the results of all trials in 
+        """
+        data = {}
+        for trial_id, trial in self.store.items():
+            if not failed and not trial.data.get("success", False):
+                # Skip failed trials if failed=False
+                continue
+
+            data[trial_id] = _prepare_trial_data(trial.data)
+
+        import pandas as pd
+        data = pd.DataFrame.from_dict(data, orient="index")
+        data.index.name = "id"
+
+        # TODO: Remove columns that are not serializable in CSV
+
+        data.to_csv(results_fn)
+
+
+def _prepare_trial_data(trial_data):
+    result = {}
+
+    for k, v in trial_data.items():
+        if k in ("parameters", "result"):
+            continue
+        result["meta_{}".format(k)] = v
+
+    for k, v in trial_data.get("parameters", {}).items():
+        result["{}".format(k)] = v
+
+    trial_result = trial_data.get("result", {})
+
+    if isinstance(trial_result, dict):
+        for k, v in trial_result.items():
+            result["{}_".format(k)] = v
+    else:
+        result["result_"] = trial_result
+
+    return result
 
 
 # Expose default context methods
