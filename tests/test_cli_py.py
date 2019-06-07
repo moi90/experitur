@@ -1,6 +1,9 @@
-from experitur.cli import run
-from click.testing import CliRunner
 import inspect
+import os.path
+
+from click.testing import CliRunner
+
+from experitur.cli import collect, run
 
 example_py = inspect.cleandoc("""
     from experitur import experiment, run
@@ -25,3 +28,11 @@ def test_run():
 
         result = runner.invoke(run, ['example.py'])
         assert result.exit_code == 0
+
+        result = runner.invoke(collect, ['example.py'], catch_exceptions=False)
+        assert result.exit_code == 0
+
+        assert os.path.isfile("example.csv")
+
+        with open('example.csv') as f:
+            print(f.read())

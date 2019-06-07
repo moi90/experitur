@@ -109,31 +109,55 @@ def test_trial_store(tmp_path):
 
 def test_trial(tmp_path):
     with push_context(Context(str(tmp_path))) as ctx:
-        with FileTrialStore(ctx) as trial_store:
+        # Dummy function
+        def parametrized(a=1, b=2, c=3, d=4):
+            return (a, b, c, d)
 
-            def parametrized(a=1, b=2, c=3, d=4):
-                return (a, b, c, d)
+        @ctx.experiment(parameter_grid={
+            "a": [1, 2], "b": [2, 3]})
+        def experiment1(trial):
+            print("trial.wdir:", trial.wdir)
 
-            def test(trial):
-                print("trial.wdir:", trial.wdir)
+            trial.record_defaults(
+                "parametrized_", parametrized, d=5)
 
-                trial.record_defaults(
-                    "parametrized_", parametrized, d=5)
+            return trial.apply("parametrized_", parametrized)
 
-                return trial.apply("parametrized_", parametrized)
+        @ctx.experiment(parent=experiment1)
+        def experiment2(trial):
+            return trial.experiment1["a"]
 
-            experiment = ctx.experiment("test", parameter_grid={
-                                        "a": [1, 2], "b": [2, 3]})(test)
+        trial = ctx.store.create({"a": 1, "b": 2}, experiment1)
+        result = trial.run()
+        assert result == (1, 2, 3, 5)
 
-            def test2(trial):
-                return trial.test["a"]
+        trial2 = ctx.store.create({"a": 1, "b": 2}, experiment2)
+        result = trial2.run()
+        assert result == 1
 
-            experiment2 = ctx.experiment("test2", parent=experiment)(test2)
 
-            trial = trial_store.create({"a": 1, "b": 2}, experiment)
-            result = trial.run()
-            assert result == (1, 2, 3, 5)
+def test_trial_proxy(tmp_path):
+    with push_context(Context(str(tmp_path))) as ctx:
+        @ctx.experiment(parameter_grid={
+            "a": [1], "b": [2]})
+        def experiment(trial):
+            assert trial["a"] == 1
+            assert trial["b"] == 2
+            assert len(trial) == 2
 
-            trial2 = trial_store.create({"a": 1, "b": 2}, experiment2)
-            result = trial2.run()
-            assert result == 1
+            for k, v in trial.items():
+                pass
+
+            trial["a"] = 0
+            trial["b"] = 0
+
+            del trial["a"]
+            del trial["b"]
+
+            with pytest.raises(KeyError):
+                trial["a"]
+
+            with pytest.raises(KeyError):
+                trial["b"]
+
+        ctx.run()
