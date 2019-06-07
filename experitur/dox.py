@@ -10,47 +10,30 @@ class DOXError(ExperiturError):
     pass
 
 
-class DOX:
-    def __init__(self, dox_fn, wdir=None):
-        wdir_, ext = os.path.splitext(dox_fn)
-        dox_name = os.path.basename(wdir_)
+def load_dox(dox_fn):
+    name, ext = os.path.splitext(os.path.basename(dox_fn))
 
-        if wdir is None:
-            wdir = wdir_
+    try:
+        loader = _LOADERS[ext]
+    except KeyError as exc:
+        msg = "Unrecognized file extension: {}. Use {}.".format(
+            ext, ", ".join(_LOADERS.keys()))
+        raise DOXError(msg) from exc
 
-        os.makedirs(wdir, exist_ok=True)
+    return loader(dox_fn, name)
 
-        self.ctx = Context(wdir=wdir)
 
-        if ext == ".py":
-            # Python code path
-            self._load_py(dox_fn, dox_name)
-        elif ext in (".md", ".yaml"):
-            # YAML code path
-            ...
-        else:
-            msg = "Unrecognized file extension: {}. Use .py, .yaml or .md.".format(
-                ext)
-            raise DOXError(msg)
+def _load_py(dox_fn, dox_name):
+    try:
+        spec = importlib.util.spec_from_file_location(
+            dox_name, dox_fn)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except Exception as exc:
+        raise DOXError(
+            "Error loading {}!".format(dox_fn)) from exc
 
-    def _load_py(self, dox_fn, dox_name):
-        try:
-            with push_context(self.ctx):
-                spec = importlib.util.spec_from_file_location(
-                    dox_name, dox_fn)
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-        except Exception as exc:
-            raise DOXError(
-                "Error loading {}!".format(dox_fn)) from exc
 
-        print(self.ctx.registered_experiments)
-
-    def run(self):
-        """
-        Run the experiments of this DOX.
-        """
-
-        print("DOX.run")
-
-        self.ctx.run()
+_LOADERS = {
+    ".py": _load_py
+}
