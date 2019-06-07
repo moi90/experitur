@@ -176,6 +176,10 @@ class Trial:
     def save(self):
         self.store[self.data["id"]] = self
 
+    @property
+    def id(self):
+        return self.data["id"]
+
 
 class TrialStore(collections.abc.MutableMapping):
     def __init__(self, ctx):

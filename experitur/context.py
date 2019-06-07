@@ -1,7 +1,7 @@
 import collections
 from contextlib import contextmanager
 
-from experitur import backends
+from experitur import trial
 from experitur.experiment import Experiment
 
 
@@ -35,7 +35,7 @@ def _order_experiments(experiments):
 
 
 class Context:
-    def __init__(self, wdir=None, backend=None, shuffle_trials=True, skip_existing=True):
+    def __init__(self, wdir=None, store=None, shuffle_trials=True, skip_existing=True):
         self.registered_experiments = []
 
         if wdir is None:
@@ -43,10 +43,10 @@ class Context:
         else:
             self.wdir = wdir
 
-        # if backend is None:
-        #     self.backend = backends.FileBackend(self.wdir)
-        # else:
-        #     self.backend = backend
+        if store is None:
+            self.store = trial.FileTrialStore(self)
+        else:
+            self.store = store
 
         self.shuffle_trials = shuffle_trials
         self.skip_existing = skip_existing

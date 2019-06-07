@@ -2,11 +2,11 @@ import importlib.util
 import os.path
 from importlib import import_module
 
-from experitur import backends
 from experitur.context import Context, push_context
+from experitur.errors import ExperiturError
 
 
-class DOXError(Exception):
+class DOXError(ExperiturError):
     pass
 
 

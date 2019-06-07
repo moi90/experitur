@@ -36,6 +36,5 @@ def test_dox_py(dox_py_fn):
     # Execute experiments
     dox.run()
 
-    dox.ctx.backend.reload()
-
-    print(dox.ctx.backend.trials())
+    assert len(dox.ctx.store) == 2, "Trials: {}".format(
+        ", ".join(dox.ctx.store.keys()))

@@ -1,5 +1,2 @@
-from experitur.context import run, experiment, Context, push_context
-
-
-class ExperiturError(Exception):
-    pass
+from experitur.context import Context, experiment, push_context, run
+from experitur.errors import ExperiturError

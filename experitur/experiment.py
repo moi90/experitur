@@ -7,61 +7,14 @@ from itertools import product
 
 import tqdm
 
+from experitur.errors import ExperiturError
 from experitur.helpers.merge_dicts import merge_dicts
 
-
-class TrialAttribute:
-    def __init__(self, value):
-        self._value = value
-
-    def __str__(self):
-        """
-        Get value of this current trial.
-        """
-        return self._value
-
-    def __getattr__(self, name):
-        """
-        Look up value in the list of existing trials.
-        """
-        if name == "_parent":
-            # TODO: Get attribute value of corresponding trial of parent
-            raise NotImplementedError()
-        raise NotImplementedError()
+_callable = callable
 
 
-class Trial:
-    def __init__(self, experiment, id, parameters):
-        self.experiment = experiment
-        self.parameters = parameters
-        self.id = id
-        self.result = None
-        self.wdir = os.path.join(self.experiment.ctx.wdir, self.id)
-
-        os.makedirs(self.wdir, exist_ok=True)
-
-    def run(self):
-        self.result = self.experiment.callable(self)
-
-        return self.result
-
-    def get_trial_dict(self):
-        clbl = self.experiment.callable
-        trial_dict = {
-            "id": self.id,
-            "callable": "{}.{}".format(clbl.__module__, clbl.__name__),
-            "parameters": self.parameters,
-            "result": self.result,
-        }
-
-        return trial_dict
-
-    # see experitur.util
-    def register_defaults(self):
-        ...
-
-    def apply(self):
-        ...
+class ExperimentError(ExperiturError):
+    pass
 
 
 def parameter_product(p):
@@ -77,9 +30,29 @@ def parameter_product(p):
             yield params
 
 
+def format_trial_parameters(callable=None, parameters=None, experiment=None):
+    if callable is not None:
+        try:
+            callable = callable.__name__
+        except:
+            callable = str(callable)
+    else:
+        callable = '_'
+
+    if parameters is not None:
+        parameters = '(' + (', '.join("{}={}".format(k, repr(v))
+                                      for k, v in parameters.items())) + ')'
+    else:
+        parameters = '()'
+
+    if experiment is not None:
+        callable = '{}:{}'.format(str(experiment), callable)
+
+    return callable + parameters
+
+
 class Experiment:
     """
-    Experiment decorator.
     """
 
     def __init__(self, ctx, name=None, parameter_grid=None, parent=None):
@@ -101,6 +74,7 @@ class Experiment:
     def __call__(self, clbl):
         """
         Register a callable.
+        Allows an Experiment object to be used as a decorator.
         """
 
         if not self.name:
@@ -143,36 +117,32 @@ class Experiment:
             print("{}: {}".format(k, self.parameter_grid[k]))
 
         # For every point in the parameter grid create a trial
-        trials = list(parameter_product(self.parameter_grid))
+        parameters_per_trial = list(parameter_product(self.parameter_grid))
 
         if self.ctx.shuffle_trials:
             print("Trials are shuffled.")
-            random.shuffle(trials)
+            random.shuffle(parameters_per_trial)
 
-        pbar = tqdm.tqdm(total=len(trials), unit="")
-        for trial in trials:
+        pbar = tqdm.tqdm(total=len(parameters_per_trial), unit="")
+        for trial_parameters in parameters_per_trial:
             # Check, if a trial with this parameter set already exists
             # TODO: Check callable name
-            existing = self.ctx.backend.find_trials_by_parameters(
-                self.name, trial)
+            existing = self.ctx.store.match(
+                callable=self.callable, parameters=trial_parameters)
 
             if self.ctx.skip_existing and len(existing):
-                print("Skip existing trial: {}".format(
-                    self.ctx.format_independent_parameters(trial, independent_parameters)))
+                print("Skip existing configuration: {}".format(format_trial_parameters(
+                    callable=self.callable, parameters=trial_parameters)))
                 continue
 
-            trial_id = self.ctx.backend.make_trial_id(
-                trial, independent_parameters)
-
-            trial = Trial(self, trial_id, trial)
+            trial = self.ctx.store.create(trial_parameters, self)
 
             pbar.set_description(
                 "Trial {}".format(trial.id), refresh=True)
             pbar.update()
 
             trial.run()
-
-            self.ctx.backend.save_trial(trial)
+            trial.save()
 
     def merge(self, other):
         """
