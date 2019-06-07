@@ -1,9 +1,11 @@
 import collections.abc
+import datetime
 import glob
 import inspect
 import itertools
 import os.path
 import shutil
+import traceback
 import warnings
 from abc import abstractmethod
 
@@ -96,7 +98,8 @@ class TrialProxy(collections.abc.MutableMapping):
                 ", ".join(trials.keys())
             raise ValueError(msg)
 
-        raise KeyError
+        msg = "Trial has no attribute: {}".format(name)
+        raise AttributeError(msg)
 
     def record_defaults(self, prefix, *args, **defaults):
         """
@@ -169,7 +172,33 @@ class Trial:
         self.data = data or {}
 
     def run(self):
-        self.data["result"] = self.callable(TrialProxy(self))
+        """
+        Run the current trial and save the results.
+        """
+
+        # Record intital state
+        self.data["success"] = False
+        self.data["time_start"] = datetime.datetime.now()
+        self.data["result"] = None
+
+        try:
+            self.data["result"] = self.callable(TrialProxy(self))
+        except (Exception, KeyboardInterrupt) as exc:
+            # Log complete exc to file
+            with open(os.path.join(self.data["wdir"], "error.txt"), "w") as f:
+                f.write(str(exc))
+                f.write(traceback.format_exc())
+
+            self.data["error"] = ": ".join(
+                filter(None, (exc.__class__.__name__, str(exc))))
+
+            raise exc
+
+        else:
+            self.data["success"] = True
+        finally:
+            self.data["time_end"] = datetime.datetime.now()
+            self.save()
 
         return self.data["result"]
 
