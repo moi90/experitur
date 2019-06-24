@@ -3,16 +3,13 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to experitur's documentation!
-=====================================
+experitur
+=========
 
 **experitur** automates machine learning and other computer science experiments
 and stores the results in an easily accessible format.
 It includes grid search, parameter substitution
 and resuming aborted experiments.
-
-.. contents:: Contents
-    :local:
 
 Installation
 ------------
@@ -37,17 +34,14 @@ your experiments like so:
 
 You can then run your experiment:
 
-.. code-block:: sh
-
-    experitur run simple.py
-
+.. image:: ../examples/simple.gif
+    :align: center
 
 
-.. toctree::
-    :maxdepth: 2
+API
+---
 
-    getting_started
-    api
+Have a look at the :doc:`api`.
 
 
 Indices and tables
@@ -56,3 +50,10 @@ Indices and tables
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
+
+TOC
+===
+
+.. toctree::
+    self
+    api
