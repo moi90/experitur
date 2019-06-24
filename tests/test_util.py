@@ -1,7 +1,8 @@
-from experitur import util
 import pytest
 import random
 import string
+
+# TODO: Move into test_trial
 
 try:
     choices = random.choices

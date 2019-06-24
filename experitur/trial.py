@@ -12,6 +12,7 @@ from abc import abstractmethod
 import yaml
 
 from experitur.helpers.dumper import ExperiturDumper
+from experitur.recursive_formatter import RecursiveDict
 
 
 def _callable_to_name(obj):
@@ -61,9 +62,11 @@ class TrialProxy(collections.abc.MutableMapping):
 
     def __init__(self, trial):
         self._trial = trial
+        self._parameters = RecursiveDict(
+            self._trial.data["parameters"], allow_missing=True)
 
     def __getitem__(self, name):
-        return self._trial.data["parameters"][name]
+        return self._parameters[name]
 
     def __setitem__(self, name, value):
         self._trial.data["parameters"][name] = value
@@ -82,9 +85,11 @@ class TrialProxy(collections.abc.MutableMapping):
         Magic attributes.
         """
 
-        # Name could be a data attribute
-        if name in self._trial.data:
+        # Name could be a data item (e.g. wdir, id, ...)
+        try:
             return self._trial.data[name]
+        except KeyError:
+            pass
 
         # Name could be a referenced experiment with matching parameters
         trials = self._trial.store.match(
@@ -110,17 +115,15 @@ class TrialProxy(collections.abc.MutableMapping):
         if len(args) > 1:
             raise ValueError("Only 1 or 2 positional arguments allowed.")
 
-        parameters = self._trial.data.setdefault("parameters", {})
-
         # First set explicit defaults
         for name, value in defaults.items():
-            parameters.setdefault(prefix + name, value)
+            self.setdefault(prefix + name, value)
 
         if args and callable(args[0]):
             callable_ = args[0]
             for param in inspect.signature(callable_).parameters.values():
                 if param.default is not param.empty:
-                    parameters.setdefault(prefix + param.name, param.default)
+                    self.setdefault(prefix + param.name, param.default)
 
     def apply(self, prefix, callable_, *args, **kwargs):
         callable_names = set(
@@ -131,7 +134,7 @@ class TrialProxy(collections.abc.MutableMapping):
         start = len(prefix)
         parameters = {
             k[start:]: v
-            for k, v in self._trial.data.get("parameters", {}).items()
+            for k, v in self.items()
             if k.startswith(prefix) and k[start:] in callable_names
         }
 
@@ -153,7 +156,7 @@ class TrialProxy(collections.abc.MutableMapping):
 
         return {
             k[start:]: v
-            for k, v in self._trial.data.get("parameters", {}).items()
+            for k, v in self.items()
             if k.startswith(prefix)
         }
 
@@ -271,7 +274,7 @@ class TrialStore(collections.abc.MutableMapping):
             return self._make_unique_trial_id(experiment_name, trial_parameters, independent_parameters)
 
         # Otherwise, we just append a version number
-        for i in itertools.count():
+        for i in itertools.count(1):
             test_trial_id = "{}.{}".format(trial_id, i)
 
             try:

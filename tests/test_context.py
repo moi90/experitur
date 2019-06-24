@@ -35,3 +35,15 @@ def test_dependencies(tmp_path):
         b = ctx.experiment("b", parent=a)
 
         ctx.run([b])
+
+
+def test_merge_config(tmp_path):
+    config = {k: not v for k, v in context.Context._default_config.items()
+              if isinstance(v, bool)}
+
+    config["a"] = 1
+    config["b"] = 2
+    config["c"] = 3
+
+    with context.push_context(context.Context(str(tmp_path), config=config.copy())) as ctx:
+        assert all(v == ctx.config[k] for k, v in config.items())

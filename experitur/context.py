@@ -5,7 +5,6 @@ from contextlib import contextmanager
 from experitur import trial
 from experitur.errors import ExperiturError
 from experitur.experiment import Experiment, StopExecution
-from experitur.helpers.merge_dicts import merge_dicts
 
 
 class ContextError(ExperiturError):
@@ -50,7 +49,7 @@ class Context:
     _default_config = {
         "shuffle_trials": True,
         "skip_existing": True,
-        "halt_on_error": True,
+        "catch_exceptions": False,
     }
 
     def __init__(self, wdir=None, config=None):
@@ -64,9 +63,10 @@ class Context:
         self.store = trial.FileTrialStore(self)
 
         # Configuration
-        self.config = self._default_config.copy()
-        if config is not None:
-            merge_dicts(self.config, config)
+        if config is None:
+            self.config = self._default_config.copy()
+        else:
+            self.config = dict(self._default_config, **config)
 
     def _register_experiment(self, experiment):
         self.registered_experiments.append(experiment)
@@ -111,8 +111,9 @@ class Context:
         for exp in ordered_experiments:
             try:
                 exp.run()
-            except StopExecution:
-                break
+            except Exception:
+                if not self.config["catch_exceptions"]:
+                    raise
 
     def collect(self, results_fn, failed=False):
         """

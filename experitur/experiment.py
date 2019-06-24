@@ -8,7 +8,7 @@ from itertools import product
 import tqdm
 
 from experitur.errors import ExperiturError
-from experitur.helpers.merge_dicts import merge_dicts
+from experitur.helpers import tqdm_redirect
 
 _callable = callable
 
@@ -56,7 +56,7 @@ def format_trial_parameters(callable=None, parameters=None, experiment=None):
 
 
 class Experiment:
-    """
+    """An experiment.
     """
 
     def __init__(self, ctx, name=None, parameter_grid=None, parent=None):
@@ -64,27 +64,35 @@ class Experiment:
         self.name = name
         self.parameter_grid = {} if parameter_grid is None else parameter_grid
         self.parent = parent
+        self._pre_trial = None
+        self._post_grid = None
 
         self.callable = None
 
         # Merge parameters from parents
         parent = self.parent
         while parent:
-            self.merge(parent)
+            self._merge(parent)
             parent = parent.parent
 
         self.ctx._register_experiment(self)
 
-    def __call__(self, clbl):
-        """
-        Register a callable.
-        Allows an Experiment object to be used as a decorator.
+    def __call__(self, callable):
+        """Register an entry-point.
+
+        Allows an Experiment object to be used as a decorator::
+
+            @Experiment()
+            def entry_point(trial):
+                ...
+
+
         """
 
         if not self.name:
-            self.name = clbl.__name__
+            self.name = callable.__name__
 
-        self.callable = clbl
+        self.callable = callable
 
         return self
 
@@ -102,8 +110,29 @@ class Experiment:
     def __repr__(self):  # pragma: no cover
         return "Experiment(name={})".format(self.name)
 
+    def _check_parameter_grid(self):
+        """
+        self.parameter_grid has to be a dict of lists.
+        """
+
+        if not isinstance(self.parameter_grid, dict):
+            raise ExperimentError(
+                "parameter_grid is expected to be a dictionary.")
+
+        errors = []
+        for k, v in self.parameter_grid.items():
+            if not isinstance(v, list):
+                errors.append(k)
+
+        if errors:
+            raise ExperimentError(
+                "Parameters {} are not lists.".format(", ".join(errors)))
+
     def run(self):
-        print("Experiment.run")
+        """Runs this experiment.
+
+        Create trials for every combination in the parameter grid and run them.
+        """
 
         if self.callable is None:
             raise ValueError("No callable was registered for {}.".format(self))
@@ -112,6 +141,8 @@ class Experiment:
             raise ValueError("Experiment has no name {}.".format(self))
 
         print("Experiment", self)
+
+        self._check_parameter_grid()
 
         # Select independent parameters
         independent_parameters = self.independent_parameters
@@ -127,33 +158,44 @@ class Experiment:
             print("Trials are shuffled.")
             random.shuffle(parameters_per_trial)
 
-        pbar = tqdm.tqdm(total=len(parameters_per_trial), unit="")
-        for trial_parameters in parameters_per_trial:
+        # Apply post-grid hook to allow the user to interact with the generated
+        # parameter combinations.
+
+        if self._post_grid is not None:
+            parameters_per_trial = self._post_grid(
+                self.ctx, parameters_per_trial)
+
+        pbar = tqdm.tqdm(parameters_per_trial, unit="", ascii=True)
+        for trial_parameters in pbar:
+
+            # Run the pre-trial hook to allow the user to interact
+            # with the parameters before the trial is created and run.
+            if self._pre_trial is not None:
+                self._pre_trial(self.ctx, trial_parameters)
+
             # Check, if a trial with this parameter set already exists
-            # TODO: Check callable name
             existing = self.ctx.store.match(
                 callable=self.callable, parameters=trial_parameters)
 
             if self.ctx.config["skip_existing"] and len(existing):
-                print("Skip existing configuration: {}".format(format_trial_parameters(
+                pbar.write("Skip existing configuration: {}".format(format_trial_parameters(
                     callable=self.callable, parameters=trial_parameters)))
                 continue
 
             trial = self.ctx.store.create(trial_parameters, self)
 
-            pbar.set_description(
-                "Trial {}".format(trial.id), refresh=True)
-            pbar.update()
+            pbar.write("Running trial {}".format(trial.id))
 
             # Run the trial
             try:
-                trial.run()
+                with tqdm_redirect.redirect_stdout():
+                    trial.run()
             except Exception as exc:
-                print("Trail failed:", exc)
-                if self.ctx.config["halt_on_error"]:
-                    raise StopExecution from exc
+                pbar.write("Trail failed: {}".format(exc))
+                if not self.ctx.config["catch_exceptions"]:
+                    raise
 
-    def merge(self, other):
+    def _merge(self, other):
         """
         Merge configuration of other into self.
         """
@@ -166,6 +208,58 @@ class Experiment:
             if ours is None and theirs is not None:
                 setattr(self, name, theirs)
 
-        # Merge parameter grid of other (and its parents)
-        self.parameter_grid = merge_dicts(
-            self.parameter_grid, other.parameter_grid)
+        # Merge parameter grid of other (and its parents) keeping existing values.
+        self.parameter_grid = dict(other.parameter_grid, **self.parameter_grid)
+
+    def pre_trial(self, callable):
+        """Update the pre-trial hook.
+
+        The pre-trial hook is called after the parameters for a trial are
+        calculated and before its ID is calculated and it is run.
+        This hook can be used to alter the parameters.
+
+        Use :code:`pre_trial(None)` to reset the hook.
+
+        This can be used as a decorator::
+
+            @experiment()
+            def exp(trial):
+                ...
+
+            @exp.pre_trial
+            def pre_trial_handler(ctx, trial_parameters):
+                ...
+
+        Args:
+            callable: A callable with the signature (ctx, trial_parameters).
+        """
+
+        self._pre_trial = callable
+
+    def post_grid(self, callable):
+        """Update the post-grid hook.
+
+        The post-grid hook is called after the parameter grid has been
+        calculated and before every cell of the grid is executed.
+        This hook can be used to alter the parameter grid (add/remove/change cells).
+
+        Use :code:`post_grid(None)` to reset the hook.
+
+        The callable is expected to return an iterable of parameter dicts, one for each trial.
+
+        This can be used as a decorator::
+
+            @experiment()
+            def exp(trial):
+                ...
+
+            @exp.post_grid
+            def post_grid_handler(ctx, parameters_per_trial):
+                ...
+                return parameters_per_trial
+
+        Args:
+            callable: A callable with the signature  (ctx, parameters_per_trial) -> parameters_per_trial.
+        """
+
+        self._post_grid = callable

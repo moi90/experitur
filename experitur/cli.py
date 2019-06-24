@@ -16,8 +16,8 @@ def cli():
 @cli.command()
 @click.argument('dox_fn')
 @click.option('--skip-existing/--no-skip-existing', default=True)
-@click.option('--halt/--no-halt', default=True)
-def run(dox_fn, skip_existing, halt):
+@click.option('--catch/--no-catch', default=True)
+def run(dox_fn, skip_existing, catch):
     click.echo('Running {}...'.format(dox_fn))
 
     wdir = os.path.splitext(dox_fn)[0]
@@ -25,7 +25,7 @@ def run(dox_fn, skip_existing, halt):
 
     config = {
         "skip_existing": skip_existing,
-        "halt_on_error": halt,
+        "catch_exceptions": catch,
     }
 
     with push_context(Context(wdir, config)) as ctx:
@@ -40,7 +40,7 @@ def run(dox_fn, skip_existing, halt):
 @click.option('--all', is_flag=True)
 @click.option('--dry-run', '-n', is_flag=True)
 def clean(dox_fn, experiment_id=None, failed=True, all=False, empty=False, successful=False, dry_run=False):
-    click.echo('Cleaning failed results from {}...'.format(experiment_file))
+    click.echo('Cleaning failed results from {}...'.format(dox_fn))
 
     if all:
         click.confirm('Do you really want to permanently delete all results of {}?'.format(

@@ -137,13 +137,19 @@ def test_trial(tmp_path):
 
 
 def test_trial_proxy(tmp_path):
-    with push_context(Context(str(tmp_path))) as ctx:
+    config = {
+        "catch_exceptions": False
+    }
+    with push_context(Context(str(tmp_path), config)) as ctx:
         @ctx.experiment(parameter_grid={
-            "a": [1], "b": [2]})
+            "a": [1], "b": [2], "c": ["{a}"]})
         def experiment(trial):
             assert trial["a"] == 1
             assert trial["b"] == 2
-            assert len(trial) == 2
+            assert trial["c"] == trial["a"]
+            assert len(trial) == 3
+
+            print(trial["a"], trial["c"])
 
             for k, v in trial.items():
                 pass
