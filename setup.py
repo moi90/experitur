@@ -5,7 +5,7 @@ with open("README.md", "r") as fp:
 
 setup(
     name='experitur',
-    version='0.1.3',
+    version='1.0.0',
     author='Simon-Martin Schroeder',
     author_email="martin.schroeder@nerdluecht.de",
     description="Automates machine learning and other computer experiments",
@@ -17,10 +17,8 @@ setup(
     install_requires=[
         'Click',
         'regex',
-        'timer_cm',
         'tqdm',
         'pyyaml',
-        'sklearn',
         'pandas',
     ],
     python_requires='>=3.5',
