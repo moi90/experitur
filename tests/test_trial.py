@@ -136,7 +136,7 @@ def test_trial(tmp_path):
         assert result == 1
 
 
-def test_trial_proxy(tmp_path):
+def test_trial_proxy(tmp_path, recwarn):
     config = {
         "catch_exceptions": False
     }
@@ -165,5 +165,26 @@ def test_trial_proxy(tmp_path):
 
             with pytest.raises(KeyError):
                 trial["b"]
+
+            # test without_prefix
+            seed = {"a": 1, "b": 2, "c": 3}
+            for k, v in seed.items():
+                trial['prefix__'+k] = v
+
+            assert trial.without_prefix('prefix__') == seed
+
+            # test apply
+            def identity(a, b, c=4, d=5):
+                return (a, b, c, d)
+            assert trial.apply('prefix__', identity) == (1, 2, 3, 5)
+
+            # test apply: redefine keyword parameter
+            assert trial.apply('prefix__', identity, c=6) == (1, 2, 6, 5)
+            assert recwarn.pop(UserWarning)
+
+            # test record_defaults
+            trial.record_defaults('prefix2__', identity, x=7)
+            assert trial.without_prefix('prefix2__') == {
+                "c": 4, "d": 5, "x": 7}
 
         ctx.run()
