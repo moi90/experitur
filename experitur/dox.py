@@ -1,5 +1,6 @@
 import importlib.util
 import os.path
+import sys
 from importlib import import_module
 
 from experitur.context import Context, push_context
@@ -24,6 +25,9 @@ def load_dox(dox_fn):
 
 
 def _load_py(dox_fn, dox_name):
+    # Insert the location of dox_fn to the sys path so that DOXes can import stuff
+    sys.path.insert(0, os.path.abspath(os.path.dirname(dox_fn)))
+
     try:
         spec = importlib.util.spec_from_file_location(
             dox_name, dox_fn)
