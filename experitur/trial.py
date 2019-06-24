@@ -327,7 +327,7 @@ class FileTrialStore(TrialStore):
 
         try:
             with open(path) as fp:
-                return Trial(self, data=yaml.load(fp))
+                return Trial(self, data=yaml.load(fp, Loader=yaml.Loader))
         except FileNotFoundError:
             raise KeyError
 
