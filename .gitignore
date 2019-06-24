@@ -10,3 +10,4 @@ examples/*/
 travis.log
 experiments/results.csv
 experitur/examples/*/
+examples/.bash_history

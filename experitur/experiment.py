@@ -165,7 +165,7 @@ class Experiment:
             parameters_per_trial = self._post_grid(
                 self.ctx, parameters_per_trial)
 
-        pbar = tqdm.tqdm(parameters_per_trial, unit="", ascii=True)
+        pbar = tqdm.tqdm(parameters_per_trial, unit="")
         for trial_parameters in pbar:
 
             # Run the pre-trial hook to allow the user to interact

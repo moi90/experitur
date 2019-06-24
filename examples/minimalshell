@@ -1,0 +1,4 @@
+#/usr/bin/env sh
+echo 'PS1="\\$ "' > /tmp/minimalrc
+
+bash --rcfile /tmp/minimalrc -i
