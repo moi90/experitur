@@ -1,8 +1,10 @@
 # experitur
 
-[![](https://img.shields.io/pypi/v/experitur.svg?style=flat)](https://pypi.org/project/experitur/) [![Build Status](https://travis-ci.org/moi90/experitur.svg?branch=master)](https://travis-ci.org/moi90/experitur) [![codecov](https://codecov.io/gh/moi90/experitur/branch/master/graph/badge.svg)](https://codecov.io/gh/moi90/experitur) ![](https://img.shields.io/pypi/pyversions/experitur.svg?style=flat)
+[![](https://img.shields.io/pypi/v/experitur.svg?style=flat)](https://pypi.org/project/experitur/) [![Build Status](https://travis-ci.org/moi90/experitur.svg?branch=master)](https://travis-ci.org/moi90/experitur) [![codecov](https://codecov.io/gh/moi90/experitur/branch/master/graph/badge.svg)](https://codecov.io/gh/moi90/experitur) ![](https://img.shields.io/pypi/pyversions/experitur.svg?style=flat) [![Documentation Status](https://readthedocs.org/projects/experitur/badge/?version=latest)](https://experitur.readthedocs.io/en/latest/?badge=latest)
 
 Automates machine learning and other computer experiments. Includes grid search and resuming aborted experiments. No lock-in, all your data is easily accessible in a text-based, machine-readable format.
+
+![example](examples/simple.gif)
 
 ## Experiment description
 
