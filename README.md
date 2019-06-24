@@ -48,7 +48,7 @@ def example(trial):
 Now, you can run the experiment:
 
 ```
-$ experitur run example
+$ experitur run example.py
 ...
 ```
 
@@ -129,8 +129,41 @@ Recursive format strings work like `string.Formatter` with two exceptions:
 
    This allows the use of format strings for non-string values.
 
+#### Application
+
+This feature is especially useful if you want to run your experiments for different datasets but need slightly different settings for each dataset.
+
+Let's assume we have two datasets, "bees" and "flowers".
+
+```python
+@experiment(
+    parameter_grid={
+            "dataset": ["bees", "flowers"],
+            "dataset_fn": ["/data/{dataset}/index.csv"],
+            "bees-crop": [10],
+            "flowers-crop": [0],
+            "crop": ["{{dataset}-crop}"]
+        }
+)
+def example(trial):
+    ...
+```
+
+The experiment will be executed once for each dataset, with `trial["crop"]==10` for the "bees" dataset and `trial["crop"]==0` for the "flowers" dataset.
+
+## The `trial` object
+
+Every experiment receives a `trial` object that allows access to the parameters and meta-data of the trial.
+
+Parameters are accessed with the `[]` operator (e.g. `trial["a"]`), meta-data is accessed with the `.` operator (e.g. `trial.wdir`).
+
+### Access of parent data
+
+...
+
 ## Files
-When `experitur` executes a script, it creates the following file structure in the directory where the lab book is located:
+
+When `experitur` executes a script, it creates the following file structure in the directory where the DOX file is located:
 
 ```
 /
@@ -146,41 +179,45 @@ When `experitur` executes a script, it creates the following file structure in t
 `<script>/<experiment_id>/<trial_id>/experitur.yaml` contains the parameters and the results from a trial, e.g.:
 
 ```yaml
-experiment_id: example_experiment
-parameters_post: {a: 1, b: a}
-parameters_pre: {a: 1, b: a}
-result: {}
+callable: example.experiment1
+experiment: experiment1
+id: experiment1/a-1_b-3
+parameters: {a: 1, b: 3}
+parent_experiment: null
+result: null
 success: true
-time_end: 2019-01-31 13:50:51.003637
-time_start: 2019-01-31 13:50:50.002264
-trial_id: a-1_b-a
+time_end: 2019-06-07 14:22:41.697925
+time_start: 2019-06-07 14:22:41.697837
+wdir: examples/example/experiment1/a-1_b-3
 ```
 
-Most items should be self-explanatory. `parameters` are the parameters passed to the run function,  `parameters_post` are the parameters after the run function had the chance to update them. `trial_id` is derived from the parameters that are varied in the parameter grid. This way, you can easily interpret the file structure.
+Most items should be self-explanatory. `parameters` are the parameters passed to the entry point. `id` is derived from the parameters that are varied in the parameter grid. This way, you can easily interpret the file structure.
 
 ## Collecting results
 
-Use `experitur collect script` to collect all the results (including parameters and metadata) of all trials of a lab book into a single CSV file located at `script/results.csv`.
+Use `experitur collect script.py` to collect all the results (including parameters and metadata) of all trials of a lab book into a single CSV file located at `script/results.csv`.
 
 ## Calling functions and default parameters
-Your `run` function might call other functions that have default parameters.
+Your experiment function might call other functions that have default parameters.
 `experitur` gives you some utility functions that extract these default parameters adds them to the list of parameters.
 
-- `extract_parameters(prefix: str, parameters: dict) -> dict`: Extract all parameters that start with `prefix`.
+For the following examples, let's assume `trial["p_a"]=1` and `trial["p_b"]=2`.
+
+- `trial.without_prefix(prefix: str, parameters: dict) -> dict`: Extract all parameters that start with `prefix`.
 
   ```python
-  extract_parameters("p_", {"p_a": 1, "p_b": 2}) == {"a": 1, "b": 2}
+  trial.without_prefix("p_") == {"a": 1, "b": 2}
   ```
 
-- `apply_parameters(prefix: str, parameters: dict, callable_: callable, *args, **kwargs)`: Call `callable_` with the parameters starting with `prefix`.
+- `trial.apply(prefix: str, callable_: callable, *args, **kwargs)`: Call `callable_` with the parameters starting with `prefix`.
 
   ```python
-  apply_parameters("p_", {"p_a": 1, "p_b": 2}, fun, 10, c=20)
+  trial.apply("p_", fun, 10, c=20)
   # is the same as
   fun(10, a=1, b=2, c=20)
   ```
 
-- `set_default_parameters(prefix, parameters, [callable_,] **defaults)`: Set default values for parameters that were not set previously. Values in `defaults` override default parameters of `callable_`.
+- `trial.record_defaults(prefix, [callable_,] **defaults)`: Set default values for parameters that were not set previously. Values in `defaults` override default parameters of `callable_`.
 
   ```python
   def foo(a=1, b=2, c=3):
@@ -194,7 +231,7 @@ Your `run` function might call other functions that have default parameters.
 
 It is a good idea to make use of `set_default_parameters` and `apply_parameters` excessively. This way, your result files always contain the full set of parameters.
 
-For a simple example, see [examples/str_split.md](examples/str_split.md).
+For a simple example, see [examples/example.py](examples/example.py).
 
 ## Installation
 
@@ -208,8 +245,8 @@ Be warned that this package is currently under heavy development and anything mi
 
 ## Examples
 
--  [examples/str_split.md](examples/str_split.md): A very basic example showing the workings of `set_default_parameters` and `apply_parameters`.
--  [examples/mnist.md](examples/mnist.md): Try different parameters of `sklearn.svm.SVC` to classify handwritten digits (the [MNIST](http://archive.ics.uci.edu/ml/datasets/Optical+Recognition+of+Handwritten+Digits) test set). Run the example, add more parameter values and see how `experitur` skips already existing configurations during the next run.
+-  [examples/example.py](examples/example.py): A very basic example showing the workings of `set_default_parameters` and `apply_parameters`.
+-  [examples/classifier.py](examples/classifier.py): Try different parameters of `sklearn.svm.SVC` to classify handwritten digits (the [MNIST](http://archive.ics.uci.edu/ml/datasets/Optical+Recognition+of+Handwritten+Digits) test set). Run the example, add more parameter values and see how `experitur` skips already existing configurations during the next run.
 
 ## Compatibility
 
