@@ -22,6 +22,7 @@ from experitur import experiment
     })
 def experiment1(trial):
     """This is the first experiment."""
+    print("I am experiment1!")
     pformat(trial)
 
 
@@ -42,7 +43,7 @@ experiment2 = experiment(
     parent=experiment1
 )
 def experiment3(trial):
-    print("This is different.")
+    print("I am experiment3!")
 
 # Parameter substitution
 # A core feature of experitur is the parameter substitution. The format strings can even be nested!
@@ -60,3 +61,11 @@ def experiment3(trial):
 )
 def experiment4(trial):
     print(trial["dataset_fn"], trial["crop"])
+
+
+@experiment4.post_grid
+def postgrid4(ctx, parameters_per_trial):
+    # Only run every second trial
+    for i, p in enumerate(parameters_per_trial):
+        if i % 2 == 0:
+            yield p
