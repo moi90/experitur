@@ -12,7 +12,6 @@ from abc import abstractmethod
 import yaml
 
 from experitur.helpers.dumper import ExperiturDumper
-from experitur.recursive_formatter import RecursiveDict
 
 
 def _callable_to_name(obj):
@@ -62,11 +61,9 @@ class TrialProxy(collections.abc.MutableMapping):
 
     def __init__(self, trial):
         self._trial = trial
-        self._parameters = RecursiveDict(
-            self._trial.data["parameters"], allow_missing=True)
 
     def __getitem__(self, name):
-        return self._parameters[name]
+        return self._trial.data["parameters"][name]
 
     def __setitem__(self, name, value):
         self._trial.data["parameters"][name] = value

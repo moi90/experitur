@@ -9,6 +9,7 @@ import tqdm
 
 from experitur.errors import ExperiturError
 from experitur.helpers import tqdm_redirect
+from experitur.recursive_formatter import RecursiveDict
 
 _callable = callable
 
@@ -151,8 +152,12 @@ class Experiment:
         for k in independent_parameters:
             print("{}: {}".format(k, self.parameter_grid[k]))
 
-        # For every point in the parameter grid create a trial
-        parameters_per_trial = list(parameter_product(self.parameter_grid))
+        # For every point in the parameter grid calculate the parameters
+        # and perform parameter substitution.
+        parameters_per_trial = [
+            RecursiveDict(p, allow_missing=True).as_dict()
+            for p in parameter_product(self.parameter_grid)
+        ]
 
         if self.ctx.config["shuffle_trials"]:
             print("Trials are shuffled.")
