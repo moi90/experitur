@@ -4,6 +4,7 @@ import os
 import pprint
 import random
 import sys
+import textwrap
 import traceback
 from itertools import product
 
@@ -198,10 +199,9 @@ class Experiment:
                 with tqdm_redirect.redirect_stdout():
                     trial.run()
             except Exception:
-                etype, value, _ = sys.exc_info()
-                msg = "".join(traceback.format_exception_only(
-                    etype, value)).rstrip()
-                pbar.write("Trail failed: {}".format(msg))
+                msg = textwrap.indent(traceback.format_exc(-1), "    ")
+                pbar.write("{} failed!".format(trial.data["id"]))
+                pbar.write(msg)
                 if not self.ctx.config["catch_exceptions"]:
                     raise
 
