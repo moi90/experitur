@@ -14,6 +14,9 @@ class TqdmFile(object):
     def __eq__(self, other):
         return other is self.file
 
+    def flush(self):
+        pass
+
 
 @contextlib.contextmanager
 def redirect_stdout():
