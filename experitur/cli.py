@@ -5,9 +5,11 @@ import click
 from experitur.context import Context, push_context
 from experitur.dox import load_dox
 from experitur.experiment import Experiment
+from experitur import __version__
 
 
 @click.group()
+@click.version_option(version=__version__)
 def cli():  # pragma: no cover
     pass
 
@@ -57,10 +59,18 @@ def clean(dox_fn, experiment_id, all, yes):
     wdir = os.path.splitext(dox_fn)[0]
     with push_context(Context(wdir)) as ctx:
         selected = {trial_id: trial for trial_id,
-                    trial in ctx.store.items() if trial.is_failed or all}
+                    trial in ctx.store.items()
+                    if (trial.is_failed or all)
+                    and (experiment_id is None or trial.data.get("experiment") == experiment_id)}
+
+        n_selected = len(selected)
+
+        if not n_selected:
+            click.echo("No matching trials.")
+            return
 
         click.echo(
-            "The following {} trials will be deleted:".format(len(selected)))
+            "The following {} trials will be deleted:".format(n_selected))
         list_trials(selected)
 
         if yes or click.confirm('Continue?'):
