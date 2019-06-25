@@ -143,6 +143,17 @@ class TrialProxy(collections.abc.MutableMapping):
         for k, v in kwargs.items():
             parameters[k] = v
 
+        # Extract defaults
+        callable_defaults = {
+            param.name: param.default
+            for param in inspect.signature(callable_).parameters.values()
+            if param.default is not param.empty
+        }
+
+        # Record parameters
+        for k, v in itertools.chain(kwargs.items(), callable_defaults.items()):
+            self.setdefault(prefix + k, v)
+
         return callable_(*args, **parameters)
 
     def without_prefix(self, prefix):
