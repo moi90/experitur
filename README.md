@@ -250,6 +250,9 @@ Be warned that this package is currently under heavy development and anything mi
 -  [examples/example.py](examples/example.py): A very basic example showing the workings of `set_default_parameters` and `apply_parameters`.
 -  [examples/classifier.py](examples/classifier.py): Try different parameters of `sklearn.svm.SVC` to classify handwritten digits (the [MNIST](http://archive.ics.uci.edu/ml/datasets/Optical+Recognition+of+Handwritten+Digits) test set). Run the example, add more parameter values and see how `experitur` skips already existing configurations during the next run.
 
+## Contributions
+**experitur** is under active development, so any user feedback, bug reports, comments, suggestions, or pull requests are highly appreciated. Please use the [bug tracker](https://github.com/moi90/experitur/issues) and [fork](https://github.com/moi90/experitur/network/members) the repository.
+
 ## Compatibility
 
 `experitur` is [tested](https://travis-ci.org/moi90/experitur) with Python 3.5, 3.6 and 3.7.
