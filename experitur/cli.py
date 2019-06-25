@@ -36,14 +36,17 @@ def run(dox_fn, skip_existing, catch, clean_failed, yes):
         if clean_failed:
             selected = {trial_id: trial for trial_id,
                         trial in ctx.store.items() if trial.is_failed}
+            if selected:
+                click.echo(
+                    "The following {} trials will be deleted:".format(len(selected)))
+                list_trials(selected)
+                if yes or click.confirm('Continue?'):
+                    ctx.store.delete_all(selected.keys())
 
-            click.echo(
-                "The following {} trials will be deleted:".format(len(selected)))
-            list_trials(selected)
-            if yes or click.confirm('Continue?'):
-                ctx.store.delete_all(selected.keys())
-
+        # Load the DOX
         load_dox(dox_fn)
+
+        # Run
         ctx.run()
 
 
