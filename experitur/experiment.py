@@ -3,6 +3,8 @@ import functools
 import os
 import pprint
 import random
+import sys
+import traceback
 from itertools import product
 
 import tqdm
@@ -195,8 +197,11 @@ class Experiment:
             try:
                 with tqdm_redirect.redirect_stdout():
                     trial.run()
-            except Exception as exc:
-                pbar.write("Trail failed: {}".format(exc))
+            except Exception:
+                etype, value, _ = sys.exc_info()
+                msg = "".join(traceback.format_exception_only(
+                    etype, value)).rstrip()
+                pbar.write("Trail failed: {}".format(msg))
                 if not self.ctx.config["catch_exceptions"]:
                     raise
 
