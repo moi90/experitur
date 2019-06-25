@@ -8,7 +8,7 @@ from experitur.experiment import Experiment
 
 
 @click.group()
-def cli():
+def cli():  # pragma: no cover
     pass
 
 
@@ -17,7 +17,9 @@ def cli():
 @click.argument('dox_fn')
 @click.option('--skip-existing/--no-skip-existing', default=True)
 @click.option('--catch/--no-catch', default=True)
-def run(dox_fn, skip_existing, catch):
+@click.option('--clean-failed/--no-clean-failed', default=False)
+@click.option('--yes', '-y', is_flag=True)
+def run(dox_fn, skip_existing, catch, clean_failed, yes):
     click.echo('Running {}...'.format(dox_fn))
 
     wdir = os.path.splitext(dox_fn)[0]
@@ -29,6 +31,16 @@ def run(dox_fn, skip_existing, catch):
     }
 
     with push_context(Context(wdir, config)) as ctx:
+        if clean_failed:
+            selected = {trial_id: trial for trial_id,
+                        trial in ctx.store.items() if trial.is_failed}
+
+            click.echo(
+                "The following {} trials will be deleted:".format(len(selected)))
+            list_trials(selected)
+            if yes or click.confirm('Continue?'):
+                ctx.store.delete_all(selected.keys())
+
         load_dox(dox_fn)
         ctx.run()
 
@@ -36,29 +48,45 @@ def run(dox_fn, skip_existing, catch):
 @cli.command()
 @click.argument('dox_fn')
 @click.argument('experiment_id', default=None, required=False)
-@click.option('--failed', is_flag=True)
 @click.option('--all', is_flag=True)
-@click.option('--dry-run', '-n', is_flag=True)
-def clean(dox_fn, experiment_id=None, failed=True, all=False, empty=False, successful=False, dry_run=False):
-    click.echo('Cleaning failed results from {}...'.format(dox_fn))
-
-    if all:
-        click.confirm('Do you really want to permanently delete all results of {}?'.format(
-            dox_fn), abort=True)
-
-    failed = failed or all
-    empty = empty or all
-    successful = successful or all
-
-    if not any((failed, empty, successful)):
-        print("Nothing to do. Did you mean --failed?")
-        return
+@click.option('--yes', '-y', is_flag=True)
+def clean(dox_fn, experiment_id, all, yes):
+    """Clean failed experiments."""
+    click.echo('Cleaning results from {}...'.format(dox_fn))
 
     wdir = os.path.splitext(dox_fn)[0]
     with push_context(Context(wdir)) as ctx:
-        load_dox(dox_fn)
-        ctx.clean(failed=failed, dry_run=dry_run,
-                  experiment_id=experiment_id)
+        selected = {trial_id: trial for trial_id,
+                    trial in ctx.store.items() if trial.is_failed or all}
+
+        click.echo(
+            "The following {} trials will be deleted:".format(len(selected)))
+        list_trials(selected)
+
+        if yes or click.confirm('Continue?'):
+            ctx.store.delete_all(selected.keys())
+
+
+def list_trials(trials):
+    """Show a sorted list of trials with a status signifier.
+
+    ! Failed
+    """
+    for trial_id, trial in sorted(trials.items()):
+        status = "!" if trial.is_failed else " "
+
+        print("{} {}".format(status, trial_id))
+
+
+@cli.command()
+@click.argument('dox_fn')
+@click.argument('experiment_id', default=None, required=False)
+def show(dox_fn, experiment_id=None):
+    """List the trials of this DOX."""
+
+    wdir = os.path.splitext(dox_fn)[0]
+    with push_context(Context(wdir)) as ctx:
+        list_trials(ctx.store)
 
 
 @cli.command()

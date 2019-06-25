@@ -209,6 +209,10 @@ class Trial:
     def id(self):
         return self.data["id"]
 
+    @property
+    def is_failed(self):
+        return not self.data.get("success", False)
+
 
 class TrialStore(collections.abc.MutableMapping):
     def __init__(self, ctx):
@@ -309,6 +313,10 @@ class TrialStore(collections.abc.MutableMapping):
         self[trial_id] = trial
 
         return trial
+
+    def delete_all(self, keys):
+        for k in keys:
+            del self[k]
 
 
 class FileTrialStore(TrialStore):

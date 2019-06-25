@@ -69,3 +69,8 @@ def postgrid4(ctx, parameters_per_trial):
     for i, p in enumerate(parameters_per_trial):
         if i % 2 == 0:
             yield p
+
+
+@experiment()
+def experiment5(trial):
+    raise NotImplementedError("experiment5 is not implemented.")
