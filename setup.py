@@ -1,11 +1,13 @@
 from setuptools import setup, find_packages
+import versioneer
 
 with open("README.md", "r") as fp:
     long_description = fp.read()
 
 setup(
     name='experitur',
-    version='1.0.0a1',
+    version=versioneer.get_version(),
+    cmdclass=versioneer.get_cmdclass(),
     author='Simon-Martin Schroeder',
     author_email="martin.schroeder@nerdluecht.de",
     description="Automates machine learning and other computer experiments",
