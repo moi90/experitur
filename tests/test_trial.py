@@ -178,9 +178,8 @@ def test_trial_proxy(tmp_path, recwarn):
                 return (a, b, c, d)
             assert trial.apply('prefix__', identity) == (1, 2, 3, 5)
 
-            # test apply: redefine keyword parameter
-            assert trial.apply('prefix__', identity, c=6) == (1, 2, 6, 5)
-            assert recwarn.pop(UserWarning)
+            # test apply: keyword parameter
+            assert trial.apply('prefix__', identity, c=6, d=7) == (1, 2, 3, 7)
 
             # test record_defaults
             trial.record_defaults('prefix2__', identity, x=7)

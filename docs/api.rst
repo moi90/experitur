@@ -6,6 +6,13 @@ API Reference
 .. automodule:: experitur
     :members:
 
+Trial
+-----
+
+.. autoclass:: experitur.trial.TrialProxy
+    :members:
+
+
 Experiment
 ----------
 

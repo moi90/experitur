@@ -123,6 +123,31 @@ class TrialProxy(collections.abc.MutableMapping):
                     self.setdefault(prefix + param.name, param.default)
 
     def apply(self, prefix, callable_, *args, **kwargs):
+        """Apply the callable using the parameters given py prefix.
+
+        Args:
+            prefix (str): Prefix of the applied parameters.
+            callable_ (callable): Callable to be applied.
+            *args: Positional arguments to the callable.
+            **kwargs: Named defaults for the callable.
+
+        Returns:
+            The return value of the callable.
+
+        The default values of the callable are determined using ``inspect``.
+        Additional defaults can be given using ``**kwargs``.
+        These defaults are recorded into the trial.
+
+        As all passed values are recorded, make sure that these have simple
+        YAML-serializable types.
+        """
+
+        # TODO: partial for complex non-recorded arguments?
+
+        # Record defaults
+        self.record_defaults(prefix, callable, **kwargs)
+
+        # Apply
         callable_names = set(
             param.name
             for param in inspect.signature(callable_).parameters.values()
@@ -134,25 +159,6 @@ class TrialProxy(collections.abc.MutableMapping):
             for k, v in self.items()
             if k.startswith(prefix) and k[start:] in callable_names
         }
-
-        intersection_names = set(kwargs.keys()) & set(parameters.keys())
-        if intersection_names:
-            warnings.warn("Redefining parameter(s) {} with keyword parameter.".format(
-                ", ".join(intersection_names)))
-
-        for k, v in kwargs.items():
-            parameters[k] = v
-
-        # Extract defaults
-        callable_defaults = {
-            param.name: param.default
-            for param in inspect.signature(callable_).parameters.values()
-            if param.default is not param.empty
-        }
-
-        # Record parameters
-        for k, v in itertools.chain(kwargs.items(), callable_defaults.items()):
-            self.setdefault(prefix + k, v)
 
         return callable_(*args, **parameters)
 
