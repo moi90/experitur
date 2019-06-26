@@ -1,2 +1,3 @@
 [run]
 source = experitur
+omit = */_version.py
