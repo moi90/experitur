@@ -175,7 +175,6 @@ class Experiment:
 
         pbar = tqdm.tqdm(parameters_per_trial, unit="")
         for trial_parameters in pbar:
-
             # Run the pre-trial hook to allow the user to interact
             # with the parameters before the trial is created and run.
             if self._pre_trial is not None:
@@ -188,11 +187,13 @@ class Experiment:
             if self.ctx.config["skip_existing"] and len(existing):
                 pbar.write("Skip existing configuration: {}".format(format_trial_parameters(
                     callable=self.callable, parameters=trial_parameters)))
+                pbar.set_description("[Skipped]")
                 continue
 
             trial = self.ctx.store.create(trial_parameters, self)
 
-            pbar.write("Running trial {}".format(trial.id))
+            pbar.write("Trial {}".format(trial.id))
+            pbar.set_description("Running trial {}...".format(trial.id))
 
             # Run the trial
             try:
@@ -204,6 +205,8 @@ class Experiment:
                 pbar.write(msg)
                 if not self.ctx.config["catch_exceptions"]:
                     raise
+
+            pbar.set_description("Running trial {}... Done.".format(trial.id))
 
     def _merge(self, other):
         """
