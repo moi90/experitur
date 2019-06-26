@@ -71,6 +71,6 @@ def postgrid4(ctx, parameters_per_trial):
             yield p
 
 
-@experiment()
+@experiment(meta={"foo": "bar"})
 def experiment5(trial):
     raise NotImplementedError("experiment5 is not implemented.")

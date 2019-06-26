@@ -317,6 +317,7 @@ class TrialStore(collections.abc.MutableMapping):
             "parameters": parameters,
             "callable": _callable_to_name(experiment.callable),
             "wdir": wdir,
+            "experiment_meta": experiment.meta,
         }
 
         trial = Trial(self, callable=experiment.callable, data=trial_data)

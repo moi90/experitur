@@ -71,13 +71,13 @@ class Context:
     def _register_experiment(self, experiment):
         self.registered_experiments.append(experiment)
 
-    def experiment(self, name=None, *, parameter_grid=None, parent=None):
+    def experiment(self, name=None, *, parameter_grid=None, parent=None, meta=None):
         """
         Experiment constructor.
 
         Can also be used as a decorator.
         """
-        return Experiment(self, name=name, parameter_grid=parameter_grid, parent=parent)
+        return Experiment(self, name=name, parameter_grid=parameter_grid, parent=parent, meta=meta)
 
     def run(self, experiments=None):
         """
