@@ -84,8 +84,6 @@ class Context:
         Run the specified experiments or all.
         """
 
-        print("Context.run")
-
         if experiments is None:
             experiments = self.registered_experiments
 
