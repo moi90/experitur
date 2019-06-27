@@ -74,3 +74,7 @@ def postgrid4(ctx, parameters_per_trial):
 @experiment(meta={"foo": "bar"})
 def experiment5(trial):
     raise NotImplementedError("experiment5 is not implemented.")
+
+@experiment(active=False)
+def experiment6(trial):
+    raise NotImplementedError("experiment6 is not implemented.")

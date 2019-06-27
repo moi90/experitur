@@ -63,12 +63,13 @@ class Experiment:
     """An experiment.
     """
 
-    def __init__(self, ctx, name=None, parameter_grid=None, parent=None, meta=None):
+    def __init__(self, ctx, name=None, parameter_grid=None, parent=None, meta=None, active=True):
         self.ctx = ctx
         self.name = name
         self.parameter_grid = {} if parameter_grid is None else parameter_grid
         self.parent = parent
         self.meta = meta
+        self.active = active
         self._pre_trial = None
         self._post_grid = None
 
@@ -138,6 +139,10 @@ class Experiment:
 
         Create trials for every combination in the parameter grid and run them.
         """
+
+        if not self.active:
+            print("Skip inactive experiment {}.".format(self.name))
+            return
 
         if self.callable is None:
             raise ValueError("No callable was registered for {}.".format(self))
