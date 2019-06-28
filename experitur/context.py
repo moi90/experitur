@@ -157,7 +157,7 @@ def _prepare_trial_data(trial_data):
     result = {}
 
     for k, v in trial_data.items():
-        if k in ("parameters", "result"):
+        if k in ("id", "parameters", "result"):
             continue
         result["meta_{}".format(k)] = v
 
