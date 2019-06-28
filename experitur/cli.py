@@ -119,3 +119,16 @@ def collect(dox_fn, results_fn, failed):
         load_dox(dox_fn)
 
         ctx.collect(results_fn, failed=failed)
+
+
+@cli.command()
+@click.argument('dox_fn')
+def update(dox_fn):
+    wdir = os.path.splitext(dox_fn)[0]
+
+    click.echo('Updating results of {}...'.format(dox_fn))
+
+    with push_context(Context(wdir)) as ctx:
+        load_dox(dox_fn)
+
+        ctx.update()

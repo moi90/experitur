@@ -23,7 +23,20 @@ def _format_dependencies(experiments):
 
 
 def _order_experiments(experiments):
-    experiments = experiments.copy()
+    experiments = set(experiments)
+
+    # Include parents
+    stack = collections.deque(experiments)
+
+    while stack:
+        exp = stack.pop()
+
+        parent = exp.parent
+        if parent is not None:
+            if parent not in experiments:
+                experiments.add(parent)
+                stack.append(parent)
+
     done = set()
     experiments_ordered = []
 
@@ -87,20 +100,6 @@ class Context:
         if experiments is None:
             experiments = self.registered_experiments
 
-        experiments = set(experiments)
-
-        # Include parents
-        stack = collections.deque(experiments)
-
-        while stack:
-            exp = stack.pop()
-
-            parent = exp.parent
-            if parent is not None:
-                if parent not in experiments:
-                    experiments.add(parent)
-                    stack.append(parent)
-
         # Now run the experiments in order
         ordered_experiments = _order_experiments(experiments)
 
@@ -109,6 +108,26 @@ class Context:
         for exp in ordered_experiments:
             try:
                 exp.run()
+            except Exception:
+                if not self.config["catch_exceptions"]:
+                    raise
+
+    def update(self, experiments=None):
+        """
+        Update the specified experiments or all.
+        """
+
+        if experiments is None:
+            experiments = self.registered_experiments
+
+        # Update the experiments in order
+        ordered_experiments = _order_experiments(experiments)
+
+        print("Updating experiments:", ', '.join(
+            exp.name for exp in ordered_experiments))
+        for exp in ordered_experiments:
+            try:
+                exp.update()
             except Exception:
                 if not self.config["catch_exceptions"]:
                     raise

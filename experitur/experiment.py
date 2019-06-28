@@ -1,3 +1,4 @@
+from experitur.trial import TrialProxy
 import collections
 import functools
 import os
@@ -282,3 +283,18 @@ class Experiment:
         """
 
         self._post_grid = callable
+
+    def set_update(self, callable):
+        self._update = callable
+
+    def update(self):
+        if self._update is None:
+            return
+
+        trials = self.ctx.store.match(experiment=self.name)
+
+        pbar = tqdm.tqdm(trials.items(), unit="")
+
+        for trial_id, trial in pbar:
+            self._update(TrialProxy(trial))
+            trial.save()
