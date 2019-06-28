@@ -145,13 +145,13 @@ class TrialProxy(collections.abc.MutableMapping):
         # TODO: partial for complex non-recorded arguments?
 
         # Record defaults
-        self.record_defaults(prefix, callable, **kwargs)
+        self.record_defaults(prefix, callable_, **kwargs)
 
         # Apply
         callable_names = set(
             param.name
             for param in inspect.signature(callable_).parameters.values()
-            if param.kind == param.POSITIONAL_OR_KEYWORD)
+            if param.kind in (param.POSITIONAL_OR_KEYWORD, param.KEYWORD_ONLY))
 
         start = len(prefix)
         parameters = {
