@@ -3,7 +3,7 @@ import os.path
 
 from click.testing import CliRunner
 
-from experitur.cli import collect, run
+from experitur.cli import collect, run, update
 
 example_py = inspect.cleandoc("""
     from experitur import experiment, run
@@ -16,6 +16,14 @@ example_py = inspect.cleandoc("""
             "a": ["{a_{b}}"],
         })
     def baseline(trial):
+        pass
+
+    @experiment(parent=baseline)
+    def e1(trial):
+        pass
+
+    @e1.set_update
+    def e1_update(trial):
         pass
     """)
 
@@ -36,3 +44,6 @@ def test_run():
 
         with open('example.csv') as f:
             print(f.read())
+
+        result = runner.invoke(update, ['example.py'], catch_exceptions=False)
+        assert result.exit_code == 0

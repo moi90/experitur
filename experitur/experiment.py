@@ -73,6 +73,7 @@ class Experiment:
         self.active = active
         self._pre_trial = None
         self._post_grid = None
+        self._update = None
 
         self.callable = None
 
