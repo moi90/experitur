@@ -195,6 +195,9 @@ def test_trial_proxy(tmp_path, recwarn):
             identity_a8 = functools.partial(identity, 8)
             assert trial.apply('prefix3__', identity_a8, b=2) == (8, 2, 4, 5)
             assert "prefix3__a" not in trial
+            assert trial.apply('prefix3__', identity_a8,
+                               a=9, b=2) == (8, 2, 4, 5)
+            assert trial["prefix3__a"] == 9
 
             # Keyword arguments will be recorded and can be overwritten
             identity_a8 = functools.partial(identity, a=8)
