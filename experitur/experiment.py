@@ -1,5 +1,5 @@
-from experitur.trial import TrialProxy
 import collections
+import copy
 import functools
 import os
 import pprint
@@ -14,6 +14,7 @@ import tqdm
 from experitur.errors import ExperiturError
 from experitur.helpers import tqdm_redirect
 from experitur.recursive_formatter import RecursiveDict
+from experitur.trial import TrialProxy
 
 _callable = callable
 
@@ -222,15 +223,16 @@ class Experiment:
         """
 
         # Copy attributes: callable, ...
-        for name in ("callable",):
+        for name in ("callable", "parameter_grid", "meta"):
             ours = getattr(self, name)
             theirs = getattr(other, name)
 
             if ours is None and theirs is not None:
-                setattr(self, name, theirs)
-
-        # Merge parameter grid of other (and its parents) keeping existing values.
-        self.parameter_grid = dict(other.parameter_grid, **self.parameter_grid)
+                # Copy regular attributes
+                setattr(self, name, copy.copy(theirs))
+            elif isinstance(ours, dict) and isinstance(theirs, dict):
+                # Merge dict attributes
+                setattr(self, name, {**theirs, **ours})
 
     def pre_trial(self, callable):
         """Update the pre-trial hook.
