@@ -2,8 +2,10 @@ API Reference
 =============
 
 
-
 .. automodule:: experitur
+    :members:
+
+.. automodule:: experitur.context
     :members:
 
 Trial

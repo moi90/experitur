@@ -6,6 +6,8 @@
 
 ![example](https://raw.githubusercontent.com/moi90/experitur/master/examples/simple.gif)
 
+Read the [documentation](https://experitur.readthedocs.io/en/latest/)!
+
 ## Experiment description
 
 Every experiment is described in a regular python file. The `@experiment` decorator is used to mark experiment entry-points.

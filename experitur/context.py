@@ -180,6 +180,39 @@ default_context = Context()
 
 
 def experiment(*args, **kwargs):
+    """Create an experiment.
+
+    Args:
+        name (:obj:`str`, optional): Name of the experiment (Default: None).
+        parameter_grid (:obj:`dict`, optional): Parameter grid (Default: None).
+        parent (:obj:`experitur.experiment.Experiment`, optional): Parent experiment (Default: None).
+        meta (:obj:`dict`, optional): Dict with experiment metadata that should be recorded.
+        active (:obj:`bool`, optional): Is the experiment active? (Default: True).
+            When False, the experiment will not be executed.
+
+    Returns:
+        A :class:`.Experiment` instance.
+
+    This can be used as a constructor or a decorator:
+
+    .. code-block:: python
+
+        exp1 = experiment("exp1", ...)
+
+        @experiment(...)
+        def exp2(trial):
+            # Here, the name is automatically inferred.
+            ...
+
+    When the experiment is run, `trial` will be a :class:`.TrialProxy` instance.
+    As such, it has the following characteristics:
+
+    - :obj:`dict`-like interface (`trial[<name>]`): Get the value of the parameter named `name`.
+    - Attribute interface (`trial.<attr>`): Get meta-data for this trial.
+    - :py:meth:`.TrialProxy.apply`: Run a callable and automatically assign parameters.
+
+    See :class:`.TrialProxy` for more details.
+    """
     return default_context.experiment(*args, **kwargs)
 
 

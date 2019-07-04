@@ -14,7 +14,7 @@ and resuming aborted experiments.
 Installation
 ------------
 
-experitur is packaged on PyPI and can be installed with pip:
+**experitur** is packaged on PyPI and can be installed with pip:
 
 .. code-block:: sh
 
@@ -26,7 +26,7 @@ and anything might change any time!
 Getting started
 ---------------
 
-experitur is very easy to use. Just create a Python file where you describe
+**experitur** is very easy to use. Just create a Python file where you describe
 your experiments like so:
 
 .. literalinclude:: ../examples/simple.py
