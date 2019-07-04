@@ -351,8 +351,8 @@ class FileTrialStore(TrialStore):
         try:
             with open(path) as fp:
                 return Trial(self, data=yaml.load(fp, Loader=yaml.Loader))
-        except FileNotFoundError:
-            raise KeyError
+        except FileNotFoundError as exc:
+            raise KeyError from exc
 
     def __iter__(self):
         path = os.path.join(self.ctx.wdir, self.PATTERN.format("**"))
