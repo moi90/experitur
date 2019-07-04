@@ -2,10 +2,11 @@ import os
 
 import click
 
+from experitur import __version__
 from experitur.context import Context, push_context
 from experitur.dox import load_dox
-from experitur.experiment import Experiment
-from experitur import __version__
+from experitur.experiment import (CommandNotFoundError, Experiment,
+                                  TrialNotFoundError)
 
 
 @click.group()
@@ -48,6 +49,31 @@ def run(dox_fn, skip_existing, catch, clean_failed, yes):
 
         # Run
         ctx.run()
+
+
+@cli.command(context_settings=dict(
+    ignore_unknown_options=True,
+))
+@click.argument('dox_fn')
+@click.argument('cmd')
+@click.argument('target')
+@click.argument('cmd_args', nargs=-1, type=click.UNPROCESSED)
+@click.pass_context
+def do(click_ctx, dox_fn, target, cmd, cmd_args):
+    wdir = os.path.splitext(dox_fn)[0]
+    os.makedirs(wdir, exist_ok=True)
+
+    with push_context(Context(wdir)) as ctx:
+        # Load the DOX
+        load_dox(dox_fn)
+
+        # Run
+        try:
+            ctx.do(target, cmd, cmd_args)
+        except CommandNotFoundError:
+            click_ctx.fail('Command not found: {}'.format(cmd))
+        except TrialNotFoundError:
+            click_ctx.fail('Trial not found: {}'.format(target))
 
 
 @cli.command()

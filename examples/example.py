@@ -1,3 +1,4 @@
+import click
 """
 This is an example for an experitur design of experiments (DOX) file.
 
@@ -75,6 +76,14 @@ def postgrid4(ctx, parameters_per_trial):
 def experiment5(trial):
     raise NotImplementedError("experiment5 is not implemented.")
 
+
 @experiment(active=False)
 def experiment6(trial):
     raise NotImplementedError("experiment6 is not implemented.")
+
+
+@experiment5.command("test", target="trial")
+@click.option('--shout/--no-shout', default=False)
+def experiment5_test(trial, shout):
+    print(trial)
+    print(repr(shout))

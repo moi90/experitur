@@ -152,6 +152,31 @@ class Context:
 
         data.to_csv(results_fn)
 
+    def get_experiment(self, name):
+        """Get an experiment by its name.
+
+        Args:
+            name: Experiment name.
+
+        Returns:
+            A :class:`Experiment` instance.
+
+        Raises:
+            :obj:`KeyError` if no experiment with this name is found.
+        """
+        try:
+            return [e for e in self.registered_experiments if e.name == name][0]
+        except IndexError:
+            print(self.registered_experiments)
+            raise KeyError(name)
+
+    def do(self, target, cmd, cmd_args):
+        experiment_name = target.split('/')[0]
+
+        experiment = self.get_experiment(experiment_name)
+
+        return experiment.do(cmd, target, cmd_args)
+
 
 def _prepare_trial_data(trial_data):
     result = {}

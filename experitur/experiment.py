@@ -1,3 +1,4 @@
+import click
 import collections
 import copy
 import functools
@@ -24,6 +25,14 @@ class ExperimentError(ExperiturError):
 
 
 class StopExecution(ExperimentError):
+    pass
+
+
+class CommandNotFoundError(ExperimentError):
+    pass
+
+
+class TrialNotFoundError(ExperimentError):
     pass
 
 
@@ -75,6 +84,7 @@ class Experiment:
         self._pre_trial = None
         self._post_grid = None
         self._update = None
+        self._commands = {}
 
         self.callable = None
 
@@ -301,3 +311,58 @@ class Experiment:
         for trial_id, trial in pbar:
             self._update(TrialProxy(trial))
             trial.save()
+
+    def command(self, name=None, *, target="trial"):
+        """Attach a command to an experiment.
+
+        .. code-block:: python
+
+            @experiment()
+            def experiment1(trial):
+                ...
+
+            @experiment1.command()
+            def frobnicate(trial):
+                ...
+
+        """
+
+        if target not in ("trial", "experiment"):
+            msg = "target has to be one of 'trial', 'experiment', not {}.".format(
+                target)
+            raise ValueError(msg)
+
+        def _decorator(f):
+            _name = name or f.__name__
+
+            self._commands[_name] = (f, target)
+
+            return f
+        return _decorator
+
+    def do(self, cmd_name, target_name, cmd_args):
+        try:
+            cmd, target = self._commands[cmd_name]
+        except KeyError:
+            raise CommandNotFoundError(cmd)
+
+        if target == "trial":
+            try:
+                trial = self.ctx.store[target_name]
+            except KeyError as exc:
+                raise TrialNotFoundError(target_name) from exc
+
+            # Inject the TrialProxy
+            cmd_wrapped = functools.partial(cmd, TrialProxy(trial))
+            # Copy over __click_params__ if they exist
+            try:
+                cmd_wrapped.__click_params__ = cmd.__click_params__
+            except AttributeError:
+                pass
+
+            cmd = click.command(
+                name=cmd_name)(cmd_wrapped)
+            cmd.main(args=cmd_args, standalone_mode=False)
+        else:
+            msg = "target={} is not implemented.".format(target)
+            raise NotImplementedError(msg)
