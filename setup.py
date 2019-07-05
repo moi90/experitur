@@ -24,6 +24,16 @@ setup(
         'pandas',
     ],
     python_requires='>=3.5',
+    extras_require={
+        'tests': [
+            'pytest'
+        ],
+        'docs': [
+            'sphinx >= 1.4',
+            'sphinx_rtd_theme',
+            'sphinxcontrib-programoutput'
+        ]
+    },
     entry_points={
         'console_scripts': ['experitur=experitur.cli:cli'],
     },
