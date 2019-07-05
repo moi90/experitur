@@ -18,11 +18,12 @@ def cli():  # pragma: no cover
 # TODO: --reload: Rerun the DOX file until all trials are executed
 @cli.command()
 @click.argument('dox_fn')
-@click.option('--skip-existing/--no-skip-existing', default=True)
-@click.option('--catch/--no-catch', default=True)
-@click.option('--clean-failed/--no-clean-failed', default=False)
-@click.option('--yes', '-y', is_flag=True)
+@click.option('--skip-existing/--no-skip-existing', default=True, help='Skip existing trials.')
+@click.option('--catch/--no-catch', default=True, help='Catch trial exceptions.')
+@click.option('--clean-failed/--no-clean-failed', default=False, help='Delete failed trials before running.')
+@click.option('--yes', '-y', is_flag=True, help='Delete without asking.')
 def run(dox_fn, skip_existing, catch, clean_failed, yes):
+    """Run experiments."""
     click.echo('Running {}...'.format(dox_fn))
 
     wdir = os.path.splitext(dox_fn)[0]
@@ -60,6 +61,7 @@ def run(dox_fn, skip_existing, catch, clean_failed, yes):
 @click.argument('cmd_args', nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
 def do(click_ctx, dox_fn, target, cmd, cmd_args):
+    """Execute experiment subcommands."""
     wdir = os.path.splitext(dox_fn)[0]
     os.makedirs(wdir, exist_ok=True)
 
@@ -79,10 +81,13 @@ def do(click_ctx, dox_fn, target, cmd, cmd_args):
 @cli.command()
 @click.argument('dox_fn')
 @click.argument('experiment_id', default=None, required=False)
-@click.option('--all', is_flag=True)
-@click.option('--yes', '-y', is_flag=True)
+@click.option('--all', is_flag=True, help='Delete all trials.')
+@click.option('--yes', '-y', is_flag=True, help='Delete without asking.')
 def clean(dox_fn, experiment_id, all, yes):
-    """Clean failed experiments."""
+    """Clean trials.
+
+    By default, only failed trials are deleted. Supply --all to delete all trials.
+    """
     click.echo('Cleaning results from {}...'.format(dox_fn))
 
     wdir = os.path.splitext(dox_fn)[0]
@@ -121,7 +126,7 @@ def list_trials(trials):
 @click.argument('dox_fn')
 @click.argument('experiment_id', default=None, required=False)
 def show(dox_fn, experiment_id=None):
-    """List the trials of this DOX."""
+    """List trials."""
 
     wdir = os.path.splitext(dox_fn)[0]
     with push_context(Context(wdir)) as ctx:
@@ -131,8 +136,9 @@ def show(dox_fn, experiment_id=None):
 @cli.command()
 @click.argument('dox_fn')
 @click.argument('results_fn', required=False, default=None)
-@click.option('--failed/--no-failed', default=False)
+@click.option('--failed/--no-failed', default=False, help='Include failed trials.')
 def collect(dox_fn, results_fn, failed):
+    """Collect results."""
     wdir = os.path.splitext(dox_fn)[0]
 
     if results_fn is None:
@@ -150,6 +156,7 @@ def collect(dox_fn, results_fn, failed):
 @cli.command()
 @click.argument('dox_fn')
 def update(dox_fn):
+    """Run update command."""
     wdir = os.path.splitext(dox_fn)[0]
 
     click.echo('Updating results of {}...'.format(dox_fn))

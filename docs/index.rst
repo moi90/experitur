@@ -56,4 +56,5 @@ TOC
 
 .. toctree::
     self
+    cli
     api

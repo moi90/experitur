@@ -63,12 +63,15 @@ class TrialProxy(collections.abc.MutableMapping):
         self._trial = trial
 
     def __getitem__(self, name):
+        """Get the value of a parameter."""
         return self._trial.data["parameters"][name]
 
     def __setitem__(self, name, value):
+        """Set the value of a parameter."""
         self._trial.data["parameters"][name] = value
 
     def __delitem__(self, name):
+        """Delete a parameter."""
         del self._trial.data["parameters"][name]
 
     def __iter__(self):
@@ -78,8 +81,20 @@ class TrialProxy(collections.abc.MutableMapping):
         return len(self._trial.data["parameters"])
 
     def __getattr__(self, name):
-        """
-        Magic attributes.
+        """Magic attributes.
+
+        `name` can be one of the following:
+
+        - A trial property:
+
+            - :code:`trial.id`: Trial ID
+            - :code:`trial.wdir`: Trial working directory
+
+        - An experiment (:code:`trial.<experiment_name>`):
+
+            This way you can access data of the trial of a
+            different experiment with its parameters matching the parameters
+            of the current trial.
         """
 
         # Name could be a data item (e.g. wdir, id, ...)

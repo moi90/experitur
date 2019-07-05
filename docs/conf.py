@@ -31,7 +31,8 @@ author = 'Simon-Martin Schroeder'
 # napoleon is for parsing of Google-style docstrings:
 # https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings
 extensions = ['sphinx.ext.autodoc',
-              'sphinx.ext.coverage', 'sphinx.ext.napoleon']
+              'sphinx.ext.coverage', 'sphinx.ext.napoleon',
+              'sphinxcontrib.programoutput']
 
 
 # Add any paths that contain templates here, relative to this directory.

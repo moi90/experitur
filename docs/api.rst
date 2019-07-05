@@ -1,4 +1,4 @@
-API Reference
+API reference
 =============
 
 
@@ -13,6 +13,9 @@ Trial
 
 .. autoclass:: experitur.trial.TrialProxy
     :members:
+
+    .. automethod:: experitur.trial.TrialProxy.__getitem__
+    .. automethod:: experitur.trial.TrialProxy.__getattr__
 
 
 Experiment

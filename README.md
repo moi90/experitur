@@ -239,13 +239,19 @@ For a simple example, see [examples/example.py](examples/example.py).
 
 ## Installation
 
-`experitur` is packaged on [PyPI](https://pypi.org/).
+**experitur** is packaged on [PyPI](https://pypi.org/project/experitur/).
 
 ```shell
 pip install experitur
 ```
 
 Be warned that this package is currently under heavy development and anything might change any time!
+
+To install the development version, do:
+
+```shell
+pip install -U git+https://github.com/moi90/experitur.git
+```
 
 ## Examples
 
