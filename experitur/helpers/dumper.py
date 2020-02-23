@@ -10,8 +10,6 @@ class ExperiturDumper(yaml.Dumper):
         return self.represent_data(data.tolist())
 
 
-#Emitter, Serializer, Representer, Resolver
-ExperiturDumper.add_representer(
-    np.ndarray, ExperiturDumper.ndarray_representer)
-ExperiturDumper.add_multi_representer(
-    np.number, ExperiturDumper.number_representer)
+# Emitter, Serializer, Representer, Resolver
+ExperiturDumper.add_representer(np.ndarray, ExperiturDumper.ndarray_representer)
+ExperiturDumper.add_multi_representer(np.number, ExperiturDumper.number_representer)

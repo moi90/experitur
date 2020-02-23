@@ -42,12 +42,13 @@ def _order_experiments(experiments):
 
     while experiments:
         # Get all without dependencies
-        ready = {
-            exp for exp in experiments if exp.parent is None or exp.parent in done}
+        ready = {exp for exp in experiments if exp.parent is None or exp.parent in done}
 
         if not ready:
-            raise DependencyError("Dependencies can not be satisfied:\n" +
-                                  _format_dependencies(experiments))
+            raise DependencyError(
+                "Dependencies can not be satisfied:\n"
+                + _format_dependencies(experiments)
+            )
 
         for exp in ready:
             experiments_ordered.append(exp)
@@ -60,7 +61,6 @@ def _order_experiments(experiments):
 class Context:
     # Default configuration values
     _default_config = {
-        "shuffle_trials": True,
         "skip_existing": True,
         "catch_exceptions": False,
     }
@@ -84,13 +84,13 @@ class Context:
     def _register_experiment(self, experiment):
         self.registered_experiments.append(experiment)
 
-    def experiment(self, name=None, *, parameter_grid=None, parent=None, meta=None, active=True):
+    def experiment(self, name=None, **kwargs):
         """
         Experiment constructor.
 
         Can also be used as a decorator.
         """
-        return Experiment(self, name=name, parameter_grid=parameter_grid, parent=parent, meta=meta, active=active)
+        return Experiment(self, name=name, **kwargs)
 
     def run(self, experiments=None):
         """
@@ -103,8 +103,9 @@ class Context:
         # Now run the experiments in order
         ordered_experiments = _order_experiments(experiments)
 
-        print("Running experiments:", ', '.join(
-            exp.name for exp in ordered_experiments))
+        print(
+            "Running experiments:", ", ".join(exp.name for exp in ordered_experiments)
+        )
         for exp in ordered_experiments:
             try:
                 exp.run()
@@ -123,8 +124,9 @@ class Context:
         # Update the experiments in order
         ordered_experiments = _order_experiments(experiments)
 
-        print("Updating experiments:", ', '.join(
-            exp.name for exp in ordered_experiments))
+        print(
+            "Updating experiments:", ", ".join(exp.name for exp in ordered_experiments)
+        )
         for exp in ordered_experiments:
             try:
                 exp.update()
@@ -145,6 +147,7 @@ class Context:
             data[trial_id] = _prepare_trial_data(trial.data)
 
         import pandas as pd
+
         data = pd.DataFrame.from_dict(data, orient="index")
         data.index.name = "id"
 
@@ -171,7 +174,7 @@ class Context:
             raise KeyError(name)
 
     def do(self, target, cmd, cmd_args):
-        experiment_name = target.split('/')[0]
+        experiment_name = target.split("/")[0]
 
         experiment = self.get_experiment(experiment_name)
 

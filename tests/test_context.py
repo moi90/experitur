@@ -28,6 +28,7 @@ def test__order_experiments_fail(tmp_path):
 
 def test_dependencies(tmp_path):
     with context.push_context(context.Context(str(tmp_path))) as ctx:
+
         @ctx.experiment("a")
         def a(trial):
             pass
@@ -38,12 +39,17 @@ def test_dependencies(tmp_path):
 
 
 def test_merge_config(tmp_path):
-    config = {k: not v for k, v in context.Context._default_config.items()
-              if isinstance(v, bool)}
+    config = {
+        k: not v
+        for k, v in context.Context._default_config.items()
+        if isinstance(v, bool)
+    }
 
     config["a"] = 1
     config["b"] = 2
     config["c"] = 3
 
-    with context.push_context(context.Context(str(tmp_path), config=config.copy())) as ctx:
+    with context.push_context(
+        context.Context(str(tmp_path), config=config.copy())
+    ) as ctx:
         assert all(v == ctx.config[k] for k, v in config.items())

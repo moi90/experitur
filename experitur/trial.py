@@ -1,3 +1,4 @@
+import typing as T
 import collections.abc
 import datetime
 import glob
@@ -45,8 +46,9 @@ def _match_parameters(parameters_1, parameters_2):
 
 def _format_independent_parameters(trial_parameters, independent_parameters):
     if len(independent_parameters) > 0:
-        trial_id = "_".join("{}-{!s}".format(k, trial_parameters[k])
-                            for k in independent_parameters)
+        trial_id = "_".join(
+            "{}-{!s}".format(k, trial_parameters[k]) for k in independent_parameters
+        )
         trial_id = trial_id.replace("/", "_")
     else:
         trial_id = "_"
@@ -104,15 +106,13 @@ class TrialProxy(collections.abc.MutableMapping):
             pass
 
         # Name could be a referenced experiment with matching parameters
-        trials = self._trial.store.match(
-            experiment=name, parameters=self.parameters)
+        trials = self._trial.store.match(experiment=name, parameters=self.parameters)
 
         if len(trials) == 1:
             _, trial = trials.popitem()
             return TrialProxy(trial)
         elif len(trials) > 1:
-            msg = "Multiple matching parent experiments: " + \
-                ", ".join(trials.keys())
+            msg = "Multiple matching parent experiments: " + ", ".join(trials.keys())
             raise ValueError(msg)
 
         msg = "Trial has no attribute: {}".format(name)
@@ -166,7 +166,8 @@ class TrialProxy(collections.abc.MutableMapping):
         callable_names = set(
             param.name
             for param in inspect.signature(callable_).parameters.values()
-            if param.kind in (param.POSITIONAL_OR_KEYWORD, param.KEYWORD_ONLY))
+            if param.kind in (param.POSITIONAL_OR_KEYWORD, param.KEYWORD_ONLY)
+        )
 
         start = len(prefix)
         parameters = {
@@ -183,11 +184,7 @@ class TrialProxy(collections.abc.MutableMapping):
         """
         start = len(prefix)
 
-        return {
-            k[start:]: v
-            for k, v in self.items()
-            if k.startswith(prefix)
-        }
+        return {k[start:]: v for k, v in self.items() if k.startswith(prefix)}
 
 
 class Trial:
@@ -222,7 +219,8 @@ class Trial:
                 f.write(traceback.format_exc())
 
             self.data["error"] = ": ".join(
-                filter(None, (exc.__class__.__name__, str(exc))))
+                filter(None, (exc.__class__.__name__, str(exc)))
+            )
 
             raise exc
 
@@ -256,15 +254,22 @@ class TrialStore(collections.abc.MutableMapping):
     def __exit__(self, type, value, traceback):
         pass
 
-    def match(self, callable=None, parameters=None, experiment=None):
+    def match(
+        self, callable=None, parameters=None, experiment=None
+    ) -> T.Dict[str, Trial]:
         callable = _callable_to_name(callable)
 
         result = {}
         for trial_id, trial in self.items():
-            if callable is not None and _callable_to_name(trial.data.get("callable")) != callable:
+            if (
+                callable is not None
+                and _callable_to_name(trial.data.get("callable")) != callable
+            ):
                 continue
 
-            if parameters is not None and not _match_parameters(parameters, trial.data.get("parameters", {})):
+            if parameters is not None and not _match_parameters(
+                parameters, trial.data.get("parameters", {})
+            ):
                 continue
 
             if experiment is not None and trial.data.get("experiment") != experiment:
@@ -274,9 +279,12 @@ class TrialStore(collections.abc.MutableMapping):
 
         return result
 
-    def _make_unique_trial_id(self, experiment_name, trial_parameters, independent_parameters):
+    def _make_unique_trial_id(
+        self, experiment_name, trial_parameters, independent_parameters
+    ):
         trial_id = _format_independent_parameters(
-            trial_parameters, independent_parameters)
+            trial_parameters, independent_parameters
+        )
 
         trial_id = "{}/{}".format(experiment_name, trial_id)
 
@@ -304,7 +312,9 @@ class TrialStore(collections.abc.MutableMapping):
         if new_independent_parameters:
             # If we found parameters where this trial is different from the existing one, append these to independent
             independent_parameters.extend(new_independent_parameters)
-            return self._make_unique_trial_id(experiment_name, trial_parameters, independent_parameters)
+            return self._make_unique_trial_id(
+                experiment_name, trial_parameters, independent_parameters
+            )
 
         # Otherwise, we just append a version number
         for i in itertools.count(1):
@@ -324,16 +334,17 @@ class TrialStore(collections.abc.MutableMapping):
     def create(self, parameters, experiment):
         # Calculate trial_id
         trial_id = self._make_unique_trial_id(
-            experiment.name,
-            parameters,
-            experiment.independent_parameters)
+            experiment.name, parameters, experiment.independent_parameters
+        )
 
         wdir = self._make_wdir(trial_id)
 
         trial_data = {
             "id": trial_id,
             "experiment": experiment.name,
-            "parent_experiment": experiment.parent.name if experiment.parent is not None else None,
+            "parent_experiment": experiment.parent.name
+            if experiment.parent is not None
+            else None,
             "result": None,
             "parameters": parameters,
             "callable": _callable_to_name(experiment.callable),
@@ -380,7 +391,7 @@ class FileTrialStore(TrialStore):
                 continue
 
             # Convert entry_fn back to key
-            k = entry_fn[len(left):-len(right)]
+            k = entry_fn[len(left) : -len(right)]
 
             # Keys use forward slashes
             k = k.replace("\\", "/")

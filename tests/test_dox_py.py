@@ -11,7 +11,9 @@ from experitur.dox import load_dox, DOXError
 def fixture_dox_py_fn(tmp_path):
     fn = str(tmp_path / "dox.py")
     with open(fn, "w") as f:
-        f.write(inspect.cleandoc("""
+        f.write(
+            inspect.cleandoc(
+                """
         from experitur import experiment
 
         @experiment(
@@ -29,7 +31,9 @@ def fixture_dox_py_fn(tmp_path):
             "second_experiment",
             parent=baseline
         )
-        """))
+        """
+            )
+        )
 
     return fn
 
@@ -44,8 +48,7 @@ def test_dox_py(dox_py_fn):
         # Execute experiments
         ctx.run()
 
-    assert len(ctx.store) == 2, "Trials: {}".format(
-        ", ".join(ctx.store.keys()))
+    assert len(ctx.store) == 2, "Trials: {}".format(", ".join(ctx.store.keys()))
 
 
 @pytest.fixture(name="unknown_fn")
