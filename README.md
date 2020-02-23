@@ -263,7 +263,7 @@ pip install -U git+https://github.com/moi90/experitur.git
 
 ## Compatibility
 
-`experitur` is [tested](https://travis-ci.org/moi90/experitur) with Python 3.5, 3.6 and 3.7.
+`experitur` is [tested](https://travis-ci.org/moi90/experitur) with Python 3.6, 3.7 and 3.8.
 
 ## Similar software
 
