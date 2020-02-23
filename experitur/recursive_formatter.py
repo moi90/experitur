@@ -26,8 +26,9 @@ class RecursiveFormatter(Formatter):
 
     def vformat(self, format_string, args, kwargs):
         # Recursively substitute nested format strings and references
-        format_string = PATTERN.sub(lambda x: "{" + self.vformat(x[1], args, kwargs) + "}",
-                                    format_string)
+        format_string = PATTERN.sub(
+            lambda x: "{" + self.vformat(x[1], args, kwargs) + "}", format_string
+        )
 
         # Check if this value is a literal value that should not be converted to a string
         literal = LITERAL_PATTERN.match(format_string)

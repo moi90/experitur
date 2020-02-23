@@ -56,16 +56,19 @@ def format_trial_parameters(callable=None, parameters=None, experiment=None):
         except:
             callable = str(callable)
     else:
-        callable = '_'
+        callable = "_"
 
     if parameters is not None:
-        parameters = '(' + (', '.join("{}={}".format(k, repr(v))
-                                      for k, v in parameters.items())) + ')'
+        parameters = (
+            "("
+            + (", ".join("{}={}".format(k, repr(v)) for k, v in parameters.items()))
+            + ")"
+        )
     else:
-        parameters = '()'
+        parameters = "()"
 
     if experiment is not None:
-        callable = '{}:{}'.format(str(experiment), callable)
+        callable = "{}:{}".format(str(experiment), callable)
 
     return callable + parameters
 
@@ -74,7 +77,9 @@ class Experiment:
     """An experiment.
     """
 
-    def __init__(self, ctx, name=None, parameter_grid=None, parent=None, meta=None, active=True):
+    def __init__(
+        self, ctx, name=None, parameter_grid=None, parent=None, meta=None, active=True
+    ):
         self.ctx = ctx
         self.name = name
         self.parameter_grid = {} if parameter_grid is None else parameter_grid
@@ -120,8 +125,7 @@ class Experiment:
         """
         Calculate independent parameters (parameters that are actually varied) of this experiment.
         """
-        return sorted(
-            k for k, v in self.parameter_grid.items() if len(v) > 1)
+        return sorted(k for k, v in self.parameter_grid.items() if len(v) > 1)
 
     def __str__(self):
         return self.name
@@ -135,8 +139,7 @@ class Experiment:
         """
 
         if not isinstance(self.parameter_grid, dict):
-            raise ExperimentError(
-                "parameter_grid is expected to be a dictionary.")
+            raise ExperimentError("parameter_grid is expected to be a dictionary.")
 
         errors = []
         for k, v in self.parameter_grid.items():
@@ -145,7 +148,8 @@ class Experiment:
 
         if errors:
             raise ExperimentError(
-                "Parameters {} are not lists.".format(", ".join(errors)))
+                "Parameters {} are not lists.".format(", ".join(errors))
+            )
 
     def run(self):
         """Runs this experiment.
@@ -189,8 +193,7 @@ class Experiment:
         # parameter combinations.
 
         if self._post_grid is not None:
-            parameters_per_trial = self._post_grid(
-                self.ctx, parameters_per_trial)
+            parameters_per_trial = self._post_grid(self.ctx, parameters_per_trial)
 
         pbar = tqdm.tqdm(parameters_per_trial, unit="")
         for trial_parameters in pbar:
@@ -201,11 +204,17 @@ class Experiment:
 
             # Check, if a trial with this parameter set already exists
             existing = self.ctx.store.match(
-                callable=self.callable, parameters=trial_parameters)
+                callable=self.callable, parameters=trial_parameters
+            )
 
             if self.ctx.config["skip_existing"] and len(existing):
-                pbar.write("Skip existing configuration: {}".format(format_trial_parameters(
-                    callable=self.callable, parameters=trial_parameters)))
+                pbar.write(
+                    "Skip existing configuration: {}".format(
+                        format_trial_parameters(
+                            callable=self.callable, parameters=trial_parameters
+                        )
+                    )
+                )
                 pbar.set_description("[Skipped]")
                 continue
 
@@ -329,7 +338,8 @@ class Experiment:
 
         if target not in ("trial", "experiment"):
             msg = "target has to be one of 'trial', 'experiment', not {}.".format(
-                target)
+                target
+            )
             raise ValueError(msg)
 
         def _decorator(f):
@@ -338,6 +348,7 @@ class Experiment:
             self._commands[_name] = (f, target)
 
             return f
+
         return _decorator
 
     def do(self, cmd_name, target_name, cmd_args):
@@ -360,8 +371,7 @@ class Experiment:
             except AttributeError:
                 pass
 
-            cmd = click.command(
-                name=cmd_name)(cmd_wrapped)
+            cmd = click.command(name=cmd_name)(cmd_wrapped)
             cmd.main(args=cmd_args, standalone_mode=False)
         else:
             msg = "target={} is not implemented.".format(target)
