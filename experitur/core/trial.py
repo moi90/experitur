@@ -1,5 +1,5 @@
-import typing as T
 import collections.abc
+import copy
 import datetime
 import glob
 import inspect
@@ -7,12 +7,16 @@ import itertools
 import os.path
 import shutil
 import traceback
+import typing as T
 import warnings
 from abc import abstractmethod
 
 import yaml
 
+import experitur.core.experiment as _experiment
 from experitur.helpers.dumper import ExperiturDumper
+from experitur.helpers.merge_dicts import merge_dicts
+from experitur.recursive_formatter import RecursiveDict
 
 
 def _callable_to_name(obj):
@@ -66,21 +70,21 @@ class TrialProxy(collections.abc.MutableMapping):
 
     def __getitem__(self, name):
         """Get the value of a parameter."""
-        return self._trial.data["parameters"][name]
+        return self._trial.data["resolved_parameters"][name]
 
     def __setitem__(self, name, value):
         """Set the value of a parameter."""
-        self._trial.data["parameters"][name] = value
+        self._trial.data["resolved_parameters"][name] = value
 
     def __delitem__(self, name):
         """Delete a parameter."""
-        del self._trial.data["parameters"][name]
+        del self._trial.data["resolved_parameters"][name]
 
     def __iter__(self):
-        return iter(self._trial.data["parameters"])
+        return iter(self._trial.data["resolved_parameters"])
 
     def __len__(self):
-        return len(self._trial.data["parameters"])
+        return len(self._trial.data["resolved_parameters"])
 
     def __getattr__(self, name):
         """Magic attributes.
@@ -187,8 +191,16 @@ class TrialProxy(collections.abc.MutableMapping):
         return {k[start:]: v for k, v in self.items() if k.startswith(prefix)}
 
 
-class Trial:
+class Trial(collections.abc.MutableMapping):
     """
+    Trial.
+
+    Life-cycle of a Trial instance
+    ------------------------------
+
+    1. Created by sampler
+    2. Assigned an ID by TODO
+
     Arguments
         store: TrialStore
         callable (optional): Experiment callable
@@ -199,6 +211,22 @@ class Trial:
         self.store = store
         self.callable = callable
         self.data = data or {}
+
+    def merge(self, **kwargs):
+        """Create a new instance with provided values merged into data."""
+
+        new = copy.copy(self)
+        new.data = copy.deepcopy(self.data)
+
+        for name, value in kwargs.items():
+            if isinstance(
+                new.data[name], collections.abc.MutableMapping
+            ) and isinstance(value, collections.abc.Mapping):
+                new.data[name].update(value)
+            else:
+                new.data[name] = value
+
+        return new
 
     def run(self):
         """
@@ -239,9 +267,34 @@ class Trial:
     def id(self):
         return self.data["id"]
 
+    @id.setter
+    def id(self, id):
+        self.data["id"] = id
+
     @property
     def is_failed(self):
         return not self.data.get("success", False)
+
+    # This class provides concrete generic implementations of all
+    # methods except for __getitem__, __setitem__, __delitem__,
+    # __iter__, and __len__.
+    def __getitem__(self, name):
+        return self.data[name]
+
+    def __setitem__(self, name, value):
+        self.data[name] = value
+
+    def __delitem__(self, name):
+        del self.data[name]
+
+    def __iter__(self):
+        return iter(self.data)
+
+    def __len__(self):
+        return len(self.data)
+
+    def items(self):
+        return self.data.items()
 
 
 class TrialStore(collections.abc.MutableMapping):
@@ -255,9 +308,12 @@ class TrialStore(collections.abc.MutableMapping):
         pass
 
     def match(
-        self, callable=None, parameters=None, experiment=None
+        self, callable=None, parameters=None, experiment=None, resolved_parameters=None
     ) -> T.Dict[str, Trial]:
         callable = _callable_to_name(callable)
+
+        if isinstance(experiment, _experiment.Experiment):
+            experiment = experiment.name
 
         result = {}
         for trial_id, trial in self.items():
@@ -272,7 +328,14 @@ class TrialStore(collections.abc.MutableMapping):
             ):
                 continue
 
-            if experiment is not None and trial.data.get("experiment") != experiment:
+            if resolved_parameters is not None and not _match_parameters(
+                resolved_parameters, trial.data.get("resolved_parameters", {})
+            ):
+                continue
+
+            if experiment is not None and trial.data.get("experiment") != str(
+                experiment
+            ):
                 continue
 
             result[trial_id] = trial
@@ -331,28 +394,36 @@ class TrialStore(collections.abc.MutableMapping):
         os.makedirs(wdir, exist_ok=True)
         return wdir
 
-    def create(self, parameters, experiment):
+    def create(self, trial_configuration, experiment):
+        trial_configuration.setdefault("parameters", {})
+
         # Calculate trial_id
         trial_id = self._make_unique_trial_id(
-            experiment.name, parameters, experiment.independent_parameters
+            experiment.name,
+            trial_configuration["parameters"],
+            experiment.independent_parameters,
         )
 
         wdir = self._make_wdir(trial_id)
 
-        trial_data = {
-            "id": trial_id,
-            "experiment": experiment.name,
-            "parent_experiment": experiment.parent.name
+        # TODO: Structured experiment meta-data
+        trial_configuration = merge_dicts(
+            trial_configuration,
+            id=trial_id,
+            resolved_parameters=RecursiveDict(
+                trial_configuration["parameters"], allow_missing=True
+            ).as_dict(),
+            experiment=experiment.name,
+            parent_experiment=experiment.parent.name
             if experiment.parent is not None
             else None,
-            "result": None,
-            "parameters": parameters,
-            "callable": _callable_to_name(experiment.callable),
-            "wdir": wdir,
-            "experiment_meta": experiment.meta,
-        }
+            result=None,
+            callable=_callable_to_name(experiment.callable),
+            wdir=wdir,
+            experiment_meta=experiment.meta,
+        )
 
-        trial = Trial(self, callable=experiment.callable, data=trial_data)
+        trial = Trial(self, callable=experiment.callable, data=trial_configuration)
 
         self[trial_id] = trial
 

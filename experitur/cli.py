@@ -3,9 +3,13 @@ import os
 import click
 
 from experitur import __version__
-from experitur.context import Context, push_context
+from experitur.core.context import Context, push_context
 from experitur.dox import load_dox
-from experitur.experiment import CommandNotFoundError, Experiment, TrialNotFoundError
+from experitur.core.experiment import (
+    CommandNotFoundError,
+    Experiment,
+    TrialNotFoundError,
+)
 
 
 @click.group()
@@ -91,9 +95,10 @@ def do(click_ctx, dox_fn, target, cmd, cmd_args):
 @click.option("--all", is_flag=True, help="Delete all trials.")
 @click.option("--yes", "-y", is_flag=True, help="Delete without asking.")
 def clean(dox_fn, experiment_id, all, yes):
-    """Clean trials.
+    """
+    Clean trials.
 
-    By default, only failed trials are deleted. Supply --all to delete all trials.
+    By default, only failed trials are deleted. Use --all to delete all trials.
     """
     click.echo("Cleaning results from {}...".format(dox_fn))
 
@@ -110,6 +115,8 @@ def clean(dox_fn, experiment_id, all, yes):
 
         if not n_selected:
             click.echo("No matching trials.")
+            if not all:
+                click.echo("Use --all to delete all trials.")
             return
 
         click.echo("The following {} trials will be deleted:".format(n_selected))

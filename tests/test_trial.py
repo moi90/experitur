@@ -4,9 +4,9 @@ import os.path
 
 import pytest
 
-from experitur.context import Context, push_context
-from experitur.experiment import Experiment
-from experitur.trial import (
+from experitur.core.context import Context, push_context
+from experitur.core.experiment import Experiment
+from experitur.core.trial import (
     FileTrialStore,
     Trial,
     _callable_to_name,
@@ -54,15 +54,13 @@ def test_trial_store(tmp_path):
 
             experiment2 = ctx.experiment("test2", parent=experiment)(test2)
 
-            parameters = {"a": 1, "b": 2}
-
             trial_store["foo"] = Trial(trial_store, data={1: "foo", "bar": 2})
             assert trial_store["foo"].data == {1: "foo", "bar": 2}
 
             trial_store["bar/baz"] = Trial(trial_store, data={1: "foo", "bar": 2})
             assert trial_store["bar/baz"].data == {1: "foo", "bar": 2}
 
-            trial = trial_store.create(parameters, experiment)
+            trial = trial_store.create({"parameters": {"a": 1, "b": 2}}, experiment)
 
             fake_folder = os.path.join(ctx.wdir, trial_store.PATTERN.format("fake"))
 
@@ -80,9 +78,9 @@ def test_trial_store(tmp_path):
             with pytest.raises(KeyError):
                 del trial_store["foo"]
 
-            trial_store.create({"a": 2, "b": 3}, experiment)
-            trial_store.create({"a": 3, "b": 4}, experiment)
-            trial_store.create({"a": 3, "b": 4}, experiment2)
+            trial_store.create({"parameters": {"a": 2, "b": 3}}, experiment)
+            trial_store.create({"parameters": {"a": 3, "b": 4}}, experiment)
+            trial_store.create({"parameters": {"a": 3, "b": 4}}, experiment2)
 
             assert set(trial_store.match(callable=test).keys()) == {
                 "test/a-1_b-2",
@@ -105,12 +103,12 @@ def test_trial_store(tmp_path):
 
             assert trial_store["test/a-1_b-2"].data["result"] == {"result": (1, 2)}
 
-            trial_store.create({"a": 1, "b": 2, "c": 1}, experiment)
+            trial_store.create({"parameters": {"a": 1, "b": 2, "c": 1}}, experiment)
 
             experiment.sampler.parameter_grid["c"] = [1, 2, 3]
 
-            trial_store.create({"a": 1, "b": 2, "c": 2}, experiment)
-            trial_store.create({"a": 1, "b": 2, "c": 2}, experiment)
+            trial_store.create({"parameters": {"a": 1, "b": 2, "c": 2}}, experiment)
+            trial_store.create({"parameters": {"a": 1, "b": 2, "c": 2}}, experiment)
 
 
 def test_trial(tmp_path):
@@ -131,11 +129,11 @@ def test_trial(tmp_path):
         def experiment2(trial):
             return trial.experiment1["a"]
 
-        trial = ctx.store.create({"a": 1, "b": 2}, experiment1)
+        trial = ctx.store.create({"parameters": {"a": 1, "b": 2}}, experiment1)
         result = trial.run()
         assert result == (1, 2, 3, 5)
 
-        trial2 = ctx.store.create({"a": 1, "b": 2}, experiment2)
+        trial2 = ctx.store.create({"parameters": {"a": 1, "b": 2}}, experiment2)
         result = trial2.run()
         assert result == 1
 

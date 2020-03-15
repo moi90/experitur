@@ -5,7 +5,7 @@ API reference
 .. automodule:: experitur
     :members:
 
-.. automodule:: experitur.context
+.. automodule:: experitur.core.context
     :members:
 
 Trial
