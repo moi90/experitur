@@ -9,3 +9,7 @@ def test_merge_dicts():
     result = merge_dicts(a, b)
 
     assert result == {"a": 1, "b": {"c": 7, "d": 3}, "e": 4, "f": 8}
+
+    assert result is not a
+
+    merge_dicts(a, b=None)
