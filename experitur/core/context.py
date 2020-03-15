@@ -2,9 +2,8 @@ import collections
 import os.path
 from contextlib import contextmanager
 
-from experitur import trial
 from experitur.errors import ExperiturError
-from experitur.experiment import Experiment, StopExecution
+import experitur.core.experiment as _experiment
 
 
 class ContextError(ExperiturError):
@@ -73,7 +72,10 @@ class Context:
         else:
             self.wdir = wdir
 
-        self.store = trial.FileTrialStore(self)
+        # Import here to break dependency cycle
+        import experitur.core.trial as _trial
+
+        self.store = _trial.FileTrialStore(self)
 
         # Configuration
         if config is None:
@@ -90,7 +92,7 @@ class Context:
 
         Can also be used as a decorator.
         """
-        return Experiment(self, name=name, **kwargs)
+        return _experiment.Experiment(self, name=name, **kwargs)
 
     def run(self, experiments=None):
         """
@@ -107,11 +109,7 @@ class Context:
             "Running experiments:", ", ".join(exp.name for exp in ordered_experiments)
         )
         for exp in ordered_experiments:
-            try:
-                exp.run()
-            except Exception:
-                if not self.config["catch_exceptions"]:
-                    raise
+            exp.run()
 
     def update(self, experiments=None):
         """
@@ -156,7 +154,8 @@ class Context:
         data.to_csv(results_fn)
 
     def get_experiment(self, name):
-        """Get an experiment by its name.
+        """
+        Get an experiment by its name.
 
         Args:
             name: Experiment name.
@@ -171,7 +170,7 @@ class Context:
             return [e for e in self.registered_experiments if e.name == name][0]
         except IndexError:
             print(self.registered_experiments)
-            raise KeyError(name)
+            raise KeyError(name) from None
 
     def do(self, target, cmd, cmd_args):
         experiment_name = target.split("/")[0]
@@ -213,7 +212,7 @@ def experiment(*args, **kwargs):
     Args:
         name (:obj:`str`, optional): Name of the experiment (Default: None).
         parameter_grid (:obj:`dict`, optional): Parameter grid (Default: None).
-        parent (:obj:`experitur.experiment.Experiment`, optional): Parent experiment (Default: None).
+        parent (:obj:`experitur.core.experiment.Experiment`, optional): Parent experiment (Default: None).
         meta (:obj:`dict`, optional): Dict with experiment metadata that should be recorded.
         active (:obj:`bool`, optional): Is the experiment active? (Default: True).
             When False, the experiment will not be executed.

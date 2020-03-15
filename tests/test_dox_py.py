@@ -3,7 +3,7 @@ import os
 
 import pytest
 
-from experitur.context import Context, push_context
+from experitur.core.context import Context, push_context
 from experitur.dox import load_dox, DOXError
 
 
@@ -14,24 +14,24 @@ def fixture_dox_py_fn(tmp_path):
         f.write(
             inspect.cleandoc(
                 """
-        from experitur import experiment
+                from experitur import experiment
 
-        @experiment(
-            parameter_grid={
-                "a1": [1],
-                "a2": [2],
-                "b": [1, 2],
-                "a": ["{a_{b}}"],
-            })
-        def baseline(trial):
-            return trial.parameters
+                @experiment(
+                    parameter_grid={
+                        "a1": [1],
+                        "a2": [2],
+                        "b": [1, 2],
+                        "a": ["{a_{b}}"],
+                    })
+                def baseline(trial):
+                    return trial.parameters
 
-        # This experiment shouldn't be executed, because this combination of callable and parameters was already executed.
-        experiment(
-            "second_experiment",
-            parent=baseline
-        )
-        """
+                # This experiment shouldn't be executed, because this combination of callable and parameters was already executed.
+                experiment(
+                    "second_experiment",
+                    parent=baseline
+                )
+                """
             )
         )
 

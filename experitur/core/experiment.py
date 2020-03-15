@@ -1,4 +1,3 @@
-from experitur.samplers import GridSampler, MultiSampler
 import collections
 import copy
 import functools
@@ -8,17 +7,17 @@ import random
 import sys
 import textwrap
 import traceback
-
 from typing import List, Union
 
 import click
 import tqdm
 
+import experitur.core.samplers as _samplers
+import experitur.core.trial as _trial
 from experitur.errors import ExperiturError
 from experitur.helpers import tqdm_redirect
+from experitur.helpers.merge_dicts import merge_dicts
 from experitur.recursive_formatter import RecursiveDict
-from experitur.samplers import Sampler
-from experitur.trial import TrialProxy
 
 _callable = callable
 
@@ -71,7 +70,7 @@ class Experiment:
         self,
         ctx,
         name=None,
-        sampler: Union[List[Sampler], Sampler] = None,
+        sampler: Union[List[_samplers.Sampler], _samplers.Sampler] = None,
         parameter_grid=None,
         parent=None,
         meta=None,
@@ -87,14 +86,25 @@ class Experiment:
         if parameter_grid is not None:
             if sampler is not None:
                 raise ValueError("parameter_grid and samplers are mutually exclusive")
-            sampler = GridSampler(parameter_grid)
+            sampler = _samplers.GridSampler(parameter_grid)
 
-        if isinstance(sampler, list):
-            sampler = MultiSampler(sampler)
-        elif sampler is None:
-            sampler = GridSampler({})
+        # Concatenate samplers
+        if parent is not None:
+            if isinstance(parent.sampler, _samplers.MultiSampler):
+                tmp_sampler = copy.copy(parent.sampler)
+            else:
+                tmp_sampler = _samplers.MultiSampler([self.parent.sampler])
 
-        self.sampler = sampler
+            if isinstance(sampler, list):
+                tmp_sampler.addMulti(sampler)
+            elif sampler is not None:
+                tmp_sampler.add(sampler)
+
+            self.sampler = tmp_sampler
+        else:
+            if sampler is None:
+                sampler = _samplers.GridSampler({})
+            self.sampler = sampler
 
         self._pre_trial = None
         self._update = None
@@ -102,7 +112,7 @@ class Experiment:
 
         self.callable = None
 
-        # Merge parameters from parents
+        # Merge parameters from all ancestors
         parent = self.parent
         while parent:
             self._merge(parent)
@@ -130,16 +140,19 @@ class Experiment:
     @property
     def independent_parameters(self):
         """Independent parameters (parameters that are actually varied) of this experiment."""
-        return sorted(self.sampler.parameters.keys())
+        return sorted(self.sampler.varying_parameters.keys())
 
     def __str__(self):
-        return self.name
+        if self.name is not None:
+            return self.name
+        return repr(self)
 
     def __repr__(self):  # pragma: no cover
         return "Experiment(name={})".format(self.name)
 
     def run(self):
-        """Runs this experiment.
+        """
+        Run this experiment.
 
         Create trials for every combination in the parameter grid and run them.
         """
@@ -157,39 +170,37 @@ class Experiment:
         print("Experiment", self)
 
         print("Independent parameters:")
-        for k, v in self.sampler.parameters.items():
+        for k, v in self.sampler.varying_parameters.items():
             print("{}: {}".format(k, v))
 
-        # Generate parameter configurations
-        parameter_configurations = self.sampler.sample(self.ctx.store)
+        # Generate trial configurations
+        trial_configurations = self.sampler.sample(self)
 
-        pbar = tqdm.tqdm(parameter_configurations, unit="")
+        pbar = tqdm.tqdm(trial_configurations, unit="")
         for trial_configuration in pbar:
             # Perform parameter substitution
-            trial_configuration = RecursiveDict(
-                trial_configuration, allow_missing=True
-            ).as_dict()
 
             # Run the pre-trial hook to allow the user to interact
             # with the parameters before the trial is created and run.
             if self._pre_trial is not None:
                 self._pre_trial(self.ctx, trial_configuration)
 
-            # Check, if a trial with this parameter set already exists
-            existing = self.ctx.store.match(
-                callable=self.callable, parameters=trial_configuration
-            )
-
-            if self.ctx.config["skip_existing"] and len(existing):
-                pbar.write(
-                    "Skip existing configuration: {}".format(
-                        format_trial_parameters(
-                            callable=self.callable, parameters=trial_configuration
+            if self.ctx.config["skip_existing"]:
+                # Check, if a trial with this parameter set already exists
+                existing = self.ctx.store.match(
+                    callable=self.callable,
+                    parameters=trial_configuration["parameters"],
+                )
+                if len(existing):
+                    pbar.write(
+                        "Skip existing configuration: {}".format(
+                            format_trial_parameters(
+                                callable=self.callable, parameters=trial_configuration
+                            )
                         )
                     )
-                )
-                pbar.set_description("[Skipped]")
-                continue
+                    pbar.set_description("[Skipped]")
+                    continue
 
             trial = self.ctx.store.create(trial_configuration, self)
 
@@ -212,10 +223,9 @@ class Experiment:
     def _merge(self, other):
         """
         Merge configuration of other into self.
-        """
 
-        # Shallow-copy sampler
-        self.sampler = other.sampler
+        `other` is usually the parent experiment.
+        """
 
         # Copy attributes: callable, ...
         for name in ("callable", "meta"):
@@ -223,7 +233,7 @@ class Experiment:
             theirs = getattr(other, name)
 
             if ours is None and theirs is not None:
-                # Deep-copy regular attributes
+                # Shallow-copy regular attributes
                 setattr(self, name, copy.copy(theirs))
             elif isinstance(ours, dict) and isinstance(theirs, dict):
                 # Merge dict attributes
@@ -266,7 +276,7 @@ class Experiment:
         pbar = tqdm.tqdm(trials.items(), unit="")
 
         for trial_id, trial in pbar:
-            self._update(TrialProxy(trial))
+            self._update(_trial.TrialProxy(trial))
             trial.save()
 
     def command(self, name=None, *, target="trial"):
@@ -312,7 +322,18 @@ class Experiment:
                 raise TrialNotFoundError(target_name) from exc
 
             # Inject the TrialProxy
-            cmd_wrapped = functools.partial(cmd, TrialProxy(trial))
+            cmd_wrapped = functools.partial(cmd, _trial.TrialProxy(trial))
+            # Copy over __click_params__ if they exist
+            try:
+                cmd_wrapped.__click_params__ = cmd.__click_params__
+            except AttributeError:
+                pass
+
+            cmd = click.command(name=cmd_name)(cmd_wrapped)
+            cmd.main(args=cmd_args, standalone_mode=False)
+        elif target == "experiment":
+            # Inject self
+            cmd_wrapped = functools.partial(cmd, self)
             # Copy over __click_params__ if they exist
             try:
                 cmd_wrapped.__click_params__ = cmd.__click_params__
