@@ -7,17 +7,19 @@ import random
 import sys
 import textwrap
 import traceback
-from typing import List, Union
+from typing import TYPE_CHECKING, List, Union
 
 import click
 import tqdm
 
 import experitur.core.samplers as _samplers
-import experitur.core.trial as _trial
 from experitur.errors import ExperiturError
 from experitur.helpers import tqdm_redirect
 from experitur.helpers.merge_dicts import merge_dicts
 from experitur.recursive_formatter import RecursiveDict
+
+if TYPE_CHECKING:
+    from experitur.core.context import Context
 
 _callable = callable
 
@@ -63,12 +65,11 @@ def format_trial_parameters(callable=None, parameters=None, experiment=None):
 
 
 class Experiment:
-    """An experiment.
-    """
+    """An experiment."""
 
     def __init__(
         self,
-        ctx,
+        ctx: "Context",
         name=None,
         sampler: Union[List[_samplers.Sampler], _samplers.Sampler] = None,
         parameter_grid=None,
@@ -264,21 +265,6 @@ class Experiment:
 
         self._pre_trial = callable
 
-    def set_update(self, callable):
-        self._update = callable
-
-    def update(self):
-        if self._update is None:
-            return
-
-        trials = self.ctx.store.match(experiment=self.name)
-
-        pbar = tqdm.tqdm(trials.items(), unit="")
-
-        for trial_id, trial in pbar:
-            self._update(_trial.TrialProxy(trial))
-            trial.save()
-
     def command(self, name=None, *, target="trial"):
         """Attach a command to an experiment.
 
@@ -321,8 +307,10 @@ class Experiment:
             except KeyError as exc:
                 raise TrialNotFoundError(target_name) from exc
 
+            from experitur.core.trial import TrialProxy
+
             # Inject the TrialProxy
-            cmd_wrapped = functools.partial(cmd, _trial.TrialProxy(trial))
+            cmd_wrapped = functools.partial(cmd, TrialProxy(trial))
             # Copy over __click_params__ if they exist
             try:
                 cmd_wrapped.__click_params__ = cmd.__click_params__

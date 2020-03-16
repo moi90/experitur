@@ -1,30 +1,24 @@
-from itertools import product
-from typing import Optional, Mapping
-from sklearn.model_selection import ParameterGrid, ParameterSampler
 import random
 from abc import ABC, abstractmethod, abstractproperty
-from typing import Dict, List, Generator
+from collections.abc import MutableMapping
+from itertools import product
+from typing import TYPE_CHECKING, Dict, Generator, List, Mapping, Optional
+
+from sklearn.model_selection import ParameterGrid, ParameterSampler
 
 from experitur.core import trial as _trial
-from collections.abc import MutableMapping
-
 from experitur.helpers.merge_dicts import merge_dicts
 
-from typing import TYPE_CHECKING
-
 if TYPE_CHECKING:
-    import experitur.core.experiment as _experiment
+    from experitur.core.experiment import Experiment
 
 
 class SamplerIter(ABC):
     def __init__(
-        self,
-        sampler: "Sampler",
-        experiment: "_experiment.Experiment",
-        parent: "SamplerIter",
+        self, sampler: "Sampler", experiment: "Experiment", parent: "SamplerIter",
     ):
         self.sampler = sampler
-        self.experiment: "_experiment.Experiment" = experiment
+        self.experiment: "Experiment" = experiment
         self.parent = parent
         self.ignored_parameter_names = set()
 
@@ -56,9 +50,7 @@ class Sampler(ABC):
     _iterator: SamplerIter
     _str_attr: List[str] = []
 
-    def sample(
-        self, experiment: "experiment.Experiment", parent: Optional[SamplerIter] = None
-    ):
+    def sample(self, experiment: "Experiment", parent: Optional[SamplerIter] = None):
         """
         Return a SamplerIter to sample parameter configurations.
 

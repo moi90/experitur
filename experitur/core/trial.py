@@ -13,7 +13,6 @@ from abc import abstractmethod
 
 import yaml
 
-import experitur.core.experiment as _experiment
 from experitur.helpers.dumper import ExperiturDumper
 from experitur.helpers.merge_dicts import merge_dicts
 from experitur.recursive_formatter import RecursiveDict
@@ -312,7 +311,9 @@ class TrialStore(collections.abc.MutableMapping):
     ) -> T.Dict[str, Trial]:
         callable = _callable_to_name(callable)
 
-        if isinstance(experiment, _experiment.Experiment):
+        from experitur.core.experiment import Experiment
+
+        if isinstance(experiment, Experiment):
             experiment = experiment.name
 
         result = {}

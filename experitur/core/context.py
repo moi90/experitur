@@ -1,9 +1,12 @@
 import collections
 import os.path
 from contextlib import contextmanager
+from typing import TYPE_CHECKING
 
 from experitur.errors import ExperiturError
-import experitur.core.experiment as _experiment
+
+if TYPE_CHECKING:
+    from experitur.core.experiment import Experiment
 
 
 class ContextError(ExperiturError):
@@ -73,9 +76,9 @@ class Context:
             self.wdir = wdir
 
         # Import here to break dependency cycle
-        import experitur.core.trial as _trial
+        from experitur.core.trial import FileTrialStore
 
-        self.store = _trial.FileTrialStore(self)
+        self.store = FileTrialStore(self)
 
         # Configuration
         if config is None:
@@ -86,13 +89,17 @@ class Context:
     def _register_experiment(self, experiment):
         self.registered_experiments.append(experiment)
 
-    def experiment(self, name=None, **kwargs):
+    def experiment(self, name=None, **kwargs) -> "Experiment":
         """
         Experiment constructor.
 
         Can also be used as a decorator.
         """
-        return _experiment.Experiment(self, name=name, **kwargs)
+
+        # Import just here to avoid circular dependency
+        from experitur.core.experiment import Experiment
+
+        return Experiment(self, name=name, **kwargs)
 
     def run(self, experiments=None):
         """
@@ -110,27 +117,6 @@ class Context:
         )
         for exp in ordered_experiments:
             exp.run()
-
-    def update(self, experiments=None):
-        """
-        Update the specified experiments or all.
-        """
-
-        if experiments is None:
-            experiments = self.registered_experiments
-
-        # Update the experiments in order
-        ordered_experiments = _order_experiments(experiments)
-
-        print(
-            "Updating experiments:", ", ".join(exp.name for exp in ordered_experiments)
-        )
-        for exp in ordered_experiments:
-            try:
-                exp.update()
-            except Exception:
-                if not self.config["catch_exceptions"]:
-                    raise
 
     def collect(self, results_fn, failed=False):
         """
@@ -153,7 +139,7 @@ class Context:
 
         data.to_csv(results_fn)
 
-    def get_experiment(self, name):
+    def get_experiment(self, name) -> "Experiment":
         """
         Get an experiment by its name.
 
@@ -206,19 +192,19 @@ def _prepare_trial_data(trial_data):
 default_context = Context()
 
 
-def experiment(*args, **kwargs):
+def experiment(*args, **kwargs) -> "Experiment":
     """Create an experiment.
 
     Args:
-        name (:obj:`str`, optional): Name of the experiment (Default: None).
-        parameter_grid (:obj:`dict`, optional): Parameter grid (Default: None).
-        parent (:obj:`experitur.core.experiment.Experiment`, optional): Parent experiment (Default: None).
-        meta (:obj:`dict`, optional): Dict with experiment metadata that should be recorded.
-        active (:obj:`bool`, optional): Is the experiment active? (Default: True).
+        name (:py:class:`str`, optional): Name of the experiment (Default: None).
+        parameter_grid (:py:class:`dict`, optional): Parameter grid (Default: None).
+        parent (:py:class:`~experitur.core.experiment.Experiment`, optional): Parent experiment (Default: None).
+        meta (:py:class:`dict`, optional): Dict with experiment metadata that should be recorded.
+        active (:py:class:`bool`, optional): Is the experiment active? (Default: True).
             When False, the experiment will not be executed.
 
     Returns:
-        A :class:`.Experiment` instance.
+        A :py:class:`~experitur.core.experiment.Experiment` instance.
 
     This can be used as a constructor or a decorator:
 

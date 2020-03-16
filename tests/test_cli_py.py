@@ -3,7 +3,7 @@ import os.path
 
 from click.testing import CliRunner
 
-from experitur.cli import collect, run, update, do, clean
+from experitur.cli import collect, run, do, clean
 
 example_py = inspect.cleandoc(
     """
@@ -23,10 +23,6 @@ example_py = inspect.cleandoc(
     def e1(trial):
         pass
 
-    @e1.set_update
-    def e1_update(trial):
-        pass
-    
     @experiment()
     def e2(trial):
         raise NotImplementedError()
@@ -64,9 +60,6 @@ def test_run():
         with open("example.csv") as f:
             print(f.read())
 
-        result = runner.invoke(update, ["example.py"], catch_exceptions=False)
-        assert result.exit_code == 0
-
         result = runner.invoke(clean, ["example.py"], catch_exceptions=False)
         assert result.exit_code == 0
 
@@ -77,7 +70,7 @@ def test_do():
         with open("example.py", "w") as f:
             f.write(example_py)
 
-        result = runner.invoke(run, ["example.py"])
+        result = runner.invoke(run, ["example.py"], catch_exceptions=False)
         assert result.exit_code == 0
 
         result = runner.invoke(do, ["example.py", "cmd", "e3/_"])
