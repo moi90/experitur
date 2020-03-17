@@ -12,3 +12,5 @@ examples/.bash_history
 experiments/*.csv
 experitur/examples/*/
 travis.log
+pip-wheel-metadata/*
+.mypy_cache/
