@@ -1,30 +1,23 @@
 import pytest
 
-from experitur.core.context import (
-    push_context,
-    default_context,
-    Context,
-    DependencyError,
-)
+from experitur.core.context import Context, DependencyError, get_current_context
+from experitur.core.experiment import Experiment
 
 
-def test_push_context():
-    """
-    Make sure that the push_context context manager works in the expected way.
-    """
-    orig_ctx = default_context
+def test_Context_enter():
+    """Make sure that the Context context manager works in the expected way."""
+    with Context() as outer_ctx:
+        with Context() as inner_ctx:
+            assert get_current_context() == inner_ctx
 
-    with push_context() as new_ctx:
-        assert new_ctx != orig_ctx
-
-    assert default_context == orig_ctx
+        assert get_current_context() == outer_ctx
 
 
 def test__order_experiments_fail(tmp_path):
-    with push_context(Context(str(tmp_path))) as ctx:
+    with Context(str(tmp_path)) as ctx:
         # Create a dependency circle
-        a = ctx.experiment("a")
-        b = ctx.experiment("b", parent=a)
+        a = Experiment("a")
+        b = Experiment("b", parent=a)
         a.parent = b
 
         with pytest.raises(DependencyError):
@@ -32,13 +25,13 @@ def test__order_experiments_fail(tmp_path):
 
 
 def test_dependencies(tmp_path):
-    with push_context(Context(str(tmp_path))) as ctx:
+    with Context(str(tmp_path)) as ctx:
 
-        @ctx.experiment("a")
+        @Experiment("a")
         def a(trial):
             pass
 
-        b = ctx.experiment("b", parent=a)
+        b = Experiment("b", parent=a)
 
         ctx.run([b])
 
@@ -52,5 +45,5 @@ def test_merge_config(tmp_path):
     config["b"] = 2
     config["c"] = 3
 
-    with push_context(Context(str(tmp_path), config=config.copy())) as ctx:
+    with Context(str(tmp_path), config=config.copy()) as ctx:
         assert all(v == ctx.config[k] for k, v in config.items())

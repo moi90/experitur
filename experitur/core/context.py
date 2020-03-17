@@ -1,7 +1,7 @@
 import collections
 import os.path
 from contextlib import contextmanager
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Generator, List
 
 from experitur.errors import ExperiturError
 
@@ -89,18 +89,6 @@ class Context:
     def _register_experiment(self, experiment):
         self.registered_experiments.append(experiment)
 
-    def experiment(self, name=None, **kwargs) -> "Experiment":
-        """
-        Experiment constructor.
-
-        Can also be used as a decorator.
-        """
-
-        # Import just here to avoid circular dependency
-        from experitur.core.experiment import Experiment
-
-        return Experiment(self, name=name, **kwargs)
-
     def run(self, experiments=None):
         """
         Run the specified experiments or all.
@@ -165,6 +153,18 @@ class Context:
 
         return experiment.do(cmd, target, cmd_args)
 
+    def __enter__(self):
+        # Push self to context stack
+        _context_stack.append(self)
+
+        return self
+
+    def __exit__(self, *_):
+        # Pop self from context stack
+        item = _context_stack.pop()
+
+        assert item is self
+
 
 def _prepare_trial_data(trial_data):
     result = {}
@@ -188,64 +188,8 @@ def _prepare_trial_data(trial_data):
     return result
 
 
-# Expose default context methods
-default_context = Context()
+_context_stack: List[Context] = []
 
 
-def experiment(*args, **kwargs) -> "Experiment":
-    """Create an experiment.
-
-    Args:
-        name (:py:class:`str`, optional): Name of the experiment (Default: None).
-        parameter_grid (:py:class:`dict`, optional): Parameter grid (Default: None).
-        parent (:py:class:`~experitur.core.experiment.Experiment`, optional): Parent experiment (Default: None).
-        meta (:py:class:`dict`, optional): Dict with experiment metadata that should be recorded.
-        active (:py:class:`bool`, optional): Is the experiment active? (Default: True).
-            When False, the experiment will not be executed.
-
-    Returns:
-        A :py:class:`~experitur.core.experiment.Experiment` instance.
-
-    This can be used as a constructor or a decorator:
-
-    .. code-block:: python
-
-        exp1 = experiment("exp1", ...)
-
-        @experiment(...)
-        def exp2(trial):
-            # Here, the name is automatically inferred.
-            ...
-
-    When the experiment is run, `trial` will be a :class:`.TrialProxy` instance.
-    As such, it has the following characteristics:
-
-    - :obj:`dict`-like interface (`trial[<name>]`): Get the value of the parameter named `name`.
-    - Attribute interface (`trial.<attr>`): Get meta-data for this trial.
-    - :py:meth:`.TrialProxy.apply`: Run a callable and automatically assign parameters.
-
-    See :class:`.TrialProxy` for more details.
-    """
-    return default_context.experiment(*args, **kwargs)
-
-
-def run(*args, **kwargs):
-    return default_context.run(*args, **kwargs)
-
-
-@contextmanager
-def push_context(ctx=None):
-    """
-    Context manager for creating a local context.
-
-    Not thread-save.
-    """
-    global default_context
-    old_ctx = default_context
-    try:
-        if ctx is None:
-            ctx = Context()
-        default_context = ctx
-        yield default_context
-    finally:
-        default_context = old_ctx
+def get_current_context() -> Context:
+    return _context_stack[-1]

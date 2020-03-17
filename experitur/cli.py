@@ -3,13 +3,13 @@ import os
 import click
 
 from experitur import __version__
-from experitur.core.context import Context, push_context
-from experitur.dox import load_dox
+from experitur.core.context import Context
 from experitur.core.experiment import (
     CommandNotFoundError,
     Experiment,
     TrialNotFoundError,
 )
+from experitur.dox import load_dox
 
 
 @click.group()
@@ -43,7 +43,7 @@ def run(dox_fn, skip_existing, catch, clean_failed, yes):
         "catch_exceptions": catch,
     }
 
-    with push_context(Context(wdir, config)) as ctx:
+    with Context(wdir, config) as ctx:
         if clean_failed:
             selected = {
                 trial_id: trial
@@ -76,7 +76,7 @@ def do(click_ctx, dox_fn, target, cmd, cmd_args):
     wdir = os.path.splitext(dox_fn)[0]
     os.makedirs(wdir, exist_ok=True)
 
-    with push_context(Context(wdir)) as ctx:
+    with Context(wdir) as ctx:
         # Load the DOX
         load_dox(dox_fn)
 
@@ -103,7 +103,7 @@ def clean(dox_fn, experiment_id, all, yes):
     click.echo("Cleaning results from {}...".format(dox_fn))
 
     wdir = os.path.splitext(dox_fn)[0]
-    with push_context(Context(wdir)) as ctx:
+    with Context(wdir) as ctx:
         selected = {
             trial_id: trial
             for trial_id, trial in ctx.store.items()
@@ -144,7 +144,7 @@ def show(dox_fn, experiment_id=None):
     """List trials."""
 
     wdir = os.path.splitext(dox_fn)[0]
-    with push_context(Context(wdir)) as ctx:
+    with Context(wdir) as ctx:
         list_trials(ctx.store)
 
 
@@ -161,8 +161,7 @@ def collect(dox_fn, results_fn, failed):
 
     click.echo("Collecting results from {} into {}...".format(dox_fn, results_fn))
 
-    with push_context(Context(wdir)) as ctx:
+    with Context(wdir) as ctx:
         load_dox(dox_fn)
 
         ctx.collect(results_fn, failed=failed)
-
