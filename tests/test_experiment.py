@@ -1,27 +1,28 @@
 import pytest
 
-from experitur.core.context import push_context, Context
-from experitur.core.samplers import GridSampler
+from experitur import Experiment
+from experitur.core.context import Context
+from experitur.core.parameters import Grid
 
 
 def test_merge(tmp_path):
     config = {"skip_existing": False}
-    with push_context(Context(str(tmp_path), config)) as ctx:
+    with Context(str(tmp_path), config) as ctx:
 
-        sampler = GridSampler({"a": [1, 2]})
+        sampler = Grid({"a": [1, 2]})
 
-        @ctx.experiment("a", sampler=sampler, meta={"a": "foo"})
+        @Experiment("a", parameters=sampler, meta={"a": "foo"})
         def a(trial):
             pass
 
-        b = ctx.experiment("b", parent=a)
+        b = Experiment("b", parent=a)
 
         # Ensure that meta is *copied* to child experiments
         assert id(b.meta) != id(a.meta)
         assert b.meta == a.meta
 
         # Assert that samplers are concatenated in the right way
-        c = ctx.experiment("c", sampler=GridSampler({"b": [1, 2]}), parent=a)
+        c = Experiment("c", parameters=Grid({"b": [1, 2]}), parent=a)
         ctx.run()
 
         # Parameters in a and b should be the same
@@ -57,9 +58,9 @@ def test_merge(tmp_path):
 
 def test_failing_experiment(tmp_path):
     config = {"catch_exceptions": False}
-    with push_context(Context(str(tmp_path), config)) as ctx:
+    with Context(str(tmp_path), config) as ctx:
 
-        @ctx.experiment()
+        @Experiment()
         def experiment(trial):
             raise Exception("Some error")
 

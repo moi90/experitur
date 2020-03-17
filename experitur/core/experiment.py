@@ -7,12 +7,13 @@ import random
 import sys
 import textwrap
 import traceback
-from typing import TYPE_CHECKING, List, Union
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Mapping, Union
 
 import click
 import tqdm
 
-import experitur.core.samplers as _samplers
+from experitur.core.context import get_current_context
+from experitur.core.parameters import Grid, Multi, ParameterGenerator
 from experitur.errors import ExperiturError
 from experitur.helpers import tqdm_redirect
 from experitur.helpers.merge_dicts import merge_dicts
@@ -64,60 +65,81 @@ def format_trial_parameters(callable=None, parameters=None, experiment=None):
     return callable + parameters
 
 
+def _coerce_parameter_generators(parameters) -> List[ParameterGenerator]:
+    if parameters is None:
+        return []
+    if isinstance(parameters, Mapping):
+        return [Grid(parameters)]
+    if isinstance(parameters, Iterable):
+        return list(parameters)
+    if isinstance(parameters, ParameterGenerator):
+        return [parameters]
+
+    raise ValueError(f"Unsupported type for parameters: {parameters!r}")
+
+
 class Experiment:
-    """An experiment."""
+    """Define an experiment.
+
+    Args:
+        name (:py:class:`str`, optional): Name of the experiment (Default: None).
+        parameter_grid (:py:class:`dict`, optional): Parameter grid (Default: None).
+        parent (:py:class:`~experitur.core.experiment.Experiment`, optional): Parent experiment (Default: None).
+        meta (:py:class:`dict`, optional): Dict with experiment metadata that should be recorded.
+        active (:py:class:`bool`, optional): Is the experiment active? (Default: True).
+            When False, the experiment will not be executed.
+
+    Returns:
+        A :py:class:`~experitur.core.experiment.Experiment` instance.
+
+    This can be used as a constructor or a decorator:
+
+    .. code-block:: python
+
+        exp1 = Experiment("exp1", ...)
+
+        @Experiment(...)
+        def exp2(trial):
+            # Here, the name is automatically inferred.
+            ...
+
+    When the experiment is run, `trial` will be a :py:class:`~experitur.core.trial.TrialParameters` instance.
+    As such, it has the following characteristics:
+
+    - :obj:`dict`-like interface (`trial[<name>]`): Get the value of the parameter named `name`.
+    - Attribute interface (`trial.<attr>`): Get meta-data for this trial.
+    - :py:meth:`~experitur.core.trial.apply`: Run a callable and automatically assign parameters.
+
+    See :py:class:`~experitur.core.trial.TrialParameters` for more details.
+    """
 
     def __init__(
-        self,
-        ctx: "Context",
-        name=None,
-        sampler: Union[List[_samplers.Sampler], _samplers.Sampler] = None,
-        parameter_grid=None,
-        parent=None,
-        meta=None,
-        active=True,
+        self, name=None, parameters=None, parent=None, meta=None, active=True,
     ):
-        self.ctx = ctx
+        self.ctx = get_current_context()
         self.name = name
         self.parent = parent
         self.meta = meta
         self.active = active
 
-        # Legacy parameter_grid
-        if parameter_grid is not None:
-            if sampler is not None:
-                raise ValueError("parameter_grid and samplers are mutually exclusive")
-            sampler = _samplers.GridSampler(parameter_grid)
-
-        # Concatenate samplers
-        if parent is not None:
-            if isinstance(parent.sampler, _samplers.MultiSampler):
-                tmp_sampler = copy.copy(parent.sampler)
-            else:
-                tmp_sampler = _samplers.MultiSampler([self.parent.sampler])
-
-            if isinstance(sampler, list):
-                tmp_sampler.addMulti(sampler)
-            elif sampler is not None:
-                tmp_sampler.add(sampler)
-
-            self.sampler = tmp_sampler
-        else:
-            if sampler is None:
-                sampler = _samplers.GridSampler({})
-            self.sampler = sampler
+        self._own_parameter_generators: List[ParameterGenerator]
+        self._own_parameter_generators = _coerce_parameter_generators(parameters)
 
         self._pre_trial = None
-        self._update = None
-        self._commands = {}
+        self._commands: Dict[str, Any] = {}
 
         self.callable = None
 
         # Merge parameters from all ancestors
         parent = self.parent
-        while parent:
+        while parent is not None:
             self._merge(parent)
             parent = parent.parent
+
+        self._base_parameter_generators: List[ParameterGenerator]
+        self._base_parameter_generators = (
+            [] if self.parent is None else self.parent._parameter_generators
+        )
 
         self.ctx._register_experiment(self)
 
@@ -139,9 +161,23 @@ class Experiment:
         return self
 
     @property
-    def independent_parameters(self):
+    def _parameter_generators(self) -> List[ParameterGenerator]:
+        return self._base_parameter_generators + self._own_parameter_generators
+
+    def add_parameter_generator(self, parameter_generator, prepend=False):
+        if prepend:
+            self._own_parameter_generators.insert(0, parameter_generator)
+        else:
+            self._own_parameter_generators.append(parameter_generator)
+
+    @property
+    def parameter_generator(self) -> ParameterGenerator:
+        return Multi(self._parameter_generators)
+
+    @property
+    def independent_parameters(self) -> List[str]:
         """Independent parameters (parameters that are actually varied) of this experiment."""
-        return sorted(self.sampler.varying_parameters.keys())
+        return sorted(self.parameter_generator.varying_parameters.keys())
 
     def __str__(self):
         if self.name is not None:
@@ -170,17 +206,17 @@ class Experiment:
 
         print("Experiment", self)
 
+        parameter_generator = self.parameter_generator
+
         print("Independent parameters:")
-        for k, v in self.sampler.varying_parameters.items():
+        for k, v in parameter_generator.varying_parameters.items():
             print("{}: {}".format(k, v))
 
         # Generate trial configurations
-        trial_configurations = self.sampler.sample(self)
+        trial_configurations = parameter_generator.generate(self)
 
         pbar = tqdm.tqdm(trial_configurations, unit="")
         for trial_configuration in pbar:
-            # Perform parameter substitution
-
             # Run the pre-trial hook to allow the user to interact
             # with the parameters before the trial is created and run.
             if self._pre_trial is not None:
@@ -190,7 +226,7 @@ class Experiment:
                 # Check, if a trial with this parameter set already exists
                 existing = self.ctx.store.match(
                     callable=self.callable,
-                    parameters=trial_configuration["parameters"],
+                    parameters=trial_configuration.get("parameters", {}),
                 )
                 if len(existing):
                     pbar.write(
@@ -224,6 +260,8 @@ class Experiment:
     def _merge(self, other):
         """
         Merge configuration of other into self.
+
+        This does not include parameter generators!
 
         `other` is usually the parent experiment.
         """
@@ -307,10 +345,10 @@ class Experiment:
             except KeyError as exc:
                 raise TrialNotFoundError(target_name) from exc
 
-            from experitur.core.trial import TrialProxy
+            from experitur.core.trial import TrialParameters
 
             # Inject the TrialProxy
-            cmd_wrapped = functools.partial(cmd, TrialProxy(trial))
+            cmd_wrapped = functools.partial(cmd, TrialParameters(trial))
             # Copy over __click_params__ if they exist
             try:
                 cmd_wrapped.__click_params__ = cmd.__click_params__

@@ -4,7 +4,7 @@ import os.path
 
 import pytest
 
-from experitur.core.context import Context, push_context
+from experitur.core.context import Context
 from experitur.core.experiment import Experiment
 from experitur.core.trial import (
     FileTrialStore,
@@ -39,20 +39,19 @@ def test__format_independent_parameters():
 
 
 def test_trial_store(tmp_path):
-    with push_context(Context(str(tmp_path))) as ctx:
+    with Context(str(tmp_path)) as ctx:
+        ctx: Context
         with FileTrialStore(ctx) as trial_store:
 
             def test(trial):
                 return {"result": (1, 2)}
 
-            experiment = ctx.experiment(
-                "test", parameter_grid={"a": [1, 2], "b": [2, 3]}
-            )(test)
+            experiment = Experiment("test", parameters={"a": [1, 2], "b": [2, 3]})(test)
 
             def test2(trial):
                 return {"result": (2, 4)}
 
-            experiment2 = ctx.experiment("test2", parent=experiment)(test2)
+            experiment2 = Experiment("test2", parent=experiment)(test2)
 
             trial_store["foo"] = Trial(trial_store, data={1: "foo", "bar": 2})
             assert trial_store["foo"].data == {1: "foo", "bar": 2}
@@ -105,19 +104,19 @@ def test_trial_store(tmp_path):
 
             trial_store.create({"parameters": {"a": 1, "b": 2, "c": 1}}, experiment)
 
-            experiment.sampler.parameter_grid["c"] = [1, 2, 3]
+            experiment.parameter_generator.generators[0].grid["c"] = [1, 2, 3]
 
             trial_store.create({"parameters": {"a": 1, "b": 2, "c": 2}}, experiment)
             trial_store.create({"parameters": {"a": 1, "b": 2, "c": 2}}, experiment)
 
 
 def test_trial(tmp_path):
-    with push_context(Context(str(tmp_path))) as ctx:
+    with Context(str(tmp_path)) as ctx:
         # Dummy function
         def parametrized(a=1, b=2, c=3, d=4):
             return (a, b, c, d)
 
-        @ctx.experiment(parameter_grid={"a": [1, 2], "b": [2, 3]})
+        @Experiment(parameters={"a": [1, 2], "b": [2, 3]})
         def experiment1(trial):
             print("trial.wdir:", trial.wdir)
 
@@ -125,7 +124,7 @@ def test_trial(tmp_path):
 
             return trial.apply("parametrized_", parametrized)
 
-        @ctx.experiment(parent=experiment1)
+        @Experiment(parent=experiment1)
         def experiment2(trial):
             return trial.experiment1["a"]
 
@@ -140,9 +139,9 @@ def test_trial(tmp_path):
 
 def test_trial_proxy(tmp_path, recwarn):
     config = {"catch_exceptions": False}
-    with push_context(Context(str(tmp_path), config)) as ctx:
+    with Context(str(tmp_path), config) as ctx:
 
-        @ctx.experiment(parameter_grid={"a": [1], "b": [2], "c": ["{a}"]})
+        @Experiment(parameters={"a": [1], "b": [2], "c": ["{a}"]})
         def experiment(trial):
             assert trial["a"] == 1
             assert trial["b"] == 2

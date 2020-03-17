@@ -2,7 +2,17 @@ import random
 from abc import ABC, abstractmethod, abstractproperty
 from collections.abc import MutableMapping
 from itertools import product
-from typing import TYPE_CHECKING, Dict, Generator, List, Mapping, Optional
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    Generator,
+    List,
+    Mapping,
+    Optional,
+    Set,
+    Type,
+)
 
 from sklearn.model_selection import ParameterGrid, ParameterSampler
 
@@ -13,14 +23,17 @@ if TYPE_CHECKING:
     from experitur.core.experiment import Experiment
 
 
-class SamplerIter(ABC):
+class ParameterGeneratorIter(ABC):
     def __init__(
-        self, sampler: "Sampler", experiment: "Experiment", parent: "SamplerIter",
+        self,
+        parameter_generator: "ParameterGenerator",
+        experiment: "Experiment",
+        parent: "ParameterGeneratorIter",
     ):
-        self.sampler = sampler
+        self.parameter_generator = parameter_generator
         self.experiment: "Experiment" = experiment
         self.parent = parent
-        self.ignored_parameter_names = set()
+        self.ignored_parameter_names: Set[str] = set()
 
     @abstractmethod
     def __iter__(self) -> Generator[_trial.Trial, None, None]:  # pragma: no cover
@@ -33,7 +46,7 @@ class SamplerIter(ABC):
         self.ignored_parameter_names.update(parameter_names)
 
 
-class _NullSamplerIter(SamplerIter):
+class _NullIter(ParameterGeneratorIter):
     """Sampler iterator that yields one empty parameter configuration."""
 
     def __init__(self):
@@ -46,11 +59,13 @@ class _NullSamplerIter(SamplerIter):
         pass
 
 
-class Sampler(ABC):
-    _iterator: SamplerIter
+class ParameterGenerator(ABC):
+    _iterator: Type[ParameterGeneratorIter]
     _str_attr: List[str] = []
 
-    def sample(self, experiment: "Experiment", parent: Optional[SamplerIter] = None):
+    def generate(
+        self, experiment: "Experiment", parent: Optional[ParameterGeneratorIter] = None,
+    ):
         """
         Return a SamplerIter to sample parameter configurations.
 
@@ -77,7 +92,7 @@ class Sampler(ABC):
         """
 
         if parent is None:
-            parent = _NullSamplerIter()
+            parent = _NullIter()
 
         parent.ignoreParameters(
             set(self.varying_parameters.keys()) | set(self.invariant_parameters.keys())
@@ -100,6 +115,9 @@ class Sampler(ABC):
             parameters=", ".join(f"{k}={getattr(self, k)}" for k in self._str_attr),
         )
 
+    def __call__(self, experiment: "Experiment"):
+        experiment.add_parameter_generator(self, prepend=True)
+
 
 def parameter_product(p):
     """Iterate over the points in the grid."""
@@ -114,21 +132,21 @@ def parameter_product(p):
             yield params
 
 
-class _GridSamplerIter(SamplerIter):
+class _GridIter(ParameterGeneratorIter):
     def __iter__(self):
 
         params_list = list(
             parameter_product(
                 {
                     k: v
-                    for k, v in self.sampler.parameter_grid.items()
+                    for k, v in self.parameter_generator.grid.items()
                     if k not in self.ignored_parameter_names
                 }
             )
         )
 
         for parent_configuration in self.parent:
-            if self.sampler.shuffle:
+            if self.parameter_generator.shuffle:
                 random.shuffle(params_list)
 
             for params in params_list:
@@ -136,138 +154,57 @@ class _GridSamplerIter(SamplerIter):
                 yield merge_dicts(parent_configuration, parameters=params)
 
 
-class GridSampler(Sampler):
-    _iterator = _GridSamplerIter
-    _str_attr = []
+class Grid(ParameterGenerator):
+    _iterator = _GridIter
+    _str_attr: List[str] = []
 
-    def __init__(self, parameter_grid={}, shuffle=False):
-        self.parameter_grid = parameter_grid
+    def __init__(self, grid={}, shuffle=False):
+        self.grid = grid
         self.shuffle = shuffle
 
     @property
     def varying_parameters(self):
-        return {k: v for k, v in self.parameter_grid.items() if len(v) > 1}
+        return {k: v for k, v in self.grid.items() if len(v) > 1}
 
     @property
     def invariant_parameters(self):
-        return {k: v for k, v in self.parameter_grid.items() if len(v) <= 1}
+        return {k: v for k, v in self.grid.items() if len(v) <= 1}
 
 
-class _RandomSamplerIter(SamplerIter):
-    def __iter__(self):
-        # Parameter names that are relevant in this context
-        parameter_names = set(
-            k
-            for k in self.sampler.param_distributions.keys()
-            if k not in self.ignored_parameter_names
-        )
+class Multi(ParameterGenerator):
+    _str_attr = ["generators"]
 
-        for parent_configuration in self.parent:
-            # Firstly, produce existing configurations to give downstream samplers the chance to
-            # produce missing sub-configurations.
+    def __init__(self, parameter_generators=None):
+        self.generators: List[ParameterGenerator] = []
 
-            # Retrieve all trials that match parent_configuration
-            existing_trials = self.experiment.ctx.store.match(
-                callable=self.experiment.callable,
-                parameters=parent_configuration.get("parameters", {}),
-            )
+        if parameter_generators is not None:
+            self.addMulti(parameter_generators)
 
-            existing_params_set = set()
-            for trial in existing_trials.values():
-                existing_params_set.add(
-                    tuple(
-                        sorted(
-                            (k, v)
-                            for k, v in trial.data["parameters"].items()
-                            if k in parameter_names
-                        )
-                    )
-                )
-
-            # Yield existing configurations
-            for existing_params in existing_params_set:
-                yield merge_dicts(
-                    parent_configuration, parameters=dict(existing_params)
-                )
-
-            # Calculate n_iter as n_iter - already existing iterations
-            n_iter = self.sampler.n_iter - len(existing_params_set)
-
-            for params in ParameterSampler(
-                {
-                    k: v
-                    for k, v in self.sampler.param_distributions.items()
-                    if k not in self.ignored_parameter_names
-                },
-                n_iter,
-            ):
-
-                yield merge_dicts(parent_configuration, parameters=params)
-
-
-class RandomSampler(Sampler):
-    """
-    Parameter sampler based on py:class:`sklearn.model_selection.ParameterSampler`.
-    """
-
-    _iterator = _RandomSamplerIter
-    _str_attr = ["n_iter"]
-
-    def __init__(self, param_distributions: Dict, n_iter):
-        self.param_distributions = param_distributions
-        self.n_iter = n_iter
-
-    @property
-    def varying_parameters(self):
-        return {
-            k: v
-            for k, v in self.param_distributions.items()
-            if not isinstance(v, list) or len(v) > 1
-        }
-
-    @property
-    def invariant_parameters(self):
-        return {
-            k: v
-            for k, v in self.param_distributions.items()
-            if isinstance(v, list) and len(v) <= 1
-        }
-
-
-class MultiSampler(Sampler):
-    _str_attr = ["samplers"]
-
-    def __init__(self, samplers=None):
-        self.samplers: List[Sampler] = []
-
-        if samplers is not None:
-            self.addMulti(samplers)
-
-    def add(self, sampler):
-        self.samplers.append(sampler)
+    def add(self, parameter_generator):
+        self.generators.append(parameter_generator)
 
     def addMulti(self, samplers):
         for s in samplers:
             self.add(s)
 
-    def sample(self, experiment, parent=None):
+    def generate(self, experiment, parent=None):
         if parent is None:
-            parent = _NullSamplerIter()
+            parent = _NullIter()
 
         last_sampler_iter = parent
-        for sampler in self.samplers:
-            last_sampler_iter = sampler.sample(experiment, last_sampler_iter)
+        for gen in self.generators:
+            last_sampler_iter = gen.generate(experiment, last_sampler_iter)
 
         return last_sampler_iter
 
     @property
-    def varying_parameters(self) -> Dict:
-        parameters = {}
-        for sampler in self.samplers:
-            parameters.update(sampler.varying_parameters)
+    def varying_parameters(self) -> Dict[str, Any]:
+        parameters: Dict[str, Any] = {}
+        for gen in self.generators:
+            parameters.update(gen.varying_parameters)
 
             # Delete invariant parameters
-            for ip in sampler.invariant_parameters:
+            for ip in gen.invariant_parameters:
                 parameters.pop(ip, None)
 
         return parameters

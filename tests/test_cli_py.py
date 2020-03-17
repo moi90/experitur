@@ -3,14 +3,14 @@ import os.path
 
 from click.testing import CliRunner
 
-from experitur.cli import collect, run, do, clean
+from experitur.cli import clean, collect, do, run
 
 example_py = inspect.cleandoc(
     """
-    from experitur import experiment, run
+    from experitur import Experiment
 
-    @experiment(
-        parameter_grid={
+    @Experiment(
+        parameters={
             "a1": [1],
             "a2": [2],
             "b": [1, 2],
@@ -19,15 +19,15 @@ example_py = inspect.cleandoc(
     def baseline(trial):
         pass
 
-    @experiment(parent=baseline)
+    @Experiment(parent=baseline)
     def e1(trial):
         pass
 
-    @experiment()
+    @Experiment()
     def e2(trial):
         raise NotImplementedError()
 
-    @experiment()
+    @Experiment()
     def e3(trial):
         pass
 
@@ -44,7 +44,7 @@ def test_run():
         with open("example.py", "w") as f:
             f.write(example_py)
 
-        result = runner.invoke(run, ["example.py"])
+        result = runner.invoke(run, ["example.py"], catch_exceptions=False)
         assert result.exit_code == 0
 
         result = runner.invoke(run, ["example.py", "--clean-failed"], input="y\n")

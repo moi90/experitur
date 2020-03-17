@@ -59,12 +59,12 @@ def _format_independent_parameters(trial_parameters, independent_parameters):
     return trial_id
 
 
-class TrialProxy(collections.abc.MutableMapping):
+class TrialParameters(collections.abc.MutableMapping):
     """
     This is the trial object that the experiment interacts with.
     """
 
-    def __init__(self, trial):
+    def __init__(self, trial: "Trial"):
         self._trial = trial
 
     def __getitem__(self, name):
@@ -109,11 +109,13 @@ class TrialProxy(collections.abc.MutableMapping):
             pass
 
         # Name could be a referenced experiment with matching parameters
-        trials = self._trial.store.match(experiment=name, parameters=self.parameters)
+        trials = self._trial.store.match(
+            experiment=name, resolved_parameters=dict(self)
+        )
 
         if len(trials) == 1:
             _, trial = trials.popitem()
-            return TrialProxy(trial)
+            return TrialParameters(trial)
         elif len(trials) > 1:
             msg = "Multiple matching parent experiments: " + ", ".join(trials.keys())
             raise ValueError(msg)
@@ -228,9 +230,7 @@ class Trial(collections.abc.MutableMapping):
         return new
 
     def run(self):
-        """
-        Run the current trial and save the results.
-        """
+        """Run the current trial and save the results."""
 
         # Record intital state
         self.data["success"] = False
@@ -238,7 +238,7 @@ class Trial(collections.abc.MutableMapping):
         self.data["result"] = None
 
         try:
-            self.data["result"] = self.callable(TrialProxy(self))
+            self.data["result"] = self.callable(TrialParameters(self))
         except (Exception, KeyboardInterrupt) as exc:
             # Log complete exc to file
             with open(os.path.join(self.data["wdir"], "error.txt"), "w") as f:
@@ -274,7 +274,7 @@ class Trial(collections.abc.MutableMapping):
     def is_failed(self):
         return not self.data.get("success", False)
 
-    # This class provides concrete generic implementations of all
+    # MutableMapping provides concrete generic implementations of all
     # methods except for __getitem__, __setitem__, __delitem__,
     # __iter__, and __len__.
     def __getitem__(self, name):
