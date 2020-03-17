@@ -1,5 +1,6 @@
 from collections.abc import Mapping
 from string import Formatter
+
 import regex
 
 # BUG: format strings without matching field are changed
