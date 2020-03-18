@@ -8,8 +8,15 @@ try:
     from skopt.utils import dimensions_aslist, point_asdict, point_aslist
 
     _skopt_available = True
-except ImportError:
+except ImportError:  # pragma: no cover
     _skopt_available = False
+
+try:
+    from sklearn.model_selection import ParameterSampler
+
+    _sklearn_available = True
+except ImportError:  # pragma: no cover
+    _sklearn_available = False
 
 
 class _RandomSamplerIter(ParameterGeneratorIter):
@@ -73,6 +80,9 @@ class Random(ParameterGenerator):
     _str_attr = ["n_iter"]
 
     def __init__(self, param_distributions: Dict, n_iter):
+        if not _sklearn_available:
+            raise RuntimeError("scikit-learn is not available.")  # pragma: no cover
+
         self.param_distributions = param_distributions
         self.n_iter = n_iter
 
@@ -96,7 +106,7 @@ class Random(ParameterGenerator):
 class _SKOptIter(ParameterGeneratorIter):
     def __iter__(self):
         if not _skopt_available:
-            raise RuntimeError("scikit-optimize is not available.")
+            raise RuntimeError("scikit-optimize is not available.")  # pragma: no cover
 
         print("OptimizerIter.__init__")
 
@@ -145,7 +155,7 @@ class _SKOptIter(ParameterGeneratorIter):
                 # Train model
                 existing_trials = self.experiment.ctx.store.match(
                     callable=self.experiment.callable,
-                    parameters=parent_configuration["parameters"],
+                    parameters=parent_configuration.get("parameters", {}),
                 )
 
                 # TODO: Record timing for time based `acq_func`s
@@ -181,9 +191,9 @@ class _SKOptIter(ParameterGeneratorIter):
 
 class SKOpt(ParameterGenerator):
     _iterator = _SKOptIter
-    _str_attr = ["search_space", "n_iter", "objective"]
+    _str_attr = ["search_space", "objective", "n_iter"]
 
-    def __init__(self, search_space, n_iter, objective, **kwargs):
+    def __init__(self, search_space, objective, n_iter, **kwargs):
         self.search_space = search_space
         self.n_iter = n_iter
         self.objective = objective

@@ -118,14 +118,17 @@ class Context:
 
             data[trial_id] = _prepare_trial_data(trial.data)
 
-        import pandas as pd
+        try:
+            import pandas as pd
+        except:
+            raise RuntimeError("pandas is not available.")
+        else:
+            data = pd.DataFrame.from_dict(data, orient="index")
+            data.index.name = "id"
 
-        data = pd.DataFrame.from_dict(data, orient="index")
-        data.index.name = "id"
+            # TODO: Remove columns that are not serializable in CSV
 
-        # TODO: Remove columns that are not serializable in CSV
-
-        data.to_csv(results_fn)
+            data.to_csv(results_fn)
 
     def get_experiment(self, name) -> "Experiment":
         """

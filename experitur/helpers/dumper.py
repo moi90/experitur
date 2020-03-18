@@ -4,7 +4,7 @@ import yaml
 
 class ExperiturDumper(yaml.Dumper):
     def ndarray_representer(self, data):
-        return self.represent_dict(data.tolist())
+        return self.represent_list(data.tolist())
 
     def number_representer(self, data):
         return self.represent_data(data.tolist())

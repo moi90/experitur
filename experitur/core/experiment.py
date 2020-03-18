@@ -337,7 +337,7 @@ class Experiment:
         try:
             cmd, target = self._commands[cmd_name]
         except KeyError:
-            raise CommandNotFoundError(cmd)
+            raise CommandNotFoundError(cmd_name)
 
         if target == "trial":
             try:

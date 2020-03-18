@@ -71,7 +71,7 @@ def run(dox_fn, skip_existing, catch, clean_failed, yes):
 @click.argument("target")
 @click.argument("cmd_args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
-def do(click_ctx, dox_fn, target, cmd, cmd_args):
+def do(click_ctx: click.Context, dox_fn, target, cmd, cmd_args):
     """Execute experiment subcommands."""
     wdir = os.path.splitext(dox_fn)[0]
     os.makedirs(wdir, exist_ok=True)

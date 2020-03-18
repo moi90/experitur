@@ -21,7 +21,7 @@ def test_merge(tmp_path):
         assert id(b.meta) != id(a.meta)
         assert b.meta == a.meta
 
-        # Assert that samplers are concatenated in the right way
+        # Assert that inherited samplers are concatenated in the right way
         c = Experiment("c", parameters=Grid({"b": [1, 2]}), parent=a)
         ctx.run()
 
@@ -72,3 +72,26 @@ def test_failing_experiment(tmp_path):
         print(trial.data)
 
         assert trial.data["success"] == False
+
+
+def test_parameter_substitution(tmp_path):
+    config = {"skip_existing": False}
+    with Context(str(tmp_path), config) as ctx:
+
+        sampler = Grid({"a": [1, 2]})
+
+        @Experiment(
+            parameters={"a1": [1], "a2": [2], "b": [1, 2], "a": ["{a{b}}"],}
+        )
+        def experiment(trial):
+            return dict(trial)
+
+        ctx.run()
+
+        valid = [
+            t.data["resolved_parameters"]["a"] == t.data["resolved_parameters"]["b"]
+            and isinstance(t.data["resolved_parameters"]["a"], int)
+            for t in ctx.store.match(experiment=experiment).values()
+        ]
+
+        assert all(valid)

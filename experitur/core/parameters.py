@@ -14,8 +14,6 @@ from typing import (
     Type,
 )
 
-from sklearn.model_selection import ParameterGrid, ParameterSampler
-
 from experitur.core import trial as _trial
 from experitur.helpers.merge_dicts import merge_dicts
 
