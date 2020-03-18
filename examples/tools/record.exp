@@ -1,0 +1,32 @@
+#!/usr/bin/expect -f
+# Usage record.exp <dox_fn>
+
+# Read input parameter
+set dox_fn [lindex $argv 0];
+
+# Spawn ttyrec with minimal shell
+spawn ttyrec -e tools/minimalshell
+
+# Wait for prompt
+expect "$ "
+
+# Send command like a human
+set send_human {.1 .3 1 .05 2}
+send -h -- "experitur run $dox_fn"
+
+# Wait until command was fully typed
+expect "experitur run $dox_fn"
+
+# Wait 2s before sending ENTER
+sleep 2
+send -- "\r"
+
+# Wait for new prompt after execution
+expect "$ "
+
+# Let that sink in
+sleep 10
+
+# Send Ctrl-D and wait for EOF
+send -- ""
+expect eof
