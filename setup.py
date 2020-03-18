@@ -20,12 +20,17 @@ setup(
     install_requires=["Click", "regex", "tqdm", "pyyaml"],
     python_requires=">=3.6",
     extras_require={
-        "tests": ["pytest"],
+        "tests": ["pytest", "pytest-cov"],
         "optional": ["scikit-optimize", "scikit-learn", "pandas"],
-        "docs": ["sphinx >= 1.4", "sphinx_rtd_theme", "sphinxcontrib-programoutput"],
-        "dev": ["black", "mypy", "pydocstyle", "pytest-cov",],
+        "docs": [
+            "sphinx >= 1.4",
+            "sphinx_rtd_theme",
+            "sphinxcontrib-programoutput",
+            "sphinx-autodoc-typehints>=1.10.0",
+        ],
+        "dev": ["black", "mypy", "pydocstyle"],
     },
-    entry_points={"console_scripts": ["experitur=experitur.cli:cli"],},
+    entry_points={"console_scripts": ["experitur=experitur.cli:cli"]},
     classifiers=[
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.6",
