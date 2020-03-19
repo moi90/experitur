@@ -7,7 +7,7 @@ import random
 import sys
 import textwrap
 import traceback
-from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Mapping, Union
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Mapping, Union, Callable
 
 import click
 import tqdm
@@ -19,7 +19,7 @@ from experitur.helpers import tqdm_redirect
 from experitur.helpers.merge_dicts import merge_dicts
 from experitur.recursive_formatter import RecursiveDict
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.context import Context
 
 _callable = callable
@@ -71,7 +71,7 @@ def _coerce_parameter_generators(parameters) -> List[ParameterGenerator]:
     if isinstance(parameters, Mapping):
         return [Grid(parameters)]
     if isinstance(parameters, Iterable):
-        return list(parameters)
+        return sum((_coerce_parameter_generators(p) for p in parameters), [])
     if isinstance(parameters, ParameterGenerator):
         return [parameters]
 
@@ -79,7 +79,8 @@ def _coerce_parameter_generators(parameters) -> List[ParameterGenerator]:
 
 
 class Experiment:
-    """Define an experiment.
+    """
+    Define an experiment.
 
     Args:
         name (:py:class:`str`, optional): Name of the experiment (Default: None).
@@ -89,21 +90,19 @@ class Experiment:
         active (:py:class:`bool`, optional): Is the experiment active? (Default: True).
             When False, the experiment will not be executed.
 
-    Returns:
-        A :py:class:`~experitur.core.experiment.Experiment` instance.
-
     This can be used as a constructor or a decorator:
 
     .. code-block:: python
 
-        exp1 = Experiment("exp1", ...)
-
+        # When using as a decorator, the name of the experiment is automatically inferred.
         @Experiment(...)
-        def exp2(trial):
-            # Here, the name is automatically inferred.
+        def exp1(parameters):
             ...
 
-    When the experiment is run, `trial` will be a :py:class:`~experitur.core.trial.TrialParameters` instance.
+        # Here, the name must be supplied.
+        exp2 = Experiment("exp2", parent=exp1)
+
+    When the experiment is run, `parameters` will be a :py:class:`~experitur.core.trial.TrialParameters` instance.
     As such, it has the following characteristics:
 
     - :obj:`dict`-like interface (`trial[<name>]`): Get the value of the parameter named `name`.
@@ -143,8 +142,9 @@ class Experiment:
 
         self.ctx._register_experiment(self)
 
-    def __call__(self, callable):
-        """Register an entry-point.
+    def __call__(self, func: Callable) -> "Experiment":
+        """
+        Register an entry-point.
 
         Allows an Experiment object to be used as a decorator::
 
@@ -154,9 +154,9 @@ class Experiment:
         """
 
         if not self.name:
-            self.name = callable.__name__
+            self.name = func.__name__
 
-        self.callable = callable
+        self.callable = func
 
         return self
 
@@ -164,7 +164,9 @@ class Experiment:
     def _parameter_generators(self) -> List[ParameterGenerator]:
         return self._base_parameter_generators + self._own_parameter_generators
 
-    def add_parameter_generator(self, parameter_generator, prepend=False):
+    def add_parameter_generator(
+        self, parameter_generator: ParameterGenerator, prepend=False
+    ):
         if prepend:
             self._own_parameter_generators.insert(0, parameter_generator)
         else:

@@ -7,9 +7,9 @@ import itertools
 import os.path
 import shutil
 import traceback
-import typing as T
 import warnings
 from abc import abstractmethod
+from typing import Callable, Dict, overload
 
 import yaml
 
@@ -123,6 +123,16 @@ class TrialParameters(collections.abc.MutableMapping):
         msg = "Trial has no attribute: {}".format(name)
         raise AttributeError(msg)
 
+    @overload
+    def record_defaults(
+        self, prefix: str, func: Callable, **defaults
+    ):  # pragma: no cover
+        ...
+
+    @overload
+    def record_defaults(self, prefix: str, **defaults):  # pragma: no cover
+        ...
+
     def record_defaults(self, prefix, *args, **defaults):
         """
         Set default parameters.
@@ -192,7 +202,7 @@ class TrialParameters(collections.abc.MutableMapping):
         return {k[start:]: v for k, v in self.items() if k.startswith(prefix)}
 
 
-class Trial(collections.abc.MutableMapping):
+class Trial:
     """
     Trial.
 
@@ -200,7 +210,7 @@ class Trial(collections.abc.MutableMapping):
     ------------------------------
 
     1. Created by sampler
-    2. Assigned an ID by TODO
+    2. Assigned an ID by TrialStore
 
     Arguments
         store: TrialStore
@@ -212,22 +222,6 @@ class Trial(collections.abc.MutableMapping):
         self.store = store
         self.callable = callable
         self.data = data or {}
-
-    def merge(self, **kwargs):
-        """Create a new instance with provided values merged into data."""
-
-        new = copy.copy(self)
-        new.data = copy.deepcopy(self.data)
-
-        for name, value in kwargs.items():
-            if isinstance(
-                new.data[name], collections.abc.MutableMapping
-            ) and isinstance(value, collections.abc.Mapping):
-                new.data[name].update(value)
-            else:
-                new.data[name] = value
-
-        return new
 
     def run(self):
         """Run the current trial and save the results."""
@@ -266,34 +260,9 @@ class Trial(collections.abc.MutableMapping):
     def id(self):
         return self.data["id"]
 
-    @id.setter
-    def id(self, id):
-        self.data["id"] = id
-
     @property
     def is_failed(self):
         return not self.data.get("success", False)
-
-    # MutableMapping provides concrete generic implementations of all
-    # methods except for __getitem__, __setitem__, __delitem__,
-    # __iter__, and __len__.
-    def __getitem__(self, name):
-        return self.data[name]
-
-    def __setitem__(self, name, value):
-        self.data[name] = value
-
-    def __delitem__(self, name):
-        del self.data[name]
-
-    def __iter__(self):
-        return iter(self.data)
-
-    def __len__(self):
-        return len(self.data)
-
-    def items(self):
-        return self.data.items()
 
 
 class TrialStore(collections.abc.MutableMapping):
@@ -308,7 +277,7 @@ class TrialStore(collections.abc.MutableMapping):
 
     def match(
         self, callable=None, parameters=None, experiment=None, resolved_parameters=None
-    ) -> T.Dict[str, Trial]:
+    ) -> Dict[str, Trial]:
         callable = _callable_to_name(callable)
 
         from experitur.core.experiment import Experiment

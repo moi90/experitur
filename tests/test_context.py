@@ -36,6 +36,19 @@ def test_dependencies(tmp_path):
         ctx.run([b])
 
 
+def test_get_experiment(tmp_path):
+    with Context(str(tmp_path)) as ctx:
+
+        @Experiment("a")
+        def a(trial):
+            pass
+
+    ctx.get_experiment("a")
+
+    with pytest.raises(KeyError):
+        ctx.get_experiment("inexistent")
+
+
 def test_merge_config(tmp_path):
     config = {
         k: not v for k, v in Context._default_config.items() if isinstance(v, bool)

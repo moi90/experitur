@@ -7,6 +7,7 @@ from typing import (
     Any,
     Dict,
     Generator,
+    Iterable,
     List,
     Mapping,
     Optional,
@@ -17,7 +18,7 @@ from typing import (
 from experitur.core import trial as _trial
 from experitur.helpers.merge_dicts import merge_dicts
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.experiment import Experiment
 
 
@@ -115,9 +116,10 @@ class ParameterGenerator(ABC):
 
     def __call__(self, experiment: "Experiment"):
         experiment.add_parameter_generator(self, prepend=True)
+        return experiment
 
 
-def parameter_product(p):
+def parameter_product(p: Mapping[str, Iterable]):
     """Iterate over the points in the grid."""
 
     items = sorted(p.items())
@@ -148,15 +150,36 @@ class _GridIter(ParameterGeneratorIter):
                 random.shuffle(params_list)
 
             for params in params_list:
-                print(parent_configuration)
                 yield merge_dicts(parent_configuration, parameters=params)
 
 
 class Grid(ParameterGenerator):
+    """
+    Generate all parameter value combinations in the grid.
+
+    Parameters:
+        grid (Mapping): The parameter grid to explore, as a dictionary mapping parameter names to sequences of allowed values.
+        shuffle (bool): If False, the combinations will be generated in a deterministic manner.
+
+    Example:
+        .. code-block:: python
+
+            from experitur import Experiment
+            from experitur.parameters import Grid
+
+            @Grid({"a": [1,2], "b": [3,4]})
+            @Experiment()
+            def example(parameters: TrialParameters):
+                print(parameters["a"], parameters["b"])
+
+        This example will produce "1 3", "1 4", "2 3", and "2 4".
+        
+    """
+
     _iterator = _GridIter
     _str_attr: List[str] = []
 
-    def __init__(self, grid={}, shuffle=False):
+    def __init__(self, grid: Mapping[str, Iterable], shuffle: bool = False):
         self.grid = grid
         self.shuffle = shuffle
 

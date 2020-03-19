@@ -137,79 +137,84 @@ def test_trial(tmp_path):
         assert result == 1
 
 
-def test_trial_proxy(tmp_path, recwarn):
+def test_trial_parameters(tmp_path, recwarn):
     config = {"catch_exceptions": False}
     with Context(str(tmp_path), config) as ctx:
 
         @Experiment(parameters={"a": [1], "b": [2], "c": ["{a}"]})
-        def experiment(trial):
-            assert trial["a"] == 1
-            assert trial["b"] == 2
-            assert trial["c"] == trial["a"]
-            assert len(trial) == 3
+        def experiment(parameters):
+            assert parameters["a"] == 1
+            assert parameters["b"] == 2
+            assert parameters["c"] == parameters["a"]
+            assert len(parameters) == 3
 
-            print(trial["a"], trial["c"])
+            print(parameters["a"], parameters["c"])
 
-            for k, v in trial.items():
+            for k, v in parameters.items():
                 pass
 
-            trial["a"] = 0
-            trial["b"] = 0
+            parameters["a"] = 0
+            parameters["b"] = 0
 
-            del trial["a"]
-            del trial["b"]
-
-            with pytest.raises(KeyError):
-                trial["a"]
+            del parameters["a"]
+            del parameters["b"]
 
             with pytest.raises(KeyError):
-                trial["b"]
+                parameters["a"]
+
+            with pytest.raises(KeyError):
+                parameters["b"]
+
+            with pytest.raises(AttributeError):
+                parameters.inexisting_attribute
 
             # test without_prefix
             seed = {"a": 1, "b": 2, "c": 3}
             for k, v in seed.items():
-                trial["prefix__" + k] = v
-                trial["prefix1__" + k] = v
+                parameters["prefix__" + k] = v
+                parameters["prefix1__" + k] = v
 
-            assert trial.without_prefix("prefix__") == seed
+            assert parameters.without_prefix("prefix__") == seed
 
             # test apply
             def identity(a, b, c=4, d=5):
                 return (a, b, c, d)
 
-            assert trial.apply("prefix__", identity) == (1, 2, 3, 5)
+            assert parameters.apply("prefix__", identity) == (1, 2, 3, 5)
 
             # test apply: keyword parameter
-            assert trial.apply("prefix1__", identity, c=6, d=7) == (1, 2, 3, 7)
-            assert trial["prefix1__d"] == 7
+            assert parameters.apply("prefix1__", identity, c=6, d=7) == (1, 2, 3, 7)
+            assert parameters["prefix1__d"] == 7
 
             # test record_defaults
-            trial.record_defaults("prefix2__", identity, x=7)
-            assert trial.without_prefix("prefix2__") == {"c": 4, "d": 5, "x": 7}
+            parameters.record_defaults("prefix2__", identity, x=7)
+            assert parameters.without_prefix("prefix2__") == {"c": 4, "d": 5, "x": 7}
 
             # test apply: functools.partial
 
             # Positional arguments will not be recorded and can't be overwritten
             identity_a8 = functools.partial(identity, 8)
-            assert trial.apply("prefix3__", identity_a8, b=2) == (8, 2, 4, 5)
-            assert "prefix3__a" not in trial
-            assert trial.apply("prefix3__", identity_a8, a=9, b=2) == (8, 2, 4, 5)
-            assert trial["prefix3__a"] == 9
+            assert parameters.apply("prefix3__", identity_a8, b=2) == (8, 2, 4, 5)
+            assert "prefix3__a" not in parameters
+            assert parameters.apply("prefix3__", identity_a8, a=9, b=2) == (8, 2, 4, 5)
+            assert parameters["prefix3__a"] == 9
 
             # Keyword arguments will be recorded and can be overwritten
             identity_a8 = functools.partial(identity, a=8)
-            trial.record_defaults("prefix4_", identity_a8)
-            assert trial.without_prefix("prefix4_") == {"a": 8, "c": 4, "d": 5}
+            parameters.record_defaults("prefix4_", identity_a8)
+            assert parameters.without_prefix("prefix4_") == {"a": 8, "c": 4, "d": 5}
 
-            trial.record_defaults("prefix5_", identity_a8, a=9)
-            assert trial.without_prefix("prefix5_") == {"a": 9, "c": 4, "d": 5}
+            parameters.record_defaults("prefix5_", identity_a8, a=9)
+            assert parameters.without_prefix("prefix5_") == {"a": 9, "c": 4, "d": 5}
 
-            assert trial.apply("prefix6__", identity_a8, b=2) == (8, 2, 4, 5)
-            assert trial["prefix6__a"] == 8
+            assert parameters.apply("prefix6__", identity_a8, b=2) == (8, 2, 4, 5)
+            assert parameters["prefix6__a"] == 8
 
             # Keyword arguments will be recorded and can be overwritten
             identity_d9 = functools.partial(identity, d=9)
-            assert trial.apply("prefix7__", identity_d9, 1, 2) == (1, 2, 4, 9)
-            assert trial.without_prefix("prefix7__") == {"c": 4, "d": 9}
+            assert parameters.apply("prefix7__", identity_d9, 1, 2) == (1, 2, 4, 9)
+            assert parameters.without_prefix("prefix7__") == {"c": 4, "d": 9}
+
+            #
 
         ctx.run()

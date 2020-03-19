@@ -3,7 +3,7 @@ import os.path
 
 from click.testing import CliRunner
 
-from experitur.cli import clean, collect, do, run
+from experitur.cli import clean, collect, do, run, show
 
 example_py = inspect.cleandoc(
     """
@@ -17,23 +17,23 @@ example_py = inspect.cleandoc(
             "b": [1, 2],
             "a": ["{a{b}}"],
         })
-    def baseline(trial):
+    def baseline(parameters):
         pass
 
     @Experiment(parent=baseline)
-    def e1(trial):
-        pass
+    def e1(parameters):
+        return dict(parameters)
 
     @Experiment()
-    def e2(trial):
+    def e2(parameters):
         raise NotImplementedError()
 
     @Experiment()
-    def e3(trial):
+    def e3(parameters):
         pass
 
     @e3.command("cmd")
-    def e3_cmd(trial):
+    def e3_cmd(parameters):
         pass
 
     @e3.command("experiment_cmd", target="experiment")
@@ -67,6 +67,9 @@ def test_run():
             print(f.read())
 
         result = runner.invoke(clean, ["example.py"], catch_exceptions=False)
+        assert result.exit_code == 0
+
+        result = runner.invoke(show, ["example.py"], catch_exceptions=False)
         assert result.exit_code == 0
 
 

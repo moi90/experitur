@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Generator, List
 
 from experitur.errors import ExperiturError
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.experiment import Experiment
 
 
@@ -108,7 +108,7 @@ class Context:
 
     def collect(self, results_fn, failed=False):
         """
-        Collect the results of all trials in 
+        Collect the results of all trials in this context.
         """
         data = {}
         for trial_id, trial in self.store.items():
@@ -120,7 +120,7 @@ class Context:
 
         try:
             import pandas as pd
-        except:
+        except:  # pragma: no cover
             raise RuntimeError("pandas is not available.")
         else:
             data = pd.DataFrame.from_dict(data, orient="index")

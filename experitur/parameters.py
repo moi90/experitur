@@ -1,4 +1,4 @@
-from typing import Mapping
+from typing import Mapping, Union
 
 from experitur.core.parameters import *
 from experitur.helpers.merge_dicts import merge_dicts
@@ -73,13 +73,38 @@ class _RandomSamplerIter(ParameterGeneratorIter):
 
 class Random(ParameterGenerator):
     """
-    Parameter sampler based on py:class:`sklearn.model_selection.ParameterSampler`.
+    Parameter sampler based on :py:class:`sklearn.model_selection.ParameterSampler`.
+
+    If all parameters are presented as a list, sampling without replacement is performed.
+    If at least one parameter is given as a distribution, sampling with replacement is used.
+    It is highly recommended to use continuous distributions for continuous parameters.
+
+    Parameters:
+        param_distributions (dict): Dictionary with parameters names as keys and distributions or lists of values to try.
+            Distributions must provide a rvs method for sampling (such as those from :py:mod:`scipy.stats`).
+            If a list is given, it is sampled uniformly.
+        n_iter (int): Number of parameter settings that are produced.
+
+    Example:
+        .. code-block:: python
+
+            from experitur import Experiment
+            from experitur.parameters import Random
+            from scipy.stats.distributions import expon
+
+            @Random({"a": [1,2], "b": expon()}, 4)
+            @Experiment()
+            def example(parameters: TrialParameters):
+                print(parameters["a"], parameters["b"])
+
+        This example will produce four runs, e.g. "1 0.898", "1 0.923", "2 1.878", and "2 1.038".
+
     """
 
     _iterator = _RandomSamplerIter
     _str_attr = ["n_iter"]
 
-    def __init__(self, param_distributions: Dict, n_iter):
+    def __init__(self, param_distributions: Dict[str, Union[List, Any]], n_iter: int):
         if not _sklearn_available:
             raise RuntimeError("scikit-learn is not available.")  # pragma: no cover
 
@@ -107,8 +132,6 @@ class _SKOptIter(ParameterGeneratorIter):
     def __iter__(self):
         if not _skopt_available:
             raise RuntimeError("scikit-optimize is not available.")  # pragma: no cover
-
-        print("OptimizerIter.__init__")
 
         # Parameter names that are relevant in this context
         parameter_names = set(
@@ -143,8 +166,6 @@ class _SKOptIter(ParameterGeneratorIter):
             n_iter = self.parameter_generator.n_iter - len(
                 existing_parameter_configurations
             )
-
-            print("n_iter", n_iter)
 
             for _ in range(n_iter):
                 optimizer = skopt.Optimizer(
@@ -190,10 +211,45 @@ class _SKOptIter(ParameterGeneratorIter):
 
 
 class SKOpt(ParameterGenerator):
+    """
+    Parameter sampler based on :py:class:`skopt.Optimizer`.
+
+    Parameters:
+        search_space (Mapping): Dictionary with parameters names as keys and distributions or lists of values.
+            Each parameter can be defined either as
+
+            - a `(lower_bound, upper_bound)` tuple (for :py:class:`~skopt.space.space.Real` or :py:class:`~skopt.space.space.Integer` dimensions),
+            - a `(lower_bound, upper_bound, prior)` tuple (for :py:class:`~skopt.space.space.Real` dimensions),
+            - as a list of categories (for :py:class:`~skopt.space.space.Categorical` dimensions), or
+            - an instance of a :py:class:`~skopt.space.space.Dimension` object (:py:class:`~skopt.space.space.Real`, :py:class:`~skopt.space.space.Integer` or :py:class:`~skopt.space.space.Categorical`).
+        objective (str): Name of the result that will be optimized.
+        n_iter (int): Number of evaluations to find the optimum.
+        **kwargs: Additional arguments for :py:class:`skopt.Optimizer`.
+
+
+    Example:
+        .. code-block:: python
+
+            from experitur import Experiment
+            from experitur.parameters import SKOpt
+            from scipy.stats.distributions import log
+
+            @SKOpt({"a": [1,2], "b": expon()}, "y", 4)
+            @Experiment()
+            def example(parameters: TrialParameters):
+                print(parameters["a"], parameters["b"])
+
+                return {"y": parameters["a"] * parameters["b"]}
+
+        In this example, SKOpt will try to minimize :code:`y = a * b` using four evaluations.
+    """
+
     _iterator = _SKOptIter
     _str_attr = ["search_space", "objective", "n_iter"]
 
-    def __init__(self, search_space, objective, n_iter, **kwargs):
+    def __init__(
+        self, search_space: Mapping[str, Any], objective: str, n_iter: int, **kwargs
+    ):
         self.search_space = search_space
         self.n_iter = n_iter
         self.objective = objective

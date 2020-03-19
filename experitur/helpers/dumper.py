@@ -1,4 +1,3 @@
-import numpy as np
 import yaml
 
 
@@ -10,6 +9,11 @@ class ExperiturDumper(yaml.Dumper):
         return self.represent_data(data.tolist())
 
 
-# Emitter, Serializer, Representer, Resolver
-ExperiturDumper.add_representer(np.ndarray, ExperiturDumper.ndarray_representer)
-ExperiturDumper.add_multi_representer(np.number, ExperiturDumper.number_representer)
+try:
+    import numpy as np
+except ImportError:  # pragma: no cover
+    pass
+else:
+    # If numpy is available, define YAML Emitter, Serializer, Representer, Resolver
+    ExperiturDumper.add_representer(np.ndarray, ExperiturDumper.ndarray_representer)
+    ExperiturDumper.add_multi_representer(np.number, ExperiturDumper.number_representer)
