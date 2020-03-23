@@ -6,7 +6,7 @@ from experitur.parameters import Random, SKOpt
 
 
 def test_Random(tmp_path):
-    with Context(str(tmp_path)) as ctx:
+    with Context(str(tmp_path)):
         sampler = Random({"a": [1, 2], "b": [3, 4], "c": [0]}, 4)
 
         # Test __str__

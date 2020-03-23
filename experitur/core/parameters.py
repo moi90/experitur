@@ -87,7 +87,6 @@ class ParameterGenerator(ABC):
 
             class MySampler(Sampler):
                 _iterator = MySamplerIter
-            
         """
 
         if parent is None:
@@ -173,7 +172,6 @@ class Grid(ParameterGenerator):
                 print(parameters["a"], parameters["b"])
 
         This example will produce "1 3", "1 4", "2 3", and "2 4".
-        
     """
 
     _iterator = _GridIter

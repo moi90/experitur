@@ -1,7 +1,6 @@
 import importlib.util
 import os.path
 import sys
-from importlib import import_module
 
 from experitur.errors import ExperiturError
 

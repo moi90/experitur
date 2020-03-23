@@ -11,7 +11,7 @@ def test_empty_parameter_product():
 
 @pytest.mark.parametrize("shuffle", [True, False])
 def test_GridSampler(tmp_path, shuffle):
-    with Context(str(tmp_path)) as ctx:
+    with Context(str(tmp_path)):
         sampler = Grid({"a": [1, 2], "b": [3, 4], "c": [0]}, shuffle=shuffle)
 
         # Test __str__
@@ -41,7 +41,7 @@ def test_GridSampler(tmp_path, shuffle):
 
 
 def test_MultiGrid(tmp_path):
-    with Context(str(tmp_path)) as ctx:
+    with Context(str(tmp_path)):
         sampler = Multi(
             [
                 Grid({"a": [1, 2], "b": [3, 4], "c": [10, 11]}),

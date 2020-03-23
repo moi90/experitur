@@ -57,7 +57,7 @@ def test_merge(tmp_path):
 
 
 def test_parameters(tmp_path):
-    with Context(str(tmp_path)) as ctx:
+    with Context(str(tmp_path)):
 
         @Experiment()
         def exp1(parameters):
@@ -103,7 +103,7 @@ def test_parameter_generator_order(tmp_path):
     class PG5(ConcreteParameterGenerator):
         pass
 
-    with Context(str(tmp_path)) as ctx:
+    with Context(str(tmp_path)):
 
         @PG1()
         @PG2()
@@ -137,18 +137,14 @@ def test_failing_experiment(tmp_path):
 
         print(trial.data)
 
-        assert trial.data["success"] == False
+        assert trial.data["success"] is False
 
 
 def test_parameter_substitution(tmp_path):
     config = {"skip_existing": False}
     with Context(str(tmp_path), config) as ctx:
 
-        sampler = Grid({"a": [1, 2]})
-
-        @Experiment(
-            parameters={"a1": [1], "a2": [2], "b": [1, 2], "a": ["{a{b}}"],}
-        )
+        @Experiment(parameters={"a1": [1], "a2": [2], "b": [1, 2], "a": ["{a{b}}"]})
         def experiment(trial):
             return dict(trial)
 
