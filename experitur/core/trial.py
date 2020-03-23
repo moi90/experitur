@@ -35,9 +35,7 @@ def _callable_to_name(obj):
 
 
 def _match_parameters(parameters_1, parameters_2):
-    """
-    Decide whether parameters_1 are a subset of parameters_2.
-    """
+    """Decide whether parameters_1 are a subset of parameters_2."""
 
     # TODO: Ignore _underscore values as these are dynamically calculated
 
@@ -61,32 +59,72 @@ def _format_independent_parameters(trial_parameters, independent_parameters):
 
 class TrialParameters(collections.abc.MutableMapping):
     """
-    This is the trial object that the experiment interacts with.
+    Parameter configuration of the current trial.
+
+    This is automatically instanciated by experitur and provided to the experiment function:
+
+    .. code-block:: python
+
+        @Experiment(parameters={"a": [1,2,3], "prefix_a": [10]})
+        def exp1(parameters):
+            # Access current value of parameter `a` (item access)
+            parameters["a"]
+
+            # Access extra data (attribute access)
+            parameters.id # Trial ID
+            parameters.wdir # Trial working directory
+
+            def func(a=1, b=2):
+                ...
+
+            # Record default parameters of `func`
+            parameters.record_defaults(func)
+
+            # Call `func` with current value of parameter `a` and `b`=5
+            parameters.call(func, b=5)
+
+            # Access only parameters starting with a certain prefix
+            parameters_prefix = parameters.prefix("prefix_")
+
+            # All the above works as expected:
+            # parameters_prefix.<attr>, parameters_prefix[<key>], parameters_prefix.record_defaults, parameters_prefix.call, ...
+            # In our case, parameters_prefix["a"] == 10.
     """
 
-    def __init__(self, trial: "Trial"):
+    def __init__(self, trial: "Trial", prefix: str = ""):
         self._trial = trial
+        self._prefix = prefix
+
+    # MutableMapping provides concrete generic implementations of all
+    # methods except for __getitem__, __setitem__, __delitem__,
+    # __iter__, and __len__.
 
     def __getitem__(self, name):
         """Get the value of a parameter."""
-        return self._trial.data["resolved_parameters"][name]
+        return self._trial.data["resolved_parameters"][f"{self._prefix}{name}"]
 
     def __setitem__(self, name, value):
         """Set the value of a parameter."""
-        self._trial.data["resolved_parameters"][name] = value
+        self._trial.data["resolved_parameters"][f"{self._prefix}{name}"] = value
 
     def __delitem__(self, name):
         """Delete a parameter."""
-        del self._trial.data["resolved_parameters"][name]
+        del self._trial.data["resolved_parameters"][f"{self._prefix}{name}"]
 
     def __iter__(self):
-        return iter(self._trial.data["resolved_parameters"])
+        start = len(self._prefix)
+        return (
+            k[start:]
+            for k in self._trial.data["resolved_parameters"]
+            if k.startswith(self._prefix)
+        )
 
     def __len__(self):
-        return len(self._trial.data["resolved_parameters"])
+        return sum(1 for k in self)
 
     def __getattr__(self, name):
-        """Magic attributes.
+        """
+        Magic attributes.
 
         `name` can be one of the following:
 
@@ -124,40 +162,35 @@ class TrialParameters(collections.abc.MutableMapping):
         raise AttributeError(msg)
 
     @overload
-    def record_defaults(
-        self, prefix: str, func: Callable, **defaults
-    ):  # pragma: no cover
+    def record_defaults(self, func: Callable, **defaults):  # pragma: no cover
         ...
 
     @overload
-    def record_defaults(self, prefix: str, **defaults):  # pragma: no cover
+    def record_defaults(self, **defaults):  # pragma: no cover
         ...
 
-    def record_defaults(self, prefix, *args, **defaults):
-        """
-        Set default parameters.
+    def record_defaults(self, *args, **defaults):
+        """Record default parameters from a function and/or additional parameters."""
 
-        Default parameters can be assigned directly or guessed from a callable.
-        """
         if len(args) > 1:
             raise ValueError("Only 1 or 2 positional arguments allowed.")
 
         # First set explicit defaults
         for name, value in defaults.items():
-            self.setdefault(prefix + name, value)
+            self.setdefault(name, value)
 
         if args and callable(args[0]):
             callable_ = args[0]
             for param in inspect.signature(callable_).parameters.values():
                 if param.default is not param.empty:
-                    self.setdefault(prefix + param.name, param.default)
+                    self.setdefault(param.name, param.default)
 
-    def apply(self, prefix, callable_, *args, **kwargs):
-        """Apply the callable using the parameters given py prefix.
+    def call(self, func: Callable, *args, **kwargs):
+        """
+        Call the function applying the configured parameters.
 
         Args:
-            prefix (str): Prefix of the applied parameters.
-            callable_ (callable): Callable to be applied.
+            func (callable): Callable to be applied.
             *args: Positional arguments to the callable.
             **kwargs: Named defaults for the callable.
 
@@ -175,31 +208,26 @@ class TrialParameters(collections.abc.MutableMapping):
         # TODO: partial for complex non-recorded arguments?
 
         # Record defaults
-        self.record_defaults(prefix, callable_, **kwargs)
+        self.record_defaults(func, **kwargs)
 
         # Apply
         callable_names = set(
             param.name
-            for param in inspect.signature(callable_).parameters.values()
+            for param in inspect.signature(func).parameters.values()
             if param.kind in (param.POSITIONAL_OR_KEYWORD, param.KEYWORD_ONLY)
         )
 
-        start = len(prefix)
-        parameters = {
-            k[start:]: v
-            for k, v in self.items()
-            if k.startswith(prefix) and k[start:] in callable_names
-        }
+        parameters = {k: v for k, v in self.items() if k in callable_names}
 
-        return callable_(*args, **parameters)
+        return func(*args, **parameters)
 
-    def without_prefix(self, prefix):
+    def prefixed(self, prefix: str) -> "TrialParameters":
         """
-        Extract parameters beginning with prefix and remove the prefix.
-        """
-        start = len(prefix)
+        Return new :py:class:`TrialParameters` instance with prefix applied.
 
-        return {k[start:]: v for k, v in self.items() if k.startswith(prefix)}
+        Prefixes allow you to organize parameters and save keystrokes.
+        """
+        return TrialParameters(self._trial, f"{self._prefix}{prefix}")
 
 
 class Trial:

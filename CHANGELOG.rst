@@ -1,6 +1,8 @@
 Current
 =======
 
+- Remove :code:`TrialParameters.apply` to :code:`TrialParameters.call`.
+- Remove :code:`Experiment.post_grid`.
 - Make scikit-learn and pandas optional dependencies.
 - Change :code:`Experiment.__init__(parameter_grid)` to more flexible :code:`Experiment.__init__(parameters)`.
 - Context: Remove experiment constructor. Remove :code:`push_context`.
