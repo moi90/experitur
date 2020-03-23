@@ -28,7 +28,7 @@ setup(
             "sphinxcontrib-programoutput",
             "sphinx-autodoc-typehints>=1.10.0",
         ],
-        "dev": ["black", "mypy", "pydocstyle"],
+        "dev": ["black", "mypy", "pydocstyle", "pylint", "flake8"],
     },
     entry_points={"console_scripts": ["experitur=experitur.cli:cli"]},
     classifiers=[
