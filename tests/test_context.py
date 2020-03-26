@@ -2,6 +2,7 @@ import pytest
 
 from experitur.core.context import Context, DependencyError, get_current_context
 from experitur.core.experiment import Experiment
+from experitur.parameters import Grid
 
 
 def test_Context_enter():
@@ -60,3 +61,42 @@ def test_merge_config(tmp_path):
 
     with Context(str(tmp_path), config=config.copy()) as ctx:
         assert all(v == ctx.config[k] for k, v in config.items())
+
+
+def test_collect(tmp_path):
+    with Context(str(tmp_path)) as ctx:
+
+        @Grid({"a": [1, 2, 3], "b": [1, 2, 3]})
+        @Experiment()
+        def experiment(parameters):
+            return dict(parameters)
+
+    ctx.run()
+
+    result_fn = tmp_path / "result.csv"
+
+    ctx.collect(result_fn)
+
+    import pandas as pd
+
+    results = pd.read_csv(result_fn, index_col=None)
+
+    columns = set(results.columns)
+
+    assert columns == {
+        "id",
+        "wdir",
+        "time_start",
+        "time_end",
+        "experiment.meta",
+        "experiment.parent",
+        "resolved_parameters.b",
+        "result.a",
+        "parameters.b",
+        "experiment.func",
+        "resolved_parameters.a",
+        "experiment.name",
+        "result.b",
+        "parameters.a",
+        "success",
+    }

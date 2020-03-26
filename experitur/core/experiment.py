@@ -22,8 +22,6 @@ from experitur.recursive_formatter import RecursiveDict
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.context import Context
 
-_callable = callable
-
 
 class ExperimentError(ExperiturError):
     pass
@@ -41,14 +39,14 @@ class TrialNotFoundError(ExperimentError):
     pass
 
 
-def format_trial_parameters(callable=None, parameters=None, experiment=None):
-    if callable is not None:
+def format_trial_parameters(func=None, parameters=None, experiment=None):
+    if func is not None:
         try:
-            callable = callable.__name__
+            func = func.__name__
         except:
-            callable = str(callable)
+            func = str(func)
     else:
-        callable = "_"
+        func = "_"
 
     if parameters is not None:
         parameters = (
@@ -60,9 +58,9 @@ def format_trial_parameters(callable=None, parameters=None, experiment=None):
         parameters = "()"
 
     if experiment is not None:
-        callable = "{}:{}".format(str(experiment), callable)
+        func = "{}:{}".format(str(experiment), func)
 
-    return callable + parameters
+    return func + parameters
 
 
 def _coerce_parameter_generators(parameters) -> List[ParameterGenerator]:
@@ -107,7 +105,7 @@ class Experiment:
 
     - :obj:`dict`-like interface (`trial[<name>]`): Get the value of the parameter named `name`.
     - Attribute interface (`trial.<attr>`): Get meta-data for this trial.
-    - :py:meth:`~experitur.core.trial.apply`: Run a callable and automatically assign parameters.
+    - :py:meth:`~experitur.core.trial.apply`: Run a function and automatically assign parameters.
 
     See :py:class:`~experitur.core.trial.TrialParameters` for more details.
     """
@@ -127,7 +125,7 @@ class Experiment:
         self._pre_trial = None
         self._commands: Dict[str, Any] = {}
 
-        self.callable = None
+        self.func = None
 
         # Merge parameters from all ancestors
         parent = self.parent
@@ -156,7 +154,7 @@ class Experiment:
         if not self.name:
             self.name = func.__name__
 
-        self.callable = func
+        self.func = func
 
         return self
 
@@ -200,8 +198,8 @@ class Experiment:
             print("Skip inactive experiment {}.".format(self.name))
             return
 
-        if self.callable is None:
-            raise ValueError("No callable was registered for {}.".format(self))
+        if self.func is None:
+            raise ValueError("No function was registered for {}.".format(self))
 
         if self.name is None:
             raise ValueError("Experiment has no name {}.".format(self))
@@ -227,14 +225,14 @@ class Experiment:
             if self.ctx.config["skip_existing"]:
                 # Check, if a trial with this parameter set already exists
                 existing = self.ctx.store.match(
-                    callable=self.callable,
+                    func=self.func,
                     parameters=trial_configuration.get("parameters", {}),
                 )
                 if len(existing):
                     pbar.write(
                         "Skip existing configuration: {}".format(
                             format_trial_parameters(
-                                callable=self.callable, parameters=trial_configuration
+                                func=self.func, parameters=trial_configuration
                             )
                         )
                     )
@@ -268,8 +266,8 @@ class Experiment:
         `other` is usually the parent experiment.
         """
 
-        # Copy attributes: callable, ...
-        for name in ("callable", "meta"):
+        # Copy attributes: func, meta, ...
+        for name in ("func", "meta"):
             ours = getattr(self, name)
             theirs = getattr(other, name)
 
@@ -280,7 +278,7 @@ class Experiment:
                 # Merge dict attributes
                 setattr(self, name, {**theirs, **ours})
 
-    def pre_trial(self, callable):
+    def pre_trial(self, func):
         """Update the pre-trial hook.
 
         The pre-trial hook is called after the parameters for a trial are
@@ -300,10 +298,10 @@ class Experiment:
                 ...
 
         Args:
-            callable: A callable with the signature (ctx, trial_parameters).
+            func: A function with the signature (ctx, trial_parameters).
         """
 
-        self._pre_trial = callable
+        self._pre_trial = func
 
     def command(self, name=None, *, target="trial"):
         """Attach a command to an experiment.

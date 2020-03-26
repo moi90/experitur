@@ -9,13 +9,16 @@ import shutil
 import traceback
 import warnings
 from abc import abstractmethod
-from typing import Callable, Dict, overload
+from typing import Callable, Dict, List, Mapping, overload, TYPE_CHECKING
 
 import yaml
 
 from experitur.helpers.dumper import ExperiturDumper
 from experitur.helpers.merge_dicts import merge_dicts
 from experitur.recursive_formatter import RecursiveDict
+
+if TYPE_CHECKING:
+    from experitur.core.experiment import Experiment
 
 
 def _callable_to_name(obj):
@@ -37,15 +40,15 @@ def _callable_to_name(obj):
 def _match_parameters(parameters_1, parameters_2):
     """Decide whether parameters_1 are a subset of parameters_2."""
 
-    # TODO: Ignore _underscore values as these are dynamically calculated
-
     if set(parameters_1.keys()) <= set(parameters_2.keys()):
         return all(v == parameters_2[k] for k, v in parameters_1.items())
 
     return False
 
 
-def _format_independent_parameters(trial_parameters, independent_parameters):
+def _format_independent_parameters(
+    trial_parameters: Mapping, independent_parameters: List[str]
+):
     if len(independent_parameters) > 0:
         trial_id = "_".join(
             "{}-{!s}".format(k, trial_parameters[k]) for k in independent_parameters
@@ -180,8 +183,8 @@ class TrialParameters(collections.abc.MutableMapping):
             self.setdefault(name, value)
 
         if args and callable(args[0]):
-            callable_ = args[0]
-            for param in inspect.signature(callable_).parameters.values():
+            func = args[0]
+            for param in inspect.signature(func).parameters.values():
                 if param.default is not param.empty:
                     self.setdefault(param.name, param.default)
 
@@ -190,19 +193,20 @@ class TrialParameters(collections.abc.MutableMapping):
         Call the function applying the configured parameters.
 
         Args:
-            func (callable): Callable to be applied.
-            *args: Positional arguments to the callable.
-            **kwargs: Named defaults for the callable.
+            func (callable): Function to be called.
+            *args: Positional arguments to the function.
+            **kwargs: Named defaults for the function.
 
         Returns:
-            The return value of the callable.
+            The return value of the function.
 
-        The default values of the callable are determined using ``inspect``.
+        The default values of the function are determined using :py:func:`inspect.signature`.
         Additional defaults can be given using ``**kwargs``.
         These defaults are recorded into the trial.
 
-        As all passed values are recorded, make sure that these have simple
+        As all default values are recorded, make sure that these have simple
         YAML-serializable types.
+        If you need to supply values that should not be recorded, :py:func:`functools.partial` can be a work-around.
         """
 
         # TODO: partial for complex non-recorded arguments?
@@ -242,13 +246,13 @@ class Trial:
 
     Arguments
         store: TrialStore
-        callable (optional): Experiment callable
+        func (optional): Experiment function
         data (optional): Trial data
     """
 
-    def __init__(self, store, callable=None, data=None):
+    def __init__(self, store: "TrialStore", func=None, data=None):
         self.store = store
-        self.callable = callable
+        self.func = func
         self.data = data or {}
 
     def run(self):
@@ -260,7 +264,7 @@ class Trial:
         self.data["result"] = None
 
         try:
-            self.data["result"] = self.callable(TrialParameters(self))
+            self.data["result"] = self.func(TrialParameters(self))
         except (Exception, KeyboardInterrupt) as exc:
             # Log complete exc to file
             with open(os.path.join(self.data["wdir"], "error.txt"), "w") as f:
@@ -304,9 +308,9 @@ class TrialStore(collections.abc.MutableMapping):
         pass
 
     def match(
-        self, callable=None, parameters=None, experiment=None, resolved_parameters=None
+        self, func=None, parameters=None, experiment=None, resolved_parameters=None
     ) -> Dict[str, Trial]:
-        callable = _callable_to_name(callable)
+        func = _callable_to_name(func)
 
         from experitur.core.experiment import Experiment
 
@@ -315,10 +319,8 @@ class TrialStore(collections.abc.MutableMapping):
 
         result = {}
         for trial_id, trial in self.items():
-            if (
-                callable is not None
-                and _callable_to_name(trial.data.get("callable")) != callable
-            ):
+            experiment_ = trial.data.get("experiment", {})
+            if func is not None and _callable_to_name(experiment_.get("func")) != func:
                 continue
 
             if parameters is not None and not _match_parameters(
@@ -331,9 +333,7 @@ class TrialStore(collections.abc.MutableMapping):
             ):
                 continue
 
-            if experiment is not None and trial.data.get("experiment") != str(
-                experiment
-            ):
+            if experiment is not None and experiment_.get("name") != str(experiment):
                 continue
 
             result[trial_id] = trial
@@ -341,7 +341,10 @@ class TrialStore(collections.abc.MutableMapping):
         return result
 
     def _make_unique_trial_id(
-        self, experiment_name, trial_parameters, independent_parameters
+        self,
+        experiment_name: str,
+        trial_parameters: Mapping,
+        independent_parameters: List[str],
     ):
         trial_id = _format_independent_parameters(
             trial_parameters, independent_parameters
@@ -392,7 +395,8 @@ class TrialStore(collections.abc.MutableMapping):
         os.makedirs(wdir, exist_ok=True)
         return wdir
 
-    def create(self, trial_configuration, experiment):
+    def create(self, trial_configuration, experiment: "Experiment"):
+        """Create a :py:class:`Trial`."""
         trial_configuration.setdefault("parameters", {})
 
         # Calculate trial_id
@@ -411,17 +415,19 @@ class TrialStore(collections.abc.MutableMapping):
             resolved_parameters=RecursiveDict(
                 trial_configuration["parameters"], allow_missing=True
             ).as_dict(),
-            experiment=experiment.name,
-            parent_experiment=experiment.parent.name
-            if experiment.parent is not None
-            else None,
+            experiment={
+                "name": experiment.name,
+                "parent": experiment.parent.name
+                if experiment.parent is not None
+                else None,
+                "func": _callable_to_name(experiment.func),
+                "meta": experiment.meta,
+            },
             result=None,
-            callable=_callable_to_name(experiment.callable),
             wdir=wdir,
-            experiment_meta=experiment.meta,
         )
 
-        trial = Trial(self, callable=experiment.callable, data=trial_configuration)
+        trial = Trial(self, func=experiment.func, data=trial_configuration)
 
         self[trial_id] = trial
 

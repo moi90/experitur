@@ -1,7 +1,6 @@
 import collections
-import os.path
-from contextlib import contextmanager
-from typing import TYPE_CHECKING, Generator, List
+from pathlib import Path
+from typing import TYPE_CHECKING, List, Union
 
 from experitur.errors import ExperiturError
 
@@ -106,29 +105,39 @@ class Context:
         for exp in ordered_experiments:
             exp.run()
 
-    def collect(self, results_fn, failed=False):
+    def collect(self, results_fn: Union[str, Path], failed=False):
         """
         Collect the results of all trials in this context.
+
+        Parameters:
+            results_fn (str or Path): Path where the result should be written.
+            failed (boolean): Include failed trials. (Default: False)
         """
-        data = {}
+
+        if isinstance(results_fn, Path):
+            results_fn = str(results_fn)
+
+        try:
+            import pandas as pd
+        except ImportError:  # pragma: no cover
+            raise RuntimeError("pandas is not available.")
+
+        try:
+            from pandas import json_normalize
+        except ImportError:
+            from pandas.io.json import json_normalize
+
+        data = []
         for trial_id, trial in self.store.items():
             if not failed and not trial.data.get("success", False):
                 # Skip failed trials if failed=False
                 continue
 
-            data[trial_id] = _prepare_trial_data(trial.data)
+            data.append(trial.data)
 
-        try:
-            import pandas as pd
-        except:  # pragma: no cover
-            raise RuntimeError("pandas is not available.")
-        else:
-            data = pd.DataFrame.from_dict(data, orient="index")
-            data.index.name = "id"
+        data = json_normalize(data, max_level=1).set_index("id")
 
-            # TODO: Remove columns that are not serializable in CSV
-
-            data.to_csv(results_fn)
+        data.to_csv(results_fn)
 
     def get_experiment(self, name) -> "Experiment":
         """
@@ -167,28 +176,6 @@ class Context:
         item = _context_stack.pop()
 
         assert item is self
-
-
-def _prepare_trial_data(trial_data):
-    result = {}
-
-    for k, v in trial_data.items():
-        if k in ("id", "parameters", "result"):
-            continue
-        result["meta_{}".format(k)] = v
-
-    for k, v in trial_data.get("parameters", {}).items():
-        result["{}".format(k)] = v
-
-    trial_result = trial_data.get("result", {})
-
-    if isinstance(trial_result, dict):
-        for k, v in trial_result.items():
-            result["{}_".format(k)] = v
-    else:
-        result["result_"] = trial_result
-
-    return result
 
 
 _context_stack: List[Context] = []

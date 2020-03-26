@@ -39,7 +39,7 @@ class _RandomSamplerIter(ParameterGeneratorIter):
 
             # Retrieve all trials that match parent_configuration
             existing_trials = self.experiment.ctx.store.match(
-                callable=self.experiment.callable,
+                func=self.experiment.func,
                 parameters=parent_configuration.get("parameters", {}),
             )
 
@@ -93,7 +93,7 @@ class Random(ParameterGenerator):
     Example:
         .. code-block:: python
 
-            from experitur import Experiment
+            from experitur import Experiment, TrialParameters
             from experitur.parameters import Random
             from scipy.stats.distributions import expon
 
@@ -148,7 +148,7 @@ class _SKOptIter(ParameterGeneratorIter):
         for parent_configuration in self.parent:
             # Retrieve all trials that match parent_configuration
             existing_trials = self.experiment.ctx.store.match(
-                callable=self.experiment.callable,
+                func=self.experiment.func,
                 parameters=parent_configuration.get("parameters", {}),
             )
 
@@ -180,7 +180,7 @@ class _SKOptIter(ParameterGeneratorIter):
 
                 # Train model
                 existing_trials = self.experiment.ctx.store.match(
-                    callable=self.experiment.callable,
+                    func=self.experiment.func,
                     parameters=parent_configuration.get("parameters", {}),
                 )
 
@@ -235,7 +235,7 @@ class SKOpt(ParameterGenerator):
     Example:
         .. code-block:: python
 
-            from experitur import Experiment
+            from experitur import Experiment, TrialParameters
             from experitur.parameters import SKOpt
             from scipy.stats.distributions import log
 

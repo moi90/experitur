@@ -81,7 +81,7 @@ def test_trial_store(tmp_path):
             trial_store.create({"parameters": {"a": 3, "b": 4}}, experiment)
             trial_store.create({"parameters": {"a": 3, "b": 4}}, experiment2)
 
-            assert set(trial_store.match(callable=test).keys()) == {
+            assert set(trial_store.match(func=test).keys()) == {
                 "test/a-1_b-2",
                 "test/a-2_b-3",
                 "test/a-3_b-4",
