@@ -1,0 +1,13 @@
+# Development environment for conda
+name: experitur
+channels:
+  - defaults
+dependencies:
+  - python=3.7
+  - ipython
+  - jupyter
+  - scipy
+  - matplotlib
+  - numpy
+  - pandas
+  - scikit-learn
