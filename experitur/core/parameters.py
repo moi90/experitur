@@ -163,15 +163,19 @@ class Grid(ParameterGenerator):
     Example:
         .. code-block:: python
 
-            from experitur import Experiment
+            from experitur import Experiment, TrialParameters
             from experitur.parameters import Grid
 
             @Grid({"a": [1,2], "b": [3,4]})
             @Experiment()
+            def example1(parameters: TrialParameters):
+                print(parameters["a"], parameters["b"])
+
+            @Experiment2(parameters={"a": [1,2], "b": [3,4]})
             def example(parameters: TrialParameters):
                 print(parameters["a"], parameters["b"])
 
-        This example will produce "1 3", "1 4", "2 3", and "2 4".
+        Both examples are equivalent and will produce "1 3", "1 4", "2 3", and "2 4".
     """
 
     _iterator = _GridIter
