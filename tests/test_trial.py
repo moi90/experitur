@@ -9,6 +9,7 @@ from experitur.core.experiment import Experiment
 from experitur.core.trial import (
     FileTrialStore,
     Trial,
+    TrialParameters,
     _callable_to_name,
     _format_independent_parameters,
     _match_parameters,
@@ -142,7 +143,7 @@ def test_trial_parameters(tmp_path, recwarn):
     with Context(str(tmp_path), config) as ctx:
 
         @Experiment(parameters={"a": [1], "b": [2], "c": ["{a}"]})
-        def experiment(parameters):
+        def experiment(parameters: TrialParameters):
             assert parameters["a"] == 1
             assert parameters["b"] == 2
             assert parameters["c"] == parameters["a"]
@@ -215,14 +216,14 @@ def test_trial_parameters(tmp_path, recwarn):
             assert parameters["prefix3__a"] == 9
 
             # Keyword arguments will be recorded and can be overwritten
-            identity_a8 = functools.partial(identity, a=8)
-            parameters.prefixed("prefix4_").record_defaults(identity_a8)
+            identity_a8_kwd = functools.partial(identity, a=8)
+            parameters.prefixed("prefix4_").record_defaults(identity_a8_kwd)
             assert parameters.prefixed("prefix4_") == {"a": 8, "c": 4, "d": 5}
 
-            parameters.prefixed("prefix5_").record_defaults(identity_a8, a=9)
+            parameters.prefixed("prefix5_").record_defaults(identity_a8_kwd, a=9)
             assert parameters.prefixed("prefix5_") == {"a": 9, "c": 4, "d": 5}
 
-            assert parameters.prefixed("prefix6__").call(identity_a8, b=2) == (
+            assert parameters.prefixed("prefix6__").call(identity_a8_kwd, b=2) == (
                 8,
                 2,
                 4,
@@ -241,5 +242,8 @@ def test_trial_parameters(tmp_path, recwarn):
             assert parameters.prefixed("prefix7__") == {"c": 4, "d": 9}
 
             #
+            assert parameters.prefixed("prefix7__").setdefaults(
+                parameters.prefixed("prefix6__"), e=10
+            ) == {"c": 4, "d": 9, "b": 2, "e": 10, "a": 8}
 
         ctx.run()

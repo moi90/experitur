@@ -9,7 +9,19 @@ import shutil
 import traceback
 import warnings
 from abc import abstractmethod
-from typing import Callable, Dict, List, Mapping, overload, TYPE_CHECKING
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Tuple,
+    TypeVar,
+    Union,
+    overload,
+)
 
 import yaml
 
@@ -19,6 +31,8 @@ from experitur.recursive_formatter import RecursiveDict
 
 if TYPE_CHECKING:
     from experitur.core.experiment import Experiment
+
+T = TypeVar("T")
 
 
 def _callable_to_name(obj):
@@ -164,15 +178,18 @@ class TrialParameters(collections.abc.MutableMapping):
         msg = "Trial has no attribute: {}".format(name)
         raise AttributeError(msg)
 
-    @overload
+    def __repr__(self):
+        return f"<TrialParameters({dict(self)})>"
+
+    @overload  # noqa: F811
     def record_defaults(self, func: Callable, **defaults):  # pragma: no cover
         ...
 
-    @overload
+    @overload  # noqa: F811
     def record_defaults(self, **defaults):  # pragma: no cover
         ...
 
-    def record_defaults(self, *args, **defaults):
+    def record_defaults(self, *args, **defaults):  # noqa: F811
         """Record default parameters from a function and/or additional parameters."""
 
         if len(args) > 1:
@@ -188,7 +205,7 @@ class TrialParameters(collections.abc.MutableMapping):
                 if param.default is not param.empty:
                     self.setdefault(param.name, param.default)
 
-    def call(self, func: Callable, *args, **kwargs):
+    def call(self, func: Callable[..., T], *args, **kwargs) -> T:
         """
         Call the function applying the configured parameters.
 
@@ -232,6 +249,40 @@ class TrialParameters(collections.abc.MutableMapping):
         Prefixes allow you to organize parameters and save keystrokes.
         """
         return TrialParameters(self._trial, f"{self._prefix}{prefix}")
+
+    def setdefaults(
+        self, defaults: Union[Mapping, Iterable[Tuple[str, Any]], None] = None, **kwargs
+    ):
+        """
+        Insert value in `defaults` into self it does not yet exist.
+
+        Existing keys are not overwritten.
+        If keyword arguments are given, the keyword arguments and their values are added.
+
+        Parameters
+        ----------
+        defaults (Mapping or Iterable, optional): Default values.
+        **kwargs: Additional default values.
+        """
+
+        itemiters = []
+
+        if isinstance(defaults, TrialParameters):
+            itemiters.append(dict(defaults).items())
+        elif isinstance(defaults, collections.abc.Mapping):
+            itemiters.append(defaults.items())
+        elif isinstance(defaults, collections.abc.Iterable):
+            itemiters.append(defaults)  # type: ignore
+        elif defaults is None:
+            pass
+        else:
+            raise ValueError(f"Unexpected type for defaults: {type(b)}")
+
+        itemiters.append(kwargs.items())
+
+        for key, value in itertools.chain(*itemiters):
+            self.setdefault(key, value)
+        return self
 
 
 class Trial:
