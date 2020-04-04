@@ -193,8 +193,8 @@ def test_trial_parameters(tmp_path, recwarn):
             assert parameters["prefix1__d"] == 7
 
             # test record_defaults
-            parameters.prefixed("prefix2__").record_defaults(identity, x=7)
-            assert parameters.prefixed("prefix2__") == {"c": 4, "d": 5, "x": 7}
+            parameters.prefixed("prefix2__").record_defaults(identity)
+            assert parameters.prefixed("prefix2__") == {"c": 4, "d": 5}
 
             # test call: functools.partial
 
@@ -207,21 +207,18 @@ def test_trial_parameters(tmp_path, recwarn):
                 5,
             )
             assert "prefix3__a" not in parameters
-            assert parameters.prefixed("prefix3__").call(identity_a8, a=9, b=2) == (
-                8,
-                2,
-                4,
-                5,
-            )
-            assert parameters["prefix3__a"] == 9
 
-            # Keyword arguments will be recorded and can be overwritten
+            with pytest.raises(TypeError):
+                parameters.prefixed("prefix3__").call(identity_a8, a=9, b=2)
+            assert "prefix3__a" not in parameters
+
+            # Keyword arguments will *not* be recorded and can *not* be overwritten
             identity_a8_kwd = functools.partial(identity, a=8)
             parameters.prefixed("prefix4_").record_defaults(identity_a8_kwd)
-            assert parameters.prefixed("prefix4_") == {"a": 8, "c": 4, "d": 5}
+            assert parameters.prefixed("prefix4_") == {"c": 4, "d": 5}
 
-            parameters.prefixed("prefix5_").record_defaults(identity_a8_kwd, a=9)
-            assert parameters.prefixed("prefix5_") == {"a": 9, "c": 4, "d": 5}
+            with pytest.raises(TypeError):
+                parameters.prefixed("prefix5_").record_defaults(identity_a8_kwd, a=9)
 
             assert parameters.prefixed("prefix6__").call(identity_a8_kwd, b=2) == (
                 8,
@@ -229,22 +226,39 @@ def test_trial_parameters(tmp_path, recwarn):
                 4,
                 5,
             )
-            assert parameters["prefix6__a"] == 8
+            assert "prefix6__a" not in parameters
 
-            # Keyword arguments will be recorded and can be overwritten
-            identity_d9 = functools.partial(identity, d=9)
-            assert parameters.prefixed("prefix7__").call(identity_d9, 1, 2) == (
+            # Keyword arguments will be not recorded and can not be overwritten
+            identity_d9_kwd = functools.partial(identity, d=9)
+            assert parameters.prefixed("prefix7__").call(identity_d9_kwd, 1, 2) == (
                 1,
                 2,
                 4,
                 9,
             )
-            assert parameters.prefixed("prefix7__") == {"c": 4, "d": 9}
+            assert parameters.prefixed("prefix7__") == {"c": 4}
 
-            #
-            assert parameters.prefixed("prefix7__").setdefaults(
-                parameters.prefixed("prefix6__"), e=10
-            ) == {"c": 4, "d": 9, "b": 2, "e": 10, "a": 8}
+            with pytest.raises(TypeError):
+                parameters.prefixed("prefix7__").call(identity_d9_kwd, 1, 2, 5, 10)
+
+            # Ignore superfluous parameter when already set by partial
+            parameters.prefixed("prefix7__")["d"] = 10
+            assert parameters.prefixed("prefix7__").call(identity_d9_kwd, 1, 2) == (
+                1,
+                2,
+                4,
+                9,
+            )
+
+            ### Partial end
+
+            # setdefaults
+            assert parameters.prefixed("prefix8__").setdefaults(
+                dict(a=1, b=2, c=3, d=4), e=10
+            ) == dict(a=1, b=2, c=3, d=4, e=10)
+            assert dict(parameters.prefixed("prefix8__")) == dict(
+                a=1, b=2, c=3, d=4, e=10
+            )
 
             # Make sure that the default value is recorded when using .get
             assert parameters.prefixed("prefix7__").get("f", 10) == 10

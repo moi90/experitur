@@ -185,29 +185,50 @@ class TrialParameters(collections.abc.MutableMapping):
     def __repr__(self):
         return f"<TrialParameters({dict(self)})>"
 
-    @overload  # noqa: F811
-    def record_defaults(self, func: Callable, **defaults):  # pragma: no cover
-        ...
+    def record_defaults(self, func: Callable, **defaults):
+        """
+        Record default parameters from a function and additional parameters.
 
-    @overload  # noqa: F811
-    def record_defaults(self, **defaults):  # pragma: no cover
-        ...
+        Args:
+            func (callable): The keyword arguments of this function will be recorded if not already present.
+            **kwargs: Additional arguments that will be recorded if not already present.
 
-    def record_defaults(self, *args, **defaults):  # noqa: F811
-        """Record default parameters from a function and/or additional parameters."""
+        Use :py:class:`functools.partial` to pass keyword parameters to `func` that should not be recorded.
+        """
 
-        if len(args) > 1:
-            raise ValueError("Only 1 or 2 positional arguments allowed.")
+        __tracebackhide__ = True
+
+        if not callable(func):
+            raise ValueError("Only callables may be passed as first argument.")
+
+        # Ignore partial keyword arguments
+        try:
+            partial_keywords = func.keywords  # type: ignore
+        except AttributeError:
+            partial_keywords = set()
+
+        func_defaults = {
+            param.name: param.default
+            for param in inspect.signature(func).parameters.values()
+            if param.name not in partial_keywords
+        }
 
         # First set explicit defaults
         for name, value in defaults.items():
+            if func_defaults is not None and name not in func_defaults:
+                raise TypeError(f"{func} got an unexpected keyword argument '{name}'")
+
             self.setdefault(name, value)
 
-        if args and callable(args[0]):
-            func = args[0]
-            for param in inspect.signature(func).parameters.values():
-                if param.default is not param.empty:
-                    self.setdefault(param.name, param.default)
+        # Second, set remaining func defaults
+        if func_defaults is not None:
+            self.setdefaults(
+                {
+                    k: v
+                    for k, v in func_defaults.items()
+                    if v is not inspect.Parameter.empty
+                }
+            )
 
     def call(self, func: Callable[..., T], *args, **kwargs) -> T:
         """
@@ -227,19 +248,25 @@ class TrialParameters(collections.abc.MutableMapping):
 
         As all default values are recorded, make sure that these have simple
         YAML-serializable types.
-        If you need to supply values that should not be recorded, :py:func:`functools.partial` can be a work-around.
+        
+        Use :py:class:`functools.partial` to pass keyword parameters that should not be recorded.
         """
 
-        # TODO: partial for complex non-recorded arguments?
-
-        # Record defaults
+        # Record default parameters
         self.record_defaults(func, **kwargs)
+
+        # Ignore partial keyword arguments
+        try:
+            partial_keywords = func.keywords  # type: ignore
+        except AttributeError:
+            partial_keywords = set()
 
         # Apply
         callable_names = set(
             param.name
             for param in inspect.signature(func).parameters.values()
             if param.kind in (param.POSITIONAL_OR_KEYWORD, param.KEYWORD_ONLY)
+            and param.name not in partial_keywords
         )
 
         parameters = {k: v for k, v in self.items() if k in callable_names}
