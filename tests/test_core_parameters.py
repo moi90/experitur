@@ -11,6 +11,8 @@ def test_empty_parameter_product():
 
 def test_Const(tmp_path):
     with Context(str(tmp_path)):
+        Const(c=3)
+
         sampler = Const({"a": 1, "b": 2}, c=3)
 
         # Test __str__

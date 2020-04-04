@@ -166,8 +166,11 @@ class Const(ParameterGenerator):
     _iterator = _ConstIter
     _str_attr: List[str] = ["parameters"]
 
-    def __init__(self, parameters: Mapping[str, Any], **kwargs):
-        self.parameters = {**parameters, **kwargs}
+    def __init__(self, parameters: Optional[Mapping[str, Any]] = None, **kwargs):
+        if parameters is None:
+            self.parameters = kwargs
+        else:
+            self.parameters = {**parameters, **kwargs}
 
     @property
     def varying_parameters(self):
