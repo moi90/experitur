@@ -131,6 +131,53 @@ def parameter_product(p: Mapping[str, Iterable]):
             yield params
 
 
+class _ConstIter(ParameterGeneratorIter):
+    def __iter__(self):
+        for parent_configuration in self.parent:
+            yield merge_dicts(
+                parent_configuration, parameters=self.parameter_generator.parameters
+            )
+
+
+class Const(ParameterGenerator):
+    """
+    Constant parameters.
+
+    Parameters may be passed as a mapping and/or as keyword arguments.
+
+    Parameters:
+        parameters (Mapping): The parameters, as a dictionary mapping parameter names to values.
+        **kwargs: Additional parameters.
+
+    Example:
+        .. code-block:: python
+
+            from experitur import Experiment, TrialParameters
+            from experitur.parameters import Const
+
+            @Const({"a": 1, "b": 2}, c=3)
+            @Experiment()
+            def example1(parameters: TrialParameters):
+                print(parameters["a"], parameters["b"], parameters["c"])
+
+        This example will produce "1 2 3".
+    """
+
+    _iterator = _ConstIter
+    _str_attr: List[str] = ["parameters"]
+
+    def __init__(self, parameters: Mapping[str, Any], **kwargs):
+        self.parameters = {**parameters, **kwargs}
+
+    @property
+    def varying_parameters(self):
+        return {}
+
+    @property
+    def invariant_parameters(self):
+        return {k: v for k, v in self.parameters.items()}
+
+
 class _GridIter(ParameterGeneratorIter):
     def __iter__(self):
 
@@ -179,7 +226,7 @@ class Grid(ParameterGenerator):
     """
 
     _iterator = _GridIter
-    _str_attr: List[str] = []
+    _str_attr: List[str] = ["grid", "shuffle"]
 
     def __init__(self, grid: Mapping[str, Iterable], shuffle: bool = False):
         self.grid = grid

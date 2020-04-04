@@ -19,6 +19,8 @@ Parameter generators can be supplied using the :code:`parameters` parameter of :
 or as :std:term:`decorators<decorator>`.
 Simple parameter grids can be passed as a :py:class:`dict` to the :code:`parameters` parameter.
 
+.. autoclass:: experitur.parameters.Const
+
 .. autoclass:: experitur.parameters.Grid
 
 .. autoclass:: experitur.parameters.Random

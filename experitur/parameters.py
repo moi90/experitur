@@ -3,6 +3,7 @@ from typing import Mapping, Union, Any, Dict, List
 from experitur.core.parameters import (
     ParameterGenerator,
     ParameterGeneratorIter,
+    Const,
     Grid,
     Multi,
 )
