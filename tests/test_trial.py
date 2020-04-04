@@ -246,4 +246,8 @@ def test_trial_parameters(tmp_path, recwarn):
                 parameters.prefixed("prefix6__"), e=10
             ) == {"c": 4, "d": 9, "b": 2, "e": 10, "a": 8}
 
+            # Make sure that the default value is recorded when using .get
+            assert parameters.prefixed("prefix7__").get("f", 10) == 10
+            assert parameters.prefixed("prefix7__")["f"] == 10
+
         ctx.run()

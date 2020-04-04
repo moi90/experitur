@@ -139,6 +139,10 @@ class TrialParameters(collections.abc.MutableMapping):
     def __len__(self):
         return sum(1 for k in self)
 
+    # Overwrite get to save supplied default value
+    def get(self, key, default=None):
+        return self.setdefault(key, default)
+
     def __getattr__(self, name):
         """
         Magic attributes.
