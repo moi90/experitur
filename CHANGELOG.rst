@@ -1,6 +1,7 @@
 Current
 =======
 
+- Fix endless recusion error in :py:func:`redirect_stdout`.
 - Rename :code:`callable` parameters to :code:`func`.
 - Remove :code:`TrialParameters.apply` to :code:`TrialParameters.call`.
 - Remove :code:`Experiment.post_grid`.
