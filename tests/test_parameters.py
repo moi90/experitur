@@ -68,10 +68,13 @@ def test_RandomRepeat(tmp_path):
 def test_SKOpt(tmp_path):
     config = {"skip_existing": True}
     with Context(str(tmp_path), config) as ctx:
-        parameters = SKOpt({"x": (-10.0, 10.0, "uniform")}, "x", 4)
+        parameters = SKOpt({"x": (-10.0, 10.0, "uniform"), "y": (0, 10)}, "x", 4)
 
         @Experiment(parameters=parameters)
         def exp(trial: TrialParameters):
+            assert type(trial["x"]) is float
+            assert type(trial["y"]) is int
+
             return dict(trial)
 
         # Execute experiment a first time

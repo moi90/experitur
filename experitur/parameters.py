@@ -1,17 +1,19 @@
-from typing import Mapping, Union, Any, Dict, List
+from collections import OrderedDict
+from typing import Any, Dict, List, Mapping, Union
 
 from experitur.core.parameters import (
-    ParameterGenerator,
-    ParameterGeneratorIter,
     Const,
     Grid,
     Multi,
+    ParameterGenerator,
+    ParameterGeneratorIter,
 )
 from experitur.helpers.merge_dicts import merge_dicts
 
 try:
     import skopt
     from skopt.utils import dimensions_aslist, point_asdict, point_aslist
+    import skopt.space
 
     _skopt_available = True
 except ImportError:  # pragma: no cover
@@ -209,11 +211,22 @@ class _SKOptIter(ParameterGeneratorIter):
 
                 # Get suggestion
                 # TODO: Save expected result (constant liar strategy) to allow parallel optimization
-                parameters = point_asdict(
+                parameters = point_as_native_dict(
                     self.parameter_generator.search_space, optimizer.ask()
                 )
 
                 yield merge_dicts(parent_configuration, parameters=parameters)
+
+
+def point_as_native_dict(search_space, point_as_list):
+    params_dict = OrderedDict()
+    for k, v in zip(sorted(search_space.keys()), point_as_list):
+        if isinstance(search_space[k], skopt.space.Integer):
+            v = int(v)
+        elif isinstance(search_space[k], skopt.space.Real):
+            v = float(v)
+        params_dict[k] = v
+    return params_dict
 
 
 class SKOpt(ParameterGenerator):
@@ -256,7 +269,9 @@ class SKOpt(ParameterGenerator):
     def __init__(
         self, search_space: Mapping[str, Any], objective: str, n_iter: int, **kwargs
     ):
-        self.search_space = search_space
+        self.search_space = search_space = {
+            k: skopt.space.check_dimension(v) for k, v in search_space.items()
+        }
         self.n_iter = n_iter
         self.objective = objective
         self.kwargs = kwargs
