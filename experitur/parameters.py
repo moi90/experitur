@@ -1,3 +1,4 @@
+import logging
 from collections import OrderedDict
 from typing import Any, Dict, List, Mapping, Union
 
@@ -201,7 +202,12 @@ class _SKOptIter(ParameterGeneratorIter):
                         trial.data["result"][self.parameter_generator.objective],
                     )
                     for trial in existing_trials.values()
+                    if trial.data.get("result", None)
                 ]
+
+                self.parameter_generator.logger.info(
+                    f"Training on {len(results):d} previous trials."
+                )
 
                 if results:
                     X, Y = zip(*results)
@@ -209,11 +215,18 @@ class _SKOptIter(ParameterGeneratorIter):
 
                     optimizer.tell(X, Y)
 
+                if optimizer._n_initial_points > 0:
+                    self.parameter_generator.logger.info(
+                        f"Random sampling. {optimizer._n_initial_points:d} random trials until optimizer fit."
+                    )
+
                 # Get suggestion
                 # TODO: Save expected result (constant liar strategy) to allow parallel optimization
                 parameters = point_as_native_dict(
                     self.parameter_generator.search_space, optimizer.ask()
                 )
+
+                self.parameter_generator.logger.info(f"Suggestion: {parameters}")
 
                 yield merge_dicts(parent_configuration, parameters=parameters)
 
@@ -276,7 +289,10 @@ class SKOpt(ParameterGenerator):
         self.objective = objective
         self.kwargs = kwargs
 
+        self.logger = logging.getLogger(__name__)
+
     @property
     def varying_parameters(self) -> Mapping:
         """Parameters in this sampler. Does not include parameters that do not vary."""
         return self.search_space
+
