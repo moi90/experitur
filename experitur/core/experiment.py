@@ -7,13 +7,18 @@ import random
 import sys
 import textwrap
 import traceback
-from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Mapping, Union, Callable
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Mapping, Union
 
 import click
 import tqdm
 
 from experitur.core.context import get_current_context
-from experitur.core.parameters import Grid, Multi, ParameterGenerator
+from experitur.core.parameters import (
+    Grid,
+    Multi,
+    ParameterGenerator,
+    check_parameter_generators,
+)
 from experitur.errors import ExperiturError
 from experitur.helpers import tqdm_redirect
 from experitur.helpers.merge_dicts import merge_dicts
@@ -43,7 +48,7 @@ def format_trial_parameters(func=None, parameters=None, experiment=None):
     if func is not None:
         try:
             func = func.__name__
-        except:
+        except Exception:
             func = str(func)
     else:
         func = "_"
@@ -61,19 +66,6 @@ def format_trial_parameters(func=None, parameters=None, experiment=None):
         func = "{}:{}".format(str(experiment), func)
 
     return func + parameters
-
-
-def _coerce_parameter_generators(parameters) -> List[ParameterGenerator]:
-    if parameters is None:
-        return []
-    if isinstance(parameters, Mapping):
-        return [Grid(parameters)]
-    if isinstance(parameters, Iterable):
-        return sum((_coerce_parameter_generators(p) for p in parameters), [])
-    if isinstance(parameters, ParameterGenerator):
-        return [parameters]
-
-    raise ValueError(f"Unsupported type for parameters: {parameters!r}")
 
 
 class Experiment:
@@ -120,7 +112,7 @@ class Experiment:
         self.active = active
 
         self._own_parameter_generators: List[ParameterGenerator]
-        self._own_parameter_generators = _coerce_parameter_generators(parameters)
+        self._own_parameter_generators = check_parameter_generators(parameters)
 
         self._pre_trial = None
         self._commands: Dict[str, Any] = {}

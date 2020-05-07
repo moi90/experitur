@@ -44,6 +44,13 @@ Multiple parameter generators can be stacked.
 
 For every value of :code:`a`, four values will be drawn for :code:`b`.
 
+Conditions
+~~~~~~~~~~
+
+Parameters can be generated differently depending on :py:class:`~experitur.parameters.Conditions`.
+
+.. autoclass:: experitur.parameters.Conditions
+
 .. _optimization:
 
 Optimization

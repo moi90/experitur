@@ -281,3 +281,34 @@ class Multi(ParameterGenerator):
                 parameters.pop(ip, None)
 
         return parameters
+
+    @property
+    def invariant_parameters(self) -> Dict[str, Any]:
+        invariant_parameters: Dict[str, Any] = {}
+        for gen in self.generators:
+            invariant_parameters.update(gen.invariant_parameters)
+
+            # Delete invariant parameters
+            for ip in gen.varying_parameters:
+                invariant_parameters.pop(ip, None)
+
+        return invariant_parameters
+
+
+def check_parameter_generators(parameters) -> List[ParameterGenerator]:
+    """
+    Check parameters argument.
+
+    Convert None, Mapping, Iterable to list of :py:class:`ParameterGenerator`s.
+    """
+
+    if parameters is None:
+        return []
+    if isinstance(parameters, Mapping):
+        return [Grid(parameters)]
+    if isinstance(parameters, Iterable):
+        return sum((check_parameter_generators(p) for p in parameters), [])
+    if isinstance(parameters, ParameterGenerator):
+        return [parameters]
+
+    raise ValueError(f"Unsupported type for parameters: {parameters!r}")
