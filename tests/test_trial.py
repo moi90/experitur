@@ -269,6 +269,43 @@ def test_trial_parameters(tmp_path, recwarn):
             with pytest.raises(
                 TypeError, match=re.escape("Missing required parameter(s) 'a', 'b'")
             ):
-                parameters.prefixed("__empty_").call(identity)
+                parameters.prefixed("__empty1_").call(identity)
+
+            ### parameters.choice
+            class A:
+                pass
+
+            def b():
+                pass
+
+            assert (
+                parameters.prefixed("__empty2_").choice("parameter_name", [A, b], "A")
+                == A
+            )
+
+            parameters.prefixed("__empty2_")["parameter_name"] = "b"
+
+            assert (
+                parameters.prefixed("__empty2_").choice("parameter_name", [A, b], "A")
+                == b
+            )
+
+            x, y = 1, 2
+
+            with pytest.raises(ValueError):
+                parameters.prefixed("__empty2_").choice("parameter_name", [x, y], "a")
+
+            assert (
+                parameters.prefixed("__empty3_").choice(
+                    "parameter_name", {"x": x, "y": y}, "x"
+                )
+                == x
+            )
+
+            with pytest.raises(ValueError):
+                parameters.prefixed("__empty3_").choice("parameter_name", [A, A], "A")
+
+            with pytest.raises(ValueError):
+                parameters.prefixed("__empty3_").choice("parameter_name", A, "A")  # type: ignore
 
         ctx.run()

@@ -9,6 +9,7 @@ import shutil
 import traceback
 import warnings
 from abc import abstractmethod
+from collections import OrderedDict
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -72,6 +73,15 @@ def _format_independent_parameters(
         trial_id = "_"
 
     return trial_id
+
+
+def _get_object_name(obj):
+    try:
+        return obj.__name__
+    except AttributeError:
+        pass
+
+    raise ValueError(f"Unable to determine the name of {obj}")
 
 
 class TrialParameters(collections.abc.MutableMapping):
@@ -337,6 +347,40 @@ class TrialParameters(collections.abc.MutableMapping):
         for key, value in itertools.chain(*itemiters):
             self.setdefault(key, value)
         return self
+
+    def choice(
+        self, parameter_name: str, choices: Union[Mapping, Iterable], default=None,
+    ):
+        """
+        Chose a value from an iterable whose name matches the value stored in parameter_name.
+
+        If parameter_name is not configured, the first entry is returned and recorded as default.
+
+        Args:
+            parameter_name (str): Name of the parameter.
+            choices (Mapping or Iterable): Mapping of names -> values or Iterable of values with a name (e.g. classes or functions).
+            default: Default key in choices.
+
+        Returns:
+            The configured value from the iterable.
+
+        """
+        if isinstance(choices, collections.abc.Mapping):
+            mapping = choices
+        elif isinstance(choices, collections.abc.Iterable):
+            names_values = [(_get_object_name(v), v) for v in choices]
+            mapping = OrderedDict(names_values)
+            if len(mapping) != len(names_values):
+                raise ValueError("Duplicate names in {choices}")
+        else:
+            raise ValueError(f"Unexpected type of choices: {choices!r}")
+
+        if default is not None:
+            self.setdefault(parameter_name, default)
+
+        entry_name = self[parameter_name]
+
+        return mapping[entry_name]
 
 
 class Trial:
