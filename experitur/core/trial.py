@@ -29,7 +29,7 @@ from experitur.helpers.dumper import ExperiturDumper
 from experitur.helpers.merge_dicts import merge_dicts
 from experitur.recursive_formatter import RecursiveDict
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.experiment import Experiment
 
 T = TypeVar("T")
@@ -261,15 +261,38 @@ class TrialParameters(collections.abc.MutableMapping):
         except AttributeError:
             partial_keywords = set()
 
+        signature = inspect.signature(func)
+
         # Apply
         callable_names = set(
             param.name
-            for param in inspect.signature(func).parameters.values()
+            for param in signature.parameters.values()
             if param.kind in (param.POSITIONAL_OR_KEYWORD, param.KEYWORD_ONLY)
             and param.name not in partial_keywords
         )
 
+        required_names = set(
+            param.name
+            for param in signature.parameters.values()
+            if param.default == param.empty
+        )
+
         parameters = {k: v for k, v in self.items() if k in callable_names}
+
+        # Bind known arguments and calculate missing
+        bound_arguments = signature.bind_partial(*args, **parameters)
+        missing_names = required_names - bound_arguments.arguments.keys()
+
+        if missing_names:
+            missing_names_str = ", ".join(f"'{n}'" for n in sorted(missing_names))
+            missing_names_prefixed = ", ".join(
+                f"'{self._prefix}{n}'" for n in sorted(missing_names)
+            )
+
+            raise TypeError(
+                f"Missing required parameter(s) {missing_names_str} for {func}.\n"
+                f"Supply {missing_names_prefixed} in your configuration."
+            )
 
         return func(*args, **parameters)
 

@@ -1,6 +1,7 @@
 import functools
 import glob
 import os.path
+import re
 
 import pytest
 
@@ -263,5 +264,11 @@ def test_trial_parameters(tmp_path, recwarn):
             # Make sure that the default value is recorded when using .get
             assert parameters.prefixed("prefix7__").get("f", 10) == 10
             assert parameters.prefixed("prefix7__")["f"] == 10
+
+            # Missing parameters
+            with pytest.raises(
+                TypeError, match=re.escape("Missing required parameter(s) 'a', 'b'")
+            ):
+                parameters.prefixed("__empty_").call(identity)
 
         ctx.run()
