@@ -26,10 +26,7 @@ def _check_sub_generators(sub_generators) -> Mapping[Any, ParameterGenerator]:
 
     for condition, sub_gen in sub_generators.items():
         sub_gen_list = check_parameter_generators(sub_gen)
-        if not sub_gen_list:
-            raise ValueError(
-                f"Empty sub_generator for condition {condition!r}: {sub_gen}"
-            )
+
         if len(sub_gen_list) == 1:
             result[condition] = sub_gen_list[0]
         else:
