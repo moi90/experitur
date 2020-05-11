@@ -271,6 +271,11 @@ def test_trial_parameters(tmp_path, recwarn):
             ):
                 parameters.prefixed("__empty1_").call(identity)
 
+            def fun(*args, **kwargs):
+                pass
+
+            parameters.prefixed("__empty1b_").call(fun)
+
             ### parameters.choice
             class A:
                 pass

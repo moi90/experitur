@@ -258,7 +258,7 @@ class TrialParameters(collections.abc.MutableMapping):
 
         As all default values are recorded, make sure that these have simple
         YAML-serializable types.
-        
+
         Use :py:class:`functools.partial` to pass keyword parameters that should not be recorded.
         """
 
@@ -274,20 +274,32 @@ class TrialParameters(collections.abc.MutableMapping):
         signature = inspect.signature(func)
 
         # Apply
+        # Parameter names that can be given to the callable
         callable_names = set(
             param.name
             for param in signature.parameters.values()
             if param.kind in (param.POSITIONAL_OR_KEYWORD, param.KEYWORD_ONLY)
             and param.name not in partial_keywords
+            and param.kind not in (param.VAR_POSITIONAL, param.VAR_KEYWORD)
         )
 
+        # Parameter names that have to be given to the callable
         required_names = set(
             param.name
             for param in signature.parameters.values()
             if param.default == param.empty
+            and param.kind not in (param.VAR_POSITIONAL, param.VAR_KEYWORD)
         )
 
-        parameters = {k: v for k, v in self.items() if k in callable_names}
+        # Does the callable accept kwargs?
+        kwargs_present = any(
+            param.kind == param.VAR_KEYWORD for param in signature.parameters.values()
+        )
+
+        if kwargs_present:
+            parameters = dict(self)
+        else:
+            parameters = {k: v for k, v in self.items() if k in callable_names}
 
         # Bind known arguments and calculate missing
         bound_arguments = signature.bind_partial(*args, **parameters)
@@ -340,7 +352,7 @@ class TrialParameters(collections.abc.MutableMapping):
         elif defaults is None:
             pass
         else:
-            raise ValueError(f"Unexpected type for defaults: {type(b)}")
+            raise ValueError(f"Unexpected type for defaults: {type(defaults)}")
 
         itemiters.append(kwargs.items())
 
@@ -386,12 +398,6 @@ class TrialParameters(collections.abc.MutableMapping):
 class Trial:
     """
     Trial.
-
-    Life-cycle of a Trial instance
-    ------------------------------
-
-    1. Created by sampler
-    2. Assigned an ID by TrialStore
 
     Arguments
         store: TrialStore
