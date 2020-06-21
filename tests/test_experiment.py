@@ -126,7 +126,7 @@ def test_failing_experiment(tmp_path):
     config = {"catch_exceptions": False}
     with Context(str(tmp_path), config) as ctx:
 
-        @Experiment()
+        @Experiment(volatile=True)
         def experiment(trial):
             raise Exception("Some error")
 
@@ -138,6 +138,19 @@ def test_failing_experiment(tmp_path):
         print(trial.data)
 
         assert trial.data["success"] is False
+
+
+def test_volatile_experiment(tmp_path):
+    config = {"catch_exceptions": False}
+    with Context(str(tmp_path), config) as ctx:
+
+        @Experiment(volatile=True)
+        def experiment(trial):
+            pass
+
+        ctx.run()
+
+        assert len(ctx.store) == 0
 
 
 def test_parameter_substitution(tmp_path):

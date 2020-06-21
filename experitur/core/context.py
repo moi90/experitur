@@ -23,7 +23,7 @@ def _format_dependencies(experiments):
     return "\n".join(msg)
 
 
-def _order_experiments(experiments):
+def _order_experiments(experiments) -> List["Experiment"]:
     experiments = set(experiments)
 
     # Include parents

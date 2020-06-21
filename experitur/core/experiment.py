@@ -79,6 +79,7 @@ class Experiment:
         meta (:py:class:`dict`, optional): Dict with experiment metadata that should be recorded.
         active (:py:class:`bool`, optional): Is the experiment active? (Default: True).
             When False, the experiment will not be executed.
+        volatile (:py:class:`bool`, optional): If True, the results of a successful run will not be saved (Default: False).
 
     This can be used as a constructor or a decorator:
 
@@ -103,13 +104,20 @@ class Experiment:
     """
 
     def __init__(
-        self, name=None, parameters=None, parent=None, meta=None, active=True,
+        self,
+        name=None,
+        parameters=None,
+        parent=None,
+        meta=None,
+        active=True,
+        volatile=False,
     ):
         self.ctx = get_current_context()
         self.name = name
         self.parent = parent
         self.meta = meta
         self.active = active
+        self.volatile = volatile
 
         self._own_parameter_generators: List[ParameterGenerator]
         self._own_parameter_generators = check_parameter_generators(parameters)
@@ -246,6 +254,9 @@ class Experiment:
                 pbar.write(msg)
                 if not self.ctx.config["catch_exceptions"]:
                     raise
+            else:
+                if self.volatile:
+                    trial.remove()
 
             pbar.set_description("Running trial {}... Done.".format(trial.id))
 

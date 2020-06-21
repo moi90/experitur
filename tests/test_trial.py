@@ -138,6 +138,10 @@ def test_trial(tmp_path):
         result = trial2.run()
         assert result == 1
 
+        assert len(ctx.store) == 2
+        trial2.remove()
+        assert len(ctx.store) == 1
+
 
 def test_trial_parameters(tmp_path, recwarn):
     config = {"catch_exceptions": False}

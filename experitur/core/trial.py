@@ -451,6 +451,10 @@ class Trial:
     def is_failed(self):
         return not self.data.get("success", False)
 
+    def remove(self):
+        """Remove this trial from the store."""
+        del self.store[self.id]
+
 
 class TrialStore(collections.abc.MutableMapping):
     def __init__(self, ctx):
