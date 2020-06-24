@@ -1,4 +1,6 @@
+import importlib
 import os
+import sys
 
 import click
 
@@ -9,7 +11,7 @@ from experitur.core.experiment import (
     Experiment,
     TrialNotFoundError,
 )
-from experitur.dox import load_dox
+from experitur.dox import DOXError, load_dox
 
 
 @click.group()
@@ -31,9 +33,16 @@ def cli():  # pragma: no cover
     help="Delete failed trials before running.",
 )
 @click.option("--yes", "-y", is_flag=True, help="Delete without asking.")
-def run(dox_fn, skip_existing, catch, clean_failed, yes):
+@click.option("--reload", "-r", is_flag=True, help="Reload DOX file if modified.")
+def run(dox_fn, skip_existing, catch, clean_failed, yes, reload):
     """Run experiments."""
     click.echo("Running {}...".format(dox_fn))
+
+    # Record DOX modification time
+    dox_mtime = os.path.getmtime(dox_fn)
+
+    # Record currently loaded modules
+    initial_modules = set(sys.modules.values())
 
     wdir = os.path.splitext(dox_fn)[0]
     os.makedirs(wdir, exist_ok=True)
@@ -43,26 +52,45 @@ def run(dox_fn, skip_existing, catch, clean_failed, yes):
         "catch_exceptions": catch,
     }
 
-    with Context(wdir, config) as ctx:
-        if clean_failed:
-            selected = {
-                trial_id: trial
-                for trial_id, trial in ctx.store.items()
-                if trial.is_failed
-            }
-            if selected:
-                click.echo(
-                    "The following {} trials will be deleted:".format(len(selected))
-                )
-                list_trials(selected)
-                if yes or click.confirm("Continue?"):
-                    ctx.store.delete_all(selected.keys())
+    while True:
+        with Context(wdir, config) as ctx:
+            if clean_failed:
+                selected = {
+                    trial_id: trial
+                    for trial_id, trial in ctx.store.items()
+                    if trial.is_failed
+                }
+                if selected:
+                    click.echo(
+                        "The following {} trials will be deleted:".format(len(selected))
+                    )
+                    list_trials(selected)
+                    if yes or click.confirm("Continue?"):
+                        ctx.store.delete_all(selected.keys())
 
-        # Load the DOX
-        load_dox(dox_fn)
+            # Load the DOX
+            try:
+                load_dox(dox_fn)
+            except DOXError as exc:
+                raise exc.__cause__ from None
 
-        # Run
-        ctx.run()
+            # Run
+            ctx.run()
+
+        new_dox_mtime = os.path.getmtime(dox_fn)
+        if reload and new_dox_mtime > dox_mtime:
+            dox_mtime = new_dox_mtime
+            # Reload modules and redo loop
+            print(f"{dox_fn} was changed, reloading...")
+            for module in set(sys.modules.values()) - initial_modules:
+                try:
+                    importlib.reload(module)
+                except Exception:
+                    print(f"Error reloading {module}")
+            continue
+
+        # Exit from loop
+        break
 
 
 @cli.command(context_settings=dict(ignore_unknown_options=True,))
