@@ -115,13 +115,16 @@ class Experiment:
 
     def __init__(
         self,
-        name=None,
+        name: Optional[str] = None,
         parameters=None,
-        parent=None,
-        meta=None,
-        active=True,
-        volatile=False,
+        parent: "Experiment" = None,
+        meta: Optional[Mapping] = None,
+        active: bool = True,
+        volatile: bool = False,
     ):
+        if not (isinstance(name, str) or name is None):
+            raise ValueError(f"'name' has to be a string or None, got {name!r}")
+
         self.ctx = get_current_context()
         self.name = name
         self.parent = parent
