@@ -55,11 +55,25 @@ def test_trial_store(tmp_path):
 
             experiment2 = Experiment("test2", parent=experiment)(test2)
 
-            trial_store["foo"] = Trial(trial_store, data={1: "foo", "bar": 2})
-            assert trial_store["foo"].data == {1: "foo", "bar": 2}
+            trial_store["foo"] = Trial(
+                trial_store, data={"id": "foo", "wdir": "", 1: "foo", "bar": 2}
+            )
+            assert trial_store["foo"].data == {
+                "id": "foo",
+                "wdir": "",
+                1: "foo",
+                "bar": 2,
+            }
 
-            trial_store["bar/baz"] = Trial(trial_store, data={1: "foo", "bar": 2})
-            assert trial_store["bar/baz"].data == {1: "foo", "bar": 2}
+            trial_store["bar/baz"] = Trial(
+                trial_store, data={"id": "bar/baz", "wdir": "", 1: "foo", "bar": 2}
+            )
+            assert trial_store["bar/baz"].data == {
+                "id": "bar/baz",
+                "wdir": "",
+                1: "foo",
+                "bar": 2,
+            }
 
             trial = trial_store.create({"parameters": {"a": 1, "b": 2}}, experiment)
 
@@ -320,3 +334,26 @@ def test_trial_parameters(tmp_path, recwarn):
                 parameters.prefixed("__empty3_").choice("parameter_name", A, "A")  # type: ignore
 
         ctx.run()
+
+
+def test_trial_logging(tmp_path):
+    config = {"catch_exceptions": False}
+
+    print(tmp_path)
+
+    with Context(str(tmp_path), config) as ctx:
+
+        @Experiment()
+        def experiment(trial_parameters: TrialParameters):
+            for i in range(10):
+                trial_parameters.log({"i": i, "i10": i * 10}, ni=1 / (i + 1))
+
+    ctx.run()
+
+    trial = ctx.store.match().one()
+
+    log_entries = trial.logger.read()
+    assert log_entries == [
+        {"i": i, "i10": i * 10, "ni": 1 / (i + 1)} for i in range(10)
+    ]
+

@@ -27,6 +27,7 @@ from typing import (
 
 import yaml
 
+from experitur.core.logger import LoggerBase, YAMLLogger
 from experitur.helpers.dumper import ExperiturDumper
 from experitur.helpers.merge_dicts import merge_dicts
 from experitur.recursive_formatter import RecursiveDict
@@ -399,7 +400,15 @@ class TrialParameters(collections.abc.MutableMapping):
         """Flush trial data to disk."""
         self._trial.save()
 
-
+    def log(self, values, **kwargs):
+        """
+        Record metrics.
+        
+        Args:
+            values (Mapping): Values to log.
+        """
+        values = {**values, **kwargs}
+        self._trial.logger.log(values)
 
 def try_str(obj):
     try:
@@ -418,10 +427,20 @@ class Trial:
         data (optional): Trial data
     """
 
-    def __init__(self, store: "TrialStore", func=None, data=None):
+    def __init__(self, store: "TrialStore", data, func=None):
         self.store = store
+        self.data = data
         self.func = func
-        self.data = data or {}
+
+        self._validate_data()
+
+        self.logger = YAMLLogger(self)
+
+    def _validate_data(self):
+        if "wdir" not in self.data:
+            raise ValueError("data has to contain 'wdir'")
+        if "id" not in self.data:
+            raise ValueError("data has to contain 'id'")
 
     def run(self):
         """Run the current trial and save the results."""
@@ -464,6 +483,10 @@ class Trial:
     @property
     def id(self):
         return self.data["id"]
+
+    @property
+    def wdir(self):
+        return self.data["wdir"]
 
     @property
     def is_failed(self):
