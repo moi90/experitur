@@ -99,4 +99,5 @@ def test_collect(tmp_path):
         "result.b",
         "parameters.a",
         "success",
+        "experiment.independent_parameters",
     }

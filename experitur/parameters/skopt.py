@@ -43,7 +43,7 @@ class _SKOptIter(ParameterGeneratorIter):
                         if k in parameter_names
                     )
                 )
-                for trial in existing_trials.values()
+                for trial in existing_trials
             )
 
             for parameters in existing_parameter_configurations:

@@ -7,7 +7,17 @@ import random
 import sys
 import textwrap
 import traceback
-from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Mapping, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Union,
+)
 
 import click
 import tqdm
@@ -176,8 +186,19 @@ class Experiment:
 
     @property
     def independent_parameters(self) -> List[str]:
-        """Independent parameters (parameters that are actually varied) of this experiment."""
+        """Independent parameters. (Parameters that were actually configured.)"""
+
+        return sorted(self.varying_parameters + self.invariant_parameters)
+
+    @property
+    def varying_parameters(self) -> List[str]:
+        """Varying parameters of this experiment."""
         return sorted(self.parameter_generator.varying_parameters.keys())
+
+    @property
+    def invariant_parameters(self) -> List[str]:
+        """Varying parameters of this experiment."""
+        return sorted(self.parameter_generator.invariant_parameters.keys())
 
     def __str__(self):
         if self.name is not None:

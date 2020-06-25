@@ -83,17 +83,19 @@ def test_trial_store(tmp_path):
             trial_store.create({"parameters": {"a": 3, "b": 4}}, experiment)
             trial_store.create({"parameters": {"a": 3, "b": 4}}, experiment2)
 
-            assert set(trial_store.match(func=test).keys()) == {
+            assert set(trial.id for trial in trial_store.match(func=test)) == {
                 "test/a-1_b-2",
                 "test/a-2_b-3",
                 "test/a-3_b-4",
             }
 
-            assert set(trial_store.match(parameters={"a": 1, "b": 2}).keys()) == {
-                "test/a-1_b-2"
-            }
+            assert set(
+                trial.id for trial in trial_store.match(parameters={"a": 1, "b": 2})
+            ) == {"test/a-1_b-2"}
 
-            assert set(trial_store.match(experiment="test2")) == {"test2/a-3_b-4"}
+            assert set(trial.id for trial in trial_store.match(experiment="test2")) == {
+                "test2/a-3_b-4"
+            }
 
             result = trial.run()
 

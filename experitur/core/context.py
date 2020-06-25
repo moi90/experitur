@@ -6,6 +6,7 @@ from experitur.errors import ExperiturError
 
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.experiment import Experiment
+    from experitur.core.trial import TrialCollection
 
 
 class ContextError(ExperiturError):
@@ -157,6 +158,9 @@ class Context:
         except IndexError:
             print(self.registered_experiments)
             raise KeyError(name) from None
+
+    def get_trials(self, parameters=None, experiment=None) -> "TrialCollection":
+        return self.store.match(resolved_parameters=parameters, experiment=experiment)
 
     def do(self, target, cmd, cmd_args):
         experiment_name = target.split("/")[0]
