@@ -518,8 +518,7 @@ class TrialCollection(Collection):
         return set(p for p in independent_parameters if len(parameter_values[p]) > 1)
 
     def to_pandas(self):
-        if pd is None:
-            raise ImportError("pandas not found.")
+        import pandas as pd
 
         return pd.json_normalize([t.data for t in self.trials], max_level=1).set_index(
             "id"
