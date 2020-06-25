@@ -395,6 +395,9 @@ class TrialParameters(collections.abc.MutableMapping):
 
         return mapping[entry_name]
 
+    def flush(self):
+        """Flush trial data to disk."""
+        self._trial.save()
 
 class Trial:
     """
