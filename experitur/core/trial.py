@@ -399,6 +399,15 @@ class TrialParameters(collections.abc.MutableMapping):
         """Flush trial data to disk."""
         self._trial.save()
 
+
+
+def try_str(obj):
+    try:
+        return str(obj)
+    except:  # pylint: disable=bare-except
+        return "<error>"
+
+
 class Trial:
     """
     Trial.
@@ -421,14 +430,18 @@ class Trial:
         self.data["success"] = False
         self.data["time_start"] = datetime.datetime.now()
         self.data["result"] = None
+        self.data["error"] = None
 
         try:
-            self.data["result"] = self.func(TrialParameters(self))
+            result = self.func(TrialParameters(self))
         except (Exception, KeyboardInterrupt) as exc:
             # Log complete exc to file
-            with open(os.path.join(self.data["wdir"], "error.txt"), "w") as f:
+            with open(os.path.join(self.wdir, "error.txt"), "w") as f:
                 f.write(str(exc))
                 f.write(traceback.format_exc())
+                f.write("\n")
+                for k, v in inspect.trace()[-1][0].f_locals.items():
+                    f.write(f"{k}: {try_str(v)}\n")
 
             self.data["error"] = ": ".join(
                 filter(None, (exc.__class__.__name__, str(exc)))
@@ -437,6 +450,7 @@ class Trial:
             raise exc
 
         else:
+            self.data["result"] = result
             self.data["success"] = True
         finally:
             self.data["time_end"] = datetime.datetime.now()
@@ -453,7 +467,7 @@ class Trial:
 
     @property
     def is_failed(self):
-        return not self.data.get("success", False)
+        return self.data.get("error", None) is not None
 
     def remove(self):
         """Remove this trial from the store."""
