@@ -79,7 +79,7 @@ class _SKOptIter(ParameterGeneratorIter):
                         ),
                         trial.data["result"][self.parameter_generator.objective],
                     )
-                    for trial in existing_trials.values()
+                    for trial in existing_trials
                     if trial.data.get("result", None)
                 ]
 
