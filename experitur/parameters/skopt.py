@@ -154,6 +154,10 @@ class SKOpt(ParameterGenerator):
         In this example, SKOpt will try to minimize :code:`y = a * b` using four evaluations.
     """
 
+    Real = skopt.space.space.Real
+    Integer = skopt.space.space.Integer
+    Categorical = skopt.space.space.Categorical
+
     _iterator = _SKOptIter
     _str_attr = ["search_space", "objective", "n_iter"]
 
