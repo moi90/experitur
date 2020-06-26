@@ -54,7 +54,7 @@ def test_dox_py(dox_py_fn):
 @pytest.fixture(name="unknown_fn")
 def fixture_unknown_fn(tmp_path):
     fn = str(tmp_path / "unknown.txt")
-    with open(fn, "w") as f:
+    with open(fn, "w"):
         pass
 
     return fn

@@ -58,7 +58,7 @@ class RecursiveDict(Mapping):
     """
     A dict where format expressions in string values are recursively applied.
 
-    See str.format. 
+    See str.format.
     """
 
     def __init__(self, mapping, allow_missing=False):

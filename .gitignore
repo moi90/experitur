@@ -12,8 +12,9 @@ examples/.bash_history
 experiments/*.csv
 experitur/examples/*/
 travis.log
-pip-wheel-metadata/*
+pip-wheel-metadata/
 .mypy_cache/
-docs/inventory/*
+docs/inventory/
 examples/simple.csv
 examples/simple.txt
+experiments/*/

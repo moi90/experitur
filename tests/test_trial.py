@@ -356,4 +356,3 @@ def test_trial_logging(tmp_path):
     assert log_entries == [
         {"i": i, "i10": i * 10, "ni": 1 / (i + 1)} for i in range(10)
     ]
-

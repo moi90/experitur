@@ -419,7 +419,7 @@ class Trial(collections.abc.MutableMapping):
     def log(self, values, **kwargs):
         """
         Record metrics.
-        
+
         Args:
             values (Mapping): Values to log.
         """
@@ -430,7 +430,7 @@ class Trial(collections.abc.MutableMapping):
 def try_str(obj):
     try:
         return str(obj)
-    except:  # pylint: disable=bare-except
+    except:  # pylint: disable=bare-except # noqa: E722
         return "<error>"
 
 
