@@ -6,7 +6,7 @@ from tqdm import tqdm
 from experitur.helpers import tqdm_redirect
 
 
-class TestException(Exception):
+class _SomeException(Exception):
     pass
 
 
@@ -54,10 +54,10 @@ def test_redirect_stdout(capsys):
             pass
 
     # tqdm progress bar with explicit file, exception
-    with pytest.raises(TestException):
+    with pytest.raises(_SomeException):
         with tqdm_redirect.redirect_stdout():
             for _ in tqdm(range(10), file=sys.stdout):
-                raise TestException()
+                raise _SomeException()
 
 
 def test_redirect_stdout_display():
