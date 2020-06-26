@@ -84,6 +84,17 @@ def _get_object_name(obj):
     raise ValueError(f"Unable to determine the name of {obj}")
 
 
+class CallException(Exception):
+    def __init__(self, func, args, kwargs, trial_parameters: "TrialParameters"):
+        self.func = func
+        self.args = args
+        self.kwargs = kwargs
+        self.trial_parameters = trial_parameters
+
+    def __str__(self):
+        return f"Error calling {self.func} (args={self.args}, kwargs={self.kwargs}) with {self.trial_parameters}"
+
+
 class TrialParameters(collections.abc.MutableMapping):
     """
     Parameter configuration of the current trial.
@@ -316,7 +327,10 @@ class TrialParameters(collections.abc.MutableMapping):
                 f"Supply {missing_names_prefixed} in your configuration."
             )
 
-        return func(*args, **parameters)
+        try:
+            return func(*args, **parameters)
+        except Exception as exc:
+            raise CallException(func, args, parameters, self) from exc
 
     def prefixed(self, prefix: str) -> "TrialParameters":
         """
