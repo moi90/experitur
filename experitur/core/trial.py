@@ -9,7 +9,8 @@ import shutil
 import traceback
 import warnings
 from abc import abstractmethod
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
+from collections.abc import Collection
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -26,6 +27,7 @@ from typing import (
 
 import yaml
 
+from experitur.core.logger import LoggerBase, YAMLLogger
 from experitur.helpers.dumper import ExperiturDumper
 from experitur.helpers.merge_dicts import merge_dicts
 from experitur.recursive_formatter import RecursiveDict
@@ -194,7 +196,7 @@ class TrialParameters(collections.abc.MutableMapping):
         )
 
         if len(trials) == 1:
-            _, trial = trials.popitem()
+            trial = trials.pop()
             return TrialParameters(trial)
         elif len(trials) > 1:
             msg = "Multiple matching parent experiments: " + ", ".join(trials.keys())
@@ -408,6 +410,26 @@ class TrialParameters(collections.abc.MutableMapping):
 
         return mapping[entry_name]
 
+    def flush(self):
+        """Flush trial data to disk."""
+        self._trial.save()
+
+    def log(self, values, **kwargs):
+        """
+        Record metrics.
+        
+        Args:
+            values (Mapping): Values to log.
+        """
+        values = {**values, **kwargs}
+        self._trial.logger.log(values)
+
+def try_str(obj):
+    try:
+        return str(obj)
+    except:  # pylint: disable=bare-except
+        return "<error>"
+
 
 class Trial:
     """
@@ -419,10 +441,20 @@ class Trial:
         data (optional): Trial data
     """
 
-    def __init__(self, store: "TrialStore", func=None, data=None):
+    def __init__(self, store: "TrialStore", data, func=None):
         self.store = store
+        self.data = data
         self.func = func
-        self.data = data or {}
+
+        self._validate_data()
+
+        self.logger = YAMLLogger(self)
+
+    def _validate_data(self):
+        if "wdir" not in self.data:
+            raise ValueError("data has to contain 'wdir'")
+        if "id" not in self.data:
+            raise ValueError("data has to contain 'id'")
 
     def run(self):
         """Run the current trial and save the results."""
@@ -431,14 +463,18 @@ class Trial:
         self.data["success"] = False
         self.data["time_start"] = datetime.datetime.now()
         self.data["result"] = None
+        self.data["error"] = None
 
         try:
-            self.data["result"] = self.func(TrialParameters(self))
+            result = self.func(TrialParameters(self))
         except (Exception, KeyboardInterrupt) as exc:
             # Log complete exc to file
-            with open(os.path.join(self.data["wdir"], "error.txt"), "w") as f:
+            with open(os.path.join(self.wdir, "error.txt"), "w") as f:
                 f.write(str(exc))
                 f.write(traceback.format_exc())
+                f.write("\n")
+                for k, v in inspect.trace()[-1][0].f_locals.items():
+                    f.write(f"{k}: {try_str(v)}\n")
 
             self.data["error"] = ": ".join(
                 filter(None, (exc.__class__.__name__, str(exc)))
@@ -447,6 +483,7 @@ class Trial:
             raise exc
 
         else:
+            self.data["result"] = result
             self.data["success"] = True
         finally:
             self.data["time_end"] = datetime.datetime.now()
@@ -462,9 +499,86 @@ class Trial:
         return self.data["id"]
 
     @property
-    def is_failed(self):
-        return not self.data.get("success", False)
+    def wdir(self):
+        return self.data["wdir"]
 
+    @property
+    def is_failed(self):
+        return self.data.get("error", None) is not None
+
+    def remove(self):
+        """Remove this trial from the store."""
+        del self.store[self.id]
+
+
+class TrialCollection(Collection):
+    _missing = object()
+
+    def __init__(self, trials: List[Trial]):
+        self.trials = trials
+
+    def __len__(self):
+        return len(self.trials)
+
+    def __iter__(self):
+        yield from self.trials
+
+    def __contains__(self, trial: Trial):
+        return trial in self.trials
+
+    def pop(self, index=-1):
+        return self.trials.pop(index)
+
+    @property
+    def independent_parameters(self):
+        independent_parameters = set()
+        for t in self.trials:
+            independent_parameters.update(
+                t.data.get("experiment", {}).get("independent_parameters", [])
+            )
+        return independent_parameters
+
+    @property
+    def varying_parameters(self):
+        """Independent parameters that vary in this trial collection."""
+        independent_parameters = self.independent_parameters
+        parameter_values = defaultdict(set)
+        for t in self.trials:
+            for p in independent_parameters:
+                try:
+                    v = t.data["parameters"][p]
+                except KeyError:
+                    parameter_values[p].add(self._missing)
+                else:
+                    parameter_values[p].add(v)
+
+        return set(p for p in independent_parameters if len(parameter_values[p]) > 1)
+
+    def to_pandas(self):
+        import pandas as pd
+
+        return pd.json_normalize([t.data for t in self.trials], max_level=1).set_index(
+            "id"
+        )
+
+    def one(self):
+        if len(self.trials) != 1:
+            raise ValueError("No individual trial.")
+
+        return self.trials[0]
+
+    def filter(self, fn: Callable[[Trial], bool]) -> "TrialCollection":
+        """
+        Return a filtered version of this trial collection.
+
+        Args:
+            fn (callable): A function that receives a Trial instance and returns True if the trial should be kept.
+
+        Returns:
+            A new trial collection.
+        """
+
+        return TrialCollection(list(filter(fn, self.trials)))
 
 class TrialStore(collections.abc.MutableMapping):
     def __init__(self, ctx):
@@ -478,7 +592,7 @@ class TrialStore(collections.abc.MutableMapping):
 
     def match(
         self, func=None, parameters=None, experiment=None, resolved_parameters=None
-    ) -> Dict[str, Trial]:
+    ) -> TrialCollection:
         func = _callable_to_name(func)
 
         from experitur.core.experiment import Experiment
@@ -486,8 +600,8 @@ class TrialStore(collections.abc.MutableMapping):
         if isinstance(experiment, Experiment):
             experiment = experiment.name
 
-        result = {}
-        for trial_id, trial in self.items():
+        trials = []
+        for trial in self.values():
             experiment_ = trial.data.get("experiment", {})
             if func is not None and _callable_to_name(experiment_.get("func")) != func:
                 continue
@@ -505,19 +619,17 @@ class TrialStore(collections.abc.MutableMapping):
             if experiment is not None and experiment_.get("name") != str(experiment):
                 continue
 
-            result[trial_id] = trial
+            trials.append(trial)
 
-        return result
+        return TrialCollection(trials)
 
     def _make_unique_trial_id(
         self,
         experiment_name: str,
         trial_parameters: Mapping,
-        independent_parameters: List[str],
+        varying_parameters: List[str],
     ):
-        trial_id = _format_independent_parameters(
-            trial_parameters, independent_parameters
-        )
+        trial_id = _format_independent_parameters(trial_parameters, varying_parameters)
 
         trial_id = "{}/{}".format(experiment_name, trial_id)
 
@@ -544,9 +656,9 @@ class TrialStore(collections.abc.MutableMapping):
 
         if new_independent_parameters:
             # If we found parameters where this trial is different from the existing one, append these to independent
-            independent_parameters.extend(new_independent_parameters)
+            varying_parameters.extend(new_independent_parameters)
             return self._make_unique_trial_id(
-                experiment_name, trial_parameters, independent_parameters
+                experiment_name, trial_parameters, varying_parameters
             )
 
         # Otherwise, we just append a version number
@@ -572,7 +684,7 @@ class TrialStore(collections.abc.MutableMapping):
         trial_id = self._make_unique_trial_id(
             experiment.name,
             trial_configuration["parameters"],
-            experiment.independent_parameters,
+            experiment.varying_parameters,
         )
 
         wdir = self._make_wdir(trial_id)
@@ -591,6 +703,8 @@ class TrialStore(collections.abc.MutableMapping):
                 else None,
                 "func": _callable_to_name(experiment.func),
                 "meta": experiment.meta,
+                # Parameters that where actually configured.
+                "independent_parameters": experiment.independent_parameters,
             },
             result=None,
             wdir=wdir,

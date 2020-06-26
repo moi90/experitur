@@ -55,11 +55,25 @@ def test_trial_store(tmp_path):
 
             experiment2 = Experiment("test2", parent=experiment)(test2)
 
-            trial_store["foo"] = Trial(trial_store, data={1: "foo", "bar": 2})
-            assert trial_store["foo"].data == {1: "foo", "bar": 2}
+            trial_store["foo"] = Trial(
+                trial_store, data={"id": "foo", "wdir": "", 1: "foo", "bar": 2}
+            )
+            assert trial_store["foo"].data == {
+                "id": "foo",
+                "wdir": "",
+                1: "foo",
+                "bar": 2,
+            }
 
-            trial_store["bar/baz"] = Trial(trial_store, data={1: "foo", "bar": 2})
-            assert trial_store["bar/baz"].data == {1: "foo", "bar": 2}
+            trial_store["bar/baz"] = Trial(
+                trial_store, data={"id": "bar/baz", "wdir": "", 1: "foo", "bar": 2}
+            )
+            assert trial_store["bar/baz"].data == {
+                "id": "bar/baz",
+                "wdir": "",
+                1: "foo",
+                "bar": 2,
+            }
 
             trial = trial_store.create({"parameters": {"a": 1, "b": 2}}, experiment)
 
@@ -83,17 +97,19 @@ def test_trial_store(tmp_path):
             trial_store.create({"parameters": {"a": 3, "b": 4}}, experiment)
             trial_store.create({"parameters": {"a": 3, "b": 4}}, experiment2)
 
-            assert set(trial_store.match(func=test).keys()) == {
+            assert set(trial.id for trial in trial_store.match(func=test)) == {
                 "test/a-1_b-2",
                 "test/a-2_b-3",
                 "test/a-3_b-4",
             }
 
-            assert set(trial_store.match(parameters={"a": 1, "b": 2}).keys()) == {
-                "test/a-1_b-2"
-            }
+            assert set(
+                trial.id for trial in trial_store.match(parameters={"a": 1, "b": 2})
+            ) == {"test/a-1_b-2"}
 
-            assert set(trial_store.match(experiment="test2")) == {"test2/a-3_b-4"}
+            assert set(trial.id for trial in trial_store.match(experiment="test2")) == {
+                "test2/a-3_b-4"
+            }
 
             result = trial.run()
 
@@ -137,6 +153,10 @@ def test_trial(tmp_path):
         trial2 = ctx.store.create({"parameters": {"a": 1, "b": 2}}, experiment2)
         result = trial2.run()
         assert result == 1
+
+        assert len(ctx.store) == 2
+        trial2.remove()
+        assert len(ctx.store) == 1
 
 
 def test_trial_parameters(tmp_path, recwarn):
@@ -314,3 +334,26 @@ def test_trial_parameters(tmp_path, recwarn):
                 parameters.prefixed("__empty3_").choice("parameter_name", A, "A")  # type: ignore
 
         ctx.run()
+
+
+def test_trial_logging(tmp_path):
+    config = {"catch_exceptions": False}
+
+    print(tmp_path)
+
+    with Context(str(tmp_path), config) as ctx:
+
+        @Experiment()
+        def experiment(trial_parameters: TrialParameters):
+            for i in range(10):
+                trial_parameters.log({"i": i, "i10": i * 10}, ni=1 / (i + 1))
+
+    ctx.run()
+
+    trial = ctx.store.match().one()
+
+    log_entries = trial.logger.read()
+    assert log_entries == [
+        {"i": i, "i10": i * 10, "ni": 1 / (i + 1)} for i in range(10)
+    ]
+

@@ -90,6 +90,7 @@ def test_collect(tmp_path):
         "time_end",
         "experiment.meta",
         "experiment.parent",
+        "experiment.independent_parameters",
         "resolved_parameters.b",
         "result.a",
         "parameters.b",
@@ -99,4 +100,5 @@ def test_collect(tmp_path):
         "result.b",
         "parameters.a",
         "success",
+        "error",
     }

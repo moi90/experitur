@@ -7,7 +7,17 @@ import random
 import sys
 import textwrap
 import traceback
-from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Mapping, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Union,
+)
 
 import click
 import tqdm
@@ -79,6 +89,7 @@ class Experiment:
         meta (:py:class:`dict`, optional): Dict with experiment metadata that should be recorded.
         active (:py:class:`bool`, optional): Is the experiment active? (Default: True).
             When False, the experiment will not be executed.
+        volatile (:py:class:`bool`, optional): If True, the results of a successful run will not be saved (Default: False).
 
     This can be used as a constructor or a decorator:
 
@@ -103,13 +114,23 @@ class Experiment:
     """
 
     def __init__(
-        self, name=None, parameters=None, parent=None, meta=None, active=True,
+        self,
+        name: Optional[str] = None,
+        parameters=None,
+        parent: "Experiment" = None,
+        meta: Optional[Mapping] = None,
+        active: bool = True,
+        volatile: bool = False,
     ):
+        if not (isinstance(name, str) or name is None):
+            raise ValueError(f"'name' has to be a string or None, got {name!r}")
+
         self.ctx = get_current_context()
         self.name = name
         self.parent = parent
         self.meta = meta
         self.active = active
+        self.volatile = volatile
 
         self._own_parameter_generators: List[ParameterGenerator]
         self._own_parameter_generators = check_parameter_generators(parameters)
@@ -168,8 +189,19 @@ class Experiment:
 
     @property
     def independent_parameters(self) -> List[str]:
-        """Independent parameters (parameters that are actually varied) of this experiment."""
+        """Independent parameters. (Parameters that were actually configured.)"""
+
+        return sorted(self.varying_parameters + self.invariant_parameters)
+
+    @property
+    def varying_parameters(self) -> List[str]:
+        """Varying parameters of this experiment."""
         return sorted(self.parameter_generator.varying_parameters.keys())
+
+    @property
+    def invariant_parameters(self) -> List[str]:
+        """Varying parameters of this experiment."""
+        return sorted(self.parameter_generator.invariant_parameters.keys())
 
     def __str__(self):
         if self.name is not None:
@@ -246,6 +278,9 @@ class Experiment:
                 pbar.write(msg)
                 if not self.ctx.config["catch_exceptions"]:
                     raise
+            else:
+                if self.volatile:
+                    trial.remove()
 
             pbar.set_description("Running trial {}... Done.".format(trial.id))
 

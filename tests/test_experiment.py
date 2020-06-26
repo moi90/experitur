@@ -27,12 +27,10 @@ def test_merge(tmp_path):
 
         # Parameters in a and b should be the same
         a_params = set(
-            tuple(t.data["parameters"].items())
-            for t in ctx.store.match(experiment=a).values()
+            tuple(t.data["parameters"].items()) for t in ctx.store.match(experiment=a)
         )
         b_params = set(
-            tuple(t.data["parameters"].items())
-            for t in ctx.store.match(experiment=b).values()
+            tuple(t.data["parameters"].items()) for t in ctx.store.match(experiment=b)
         )
 
         assert a_params == b_params
@@ -44,7 +42,7 @@ def test_merge(tmp_path):
         assert len(c_trials) == 4
 
         parameter_configurations = set(
-            tuple(t.data["parameters"].items()) for t in c_trials.values()
+            tuple(t.data["parameters"].items()) for t in c_trials
         )
 
         # Assert exististence of all grid  cells
@@ -126,7 +124,7 @@ def test_failing_experiment(tmp_path):
     config = {"catch_exceptions": False}
     with Context(str(tmp_path), config) as ctx:
 
-        @Experiment()
+        @Experiment(volatile=True)
         def experiment(trial):
             raise Exception("Some error")
 
@@ -138,6 +136,19 @@ def test_failing_experiment(tmp_path):
         print(trial.data)
 
         assert trial.data["success"] is False
+
+
+def test_volatile_experiment(tmp_path):
+    config = {"catch_exceptions": False}
+    with Context(str(tmp_path), config) as ctx:
+
+        @Experiment(volatile=True)
+        def experiment(trial):
+            pass
+
+        ctx.run()
+
+        assert len(ctx.store) == 0
 
 
 def test_parameter_substitution(tmp_path):
@@ -153,7 +164,7 @@ def test_parameter_substitution(tmp_path):
         valid = [
             t.data["resolved_parameters"]["a"] == t.data["resolved_parameters"]["b"]
             and isinstance(t.data["resolved_parameters"]["a"], int)
-            for t in ctx.store.match(experiment=experiment).values()
+            for t in ctx.store.match(experiment=experiment)
         ]
 
         assert all(valid)

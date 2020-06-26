@@ -31,7 +31,7 @@ class _RandomSamplerIter(ParameterGeneratorIter):
             )
 
             existing_params_set = set()
-            for trial in existing_trials.values():
+            for trial in existing_trials:
                 existing_params_set.add(
                     tuple(
                         sorted(

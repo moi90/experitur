@@ -6,9 +6,10 @@ from click.testing import CliRunner
 from experitur.cli import clean, collect, do, run, show
 
 example_py = inspect.cleandoc(
-    """
+    r"""
     from experitur import Experiment
     import numpy as np
+    import inspect
 
     @Experiment(
         parameters={
@@ -39,6 +40,17 @@ example_py = inspect.cleandoc(
     @e3.command("experiment_cmd", target="experiment")
     def e3_exp_cmd(experiment):
         pass
+
+    @Experiment()
+    def inception(parameters):
+        with open(__file__, "a") as f:
+            f.write("\n\n")
+            f.write(inspect.cleandoc(
+                '''
+                @Experiment()
+                def incepted(parameters):
+                    pass
+                '''))
     """
 )
 
@@ -49,9 +61,11 @@ def test_run():
         with open("example.py", "w") as f:
             f.write(example_py)
 
-        result = runner.invoke(run, ["example.py"], catch_exceptions=True)
+        result = runner.invoke(run, ["example.py", "-r"], catch_exceptions=True)
         print(result.output)
         assert result.exit_code == 0
+
+        assert result.output.count("example.py was changed, reloading...") == 1
 
         result = runner.invoke(run, ["example.py", "--clean-failed"], input="y\n")
         assert "The following 1 trials will be deleted:" in result.output
