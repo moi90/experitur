@@ -65,3 +65,4 @@ TOC
     self
     cli
     api
+    similar_software
