@@ -424,6 +424,7 @@ class TrialParameters(collections.abc.MutableMapping):
         values = {**values, **kwargs}
         self._trial.logger.log(values)
 
+
 def try_str(obj):
     try:
         return str(obj)
@@ -469,7 +470,8 @@ class Trial:
             result = self.func(TrialParameters(self))
         except (Exception, KeyboardInterrupt) as exc:
             # Log complete exc to file
-            with open(os.path.join(self.wdir, "error.txt"), "w") as f:
+            error_fn = os.path.join(self.wdir, "error.txt")
+            with open(error_fn, "w") as f:
                 f.write(str(exc))
                 f.write(traceback.format_exc())
                 f.write("\n")
@@ -478,6 +480,13 @@ class Trial:
 
             self.data["error"] = ": ".join(
                 filter(None, (exc.__class__.__name__, str(exc)))
+            )
+
+            print("\n", flush=True)
+            print(
+                f"Error running {self.id}.\n"
+                f"See {error_fn} for the complete traceback.",
+                flush=True,
             )
 
             raise exc
@@ -579,6 +588,7 @@ class TrialCollection(Collection):
         """
 
         return TrialCollection(list(filter(fn, self.trials)))
+
 
 class TrialStore(collections.abc.MutableMapping):
     def __init__(self, ctx):
