@@ -8,7 +8,12 @@ from experitur.helpers.merge_dicts import merge_dicts
 
 try:
     import skopt
-    from skopt.utils import dimensions_aslist, point_asdict, point_aslist
+    from skopt.utils import (
+        dimensions_aslist,
+        point_asdict,
+        point_aslist,
+        check_x_in_space,
+    )
     import skopt.space
 
     _SKOPT_AVAILABLE = True
@@ -17,26 +22,39 @@ except ImportError:  # pragma: no cover
 
 
 def convert_trial(
-    trial_data: TrialData, search_space: Mapping, objective, include_duration=False
+    trial_data: TrialData, search_space: Mapping, objective: str, include_duration=False
 ):
     """Convert a trial to a tuple (parameters, (result, time)) or None."""
+
+    if objective.startswith("-"):
+        objective = objective[1:]
+        maximize = True
+    else:
+        maximize = False
+
     result = trial_data.data.get("result", {}).get(objective, None)
-    parameters = trial_data.data.get("parameters", None)
+    parameters = trial_data.data.get("resolved_parameters", None)
     time_start = trial_data.data.get("time_start", None)
     time_end = trial_data.data.get("time_end", None)
 
     if None in (result, parameters, time_start, time_end):
         return None
 
+    if maximize:
+        result = -result
+
     if include_duration:
         result = (result, (time_end - time_start).total_seconds())
 
-    return (
-        point_aslist(
-            search_space, {k: v for k, v in parameters.items() if k in search_space},
-        ),
-        result,
+    point = point_aslist(
+        search_space, {k: v for k, v in parameters.items() if k in search_space},
     )
+
+    return (point, result)
+
+
+def _filter_results(optimizer: skopt.Optimizer, results):
+    return [r for r in results if r is not None and r[0] in optimizer.space]
 
 
 class _SKOptIter(ParameterGeneratorIter):
@@ -92,16 +110,18 @@ class _SKOptIter(ParameterGeneratorIter):
 
                 # TODO: Record timing for time based `acq_func`s
                 # TODO: Provide test
-                results = [
-                    convert_trial(
-                        trial,
-                        self.parameter_generator.search_space,
-                        self.parameter_generator.objective,
-                        "ps" in optimizer.acq_func,
-                    )
-                    for trial in existing_trials
-                    if trial.data.get("result", None)
-                ]
+                results = _filter_results(
+                    optimizer,
+                    (
+                        convert_trial(
+                            trial,
+                            self.parameter_generator.search_space,
+                            self.parameter_generator.objective,
+                            "ps" in optimizer.acq_func,
+                        )
+                        for trial in existing_trials
+                    ),
+                )
 
                 self.parameter_generator.logger.info(
                     f"Training on {len(results):d} previous trials."
@@ -152,7 +172,7 @@ class SKOpt(ParameterGenerator):
             - a `(lower_bound, upper_bound, prior)` tuple (for :py:class:`~skopt.space.space.Real` dimensions),
             - as a list of categories (for :py:class:`~skopt.space.space.Categorical` dimensions), or
             - an instance of a :py:class:`~skopt.space.space.Dimension` object (:py:class:`~skopt.space.space.Real`, :py:class:`~skopt.space.space.Integer` or :py:class:`~skopt.space.space.Categorical`).
-        objective (str): Name of the result that will be optimized.
+        objective (str): Name of the result that will be minimized. If starts with "-", the following name will be maximized instead.
         n_iter (int): Number of evaluations to find the optimum.
         **kwargs: Additional arguments for :py:class:`skopt.Optimizer`.
 
