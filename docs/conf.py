@@ -36,7 +36,18 @@ extensions = [
     "sphinx.ext.coverage",
     "sphinx.ext.napoleon",
     "sphinxcontrib.programoutput",
+    "sphinx.ext.intersphinx",
+    "sphinx_autodoc_typehints",
+    "sphinx.ext.coverage",
+    "sphinx.ext.autosummary",
 ]
+
+intersphinx_mapping = {
+    "python": ("https://docs.python.org/3", None),
+    "sklearn": ("https://scikit-learn.org/stable/", None),
+    "scipy": ("https://docs.scipy.org/doc/scipy/reference", None),
+    "skopt": ("https://scikit-optimize.github.io/stable/", None),
+}
 
 
 # Add any paths that contain templates here, relative to this directory.
@@ -61,3 +72,9 @@ html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
 
 master_doc = "index"
+
+html_static_path = ["_static"]
+
+html_context = {
+    "css_files": ["_static/theme_overrides.css"],  # override wide tables in RTD theme
+}

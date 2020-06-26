@@ -1,4 +1,5 @@
-from experitur.context import Context, experiment, push_context, run
+from experitur.core.experiment import Experiment
+from experitur.core.trial import Trial
 from experitur.errors import ExperiturError
 
 from ._version import get_versions

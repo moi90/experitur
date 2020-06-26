@@ -1,4 +1,5 @@
 */
+!tools/
 *.rec
 *.frames.json
 ttyrecord

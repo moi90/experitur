@@ -1,11 +1,17 @@
+import importlib
 import os
+import sys
 
 import click
 
 from experitur import __version__
-from experitur.context import Context, push_context
-from experitur.dox import load_dox
-from experitur.experiment import CommandNotFoundError, Experiment, TrialNotFoundError
+from experitur.core.context import Context
+from experitur.core.experiment import (
+    CommandNotFoundError,
+    Experiment,
+    TrialNotFoundError,
+)
+from experitur.dox import DOXError, load_dox
 
 
 @click.group()
@@ -27,9 +33,16 @@ def cli():  # pragma: no cover
     help="Delete failed trials before running.",
 )
 @click.option("--yes", "-y", is_flag=True, help="Delete without asking.")
-def run(dox_fn, skip_existing, catch, clean_failed, yes):
+@click.option("--reload", "-r", is_flag=True, help="Reload DOX file if modified.")
+def run(dox_fn, skip_existing, catch, clean_failed, yes, reload):
     """Run experiments."""
     click.echo("Running {}...".format(dox_fn))
+
+    # Record DOX modification time
+    dox_mtime = os.path.getmtime(dox_fn)
+
+    # Record currently loaded modules
+    initial_modules = set(sys.modules.values())
 
     wdir = os.path.splitext(dox_fn)[0]
     os.makedirs(wdir, exist_ok=True)
@@ -39,26 +52,45 @@ def run(dox_fn, skip_existing, catch, clean_failed, yes):
         "catch_exceptions": catch,
     }
 
-    with push_context(Context(wdir, config)) as ctx:
-        if clean_failed:
-            selected = {
-                trial_id: trial
-                for trial_id, trial in ctx.store.items()
-                if trial.is_failed
-            }
-            if selected:
-                click.echo(
-                    "The following {} trials will be deleted:".format(len(selected))
-                )
-                list_trials(selected)
-                if yes or click.confirm("Continue?"):
-                    ctx.store.delete_all(selected.keys())
+    while True:
+        with Context(wdir, config) as ctx:
+            if clean_failed:
+                selected = {
+                    trial_id: trial
+                    for trial_id, trial in ctx.store.items()
+                    if trial.is_failed
+                }
+                if selected:
+                    click.echo(
+                        "The following {} trials will be deleted:".format(len(selected))
+                    )
+                    list_trials(selected)
+                    if yes or click.confirm("Continue?"):
+                        ctx.store.delete_all(selected.keys())
 
-        # Load the DOX
-        load_dox(dox_fn)
+            # Load the DOX
+            try:
+                load_dox(dox_fn)
+            except DOXError as exc:
+                raise exc.__cause__ from None
 
-        # Run
-        ctx.run()
+            # Run
+            ctx.run()
+
+        new_dox_mtime = os.path.getmtime(dox_fn)
+        if reload and new_dox_mtime > dox_mtime:
+            dox_mtime = new_dox_mtime
+            # Reload modules and redo loop
+            print(f"{dox_fn} was changed, reloading...")
+            for module in set(sys.modules.values()) - initial_modules:
+                try:
+                    importlib.reload(module)
+                except Exception:
+                    print(f"Error reloading {module}")
+            continue
+
+        # Exit from loop
+        break
 
 
 @cli.command(context_settings=dict(ignore_unknown_options=True,))
@@ -67,12 +99,12 @@ def run(dox_fn, skip_existing, catch, clean_failed, yes):
 @click.argument("target")
 @click.argument("cmd_args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
-def do(click_ctx, dox_fn, target, cmd, cmd_args):
+def do(click_ctx: click.Context, dox_fn, target, cmd, cmd_args):
     """Execute experiment subcommands."""
     wdir = os.path.splitext(dox_fn)[0]
     os.makedirs(wdir, exist_ok=True)
 
-    with push_context(Context(wdir)) as ctx:
+    with Context(wdir) as ctx:
         # Load the DOX
         load_dox(dox_fn)
 
@@ -91,14 +123,15 @@ def do(click_ctx, dox_fn, target, cmd, cmd_args):
 @click.option("--all", is_flag=True, help="Delete all trials.")
 @click.option("--yes", "-y", is_flag=True, help="Delete without asking.")
 def clean(dox_fn, experiment_id, all, yes):
-    """Clean trials.
+    """
+    Clean trials.
 
-    By default, only failed trials are deleted. Supply --all to delete all trials.
+    By default, only failed trials are deleted. Use --all to delete all trials.
     """
     click.echo("Cleaning results from {}...".format(dox_fn))
 
     wdir = os.path.splitext(dox_fn)[0]
-    with push_context(Context(wdir)) as ctx:
+    with Context(wdir) as ctx:
         selected = {
             trial_id: trial
             for trial_id, trial in ctx.store.items()
@@ -110,6 +143,8 @@ def clean(dox_fn, experiment_id, all, yes):
 
         if not n_selected:
             click.echo("No matching trials.")
+            if not all:
+                click.echo("Use --all to delete all trials.")
             return
 
         click.echo("The following {} trials will be deleted:".format(n_selected))
@@ -137,7 +172,7 @@ def show(dox_fn, experiment_id=None):
     """List trials."""
 
     wdir = os.path.splitext(dox_fn)[0]
-    with push_context(Context(wdir)) as ctx:
+    with Context(wdir) as ctx:
         list_trials(ctx.store)
 
 
@@ -154,21 +189,7 @@ def collect(dox_fn, results_fn, failed):
 
     click.echo("Collecting results from {} into {}...".format(dox_fn, results_fn))
 
-    with push_context(Context(wdir)) as ctx:
+    with Context(wdir) as ctx:
         load_dox(dox_fn)
 
         ctx.collect(results_fn, failed=failed)
-
-
-@cli.command()
-@click.argument("dox_fn")
-def update(dox_fn):
-    """Run update command."""
-    wdir = os.path.splitext(dox_fn)[0]
-
-    click.echo("Updating results of {}...".format(dox_fn))
-
-    with push_context(Context(wdir)) as ctx:
-        load_dox(dox_fn)
-
-        ctx.update()

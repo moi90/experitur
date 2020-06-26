@@ -1,6 +1,6 @@
 import pytest
 
-from experitur.recursive_formatter import RecursiveFormatter, RecursiveDict
+from experitur.recursive_formatter import RecursiveDict, RecursiveFormatter
 
 
 def test_RecursiveFormatter():

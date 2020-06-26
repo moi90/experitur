@@ -1,11 +1,11 @@
 import time
 
-from experitur import experiment
+from experitur import Experiment
+from experitur.parameters import Grid
 
 
-@experiment(
-    parameter_grid={"a": [1, 2], "b": [3, 4],}
-)
+@Grid({"a": [1, 2], "b": [3, 4]})
+@Experiment()
 def simple(trial):
     print("a:", trial["a"])
     print("b:", trial["b"])

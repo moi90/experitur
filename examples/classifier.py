@@ -1,45 +1,40 @@
-from sklearn import datasets, metrics, svm
-from sklearn.metrics.classification import (
-    accuracy_score,
-    precision_recall_fscore_support,
-)
+from sklearn import datasets, svm
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 
-from experitur import experiment
+from experitur import Experiment, Trial
+from experitur.parameters import Grid
 
 
-@experiment(
-    parameter_grid={
-        "svc_kernel": ["linear", "poly", "rbf", "sigmoid"],
-        "svc_shrinking": [True, False],
-    }
-)
-def classifier_svm(trial):
-    digits = datasets.load_digits()
+@Grid({"svc_kernel": ["linear", "poly", "rbf", "sigmoid"]})
+@Experiment()
+def classifier_svm(trial: Trial):
+    X, y = datasets.load_digits(return_X_y=True)
 
-    n_samples = len(digits.images)
+    n_samples = len(X)
 
     # Flatten
-    data = digits.images.reshape((n_samples, -1))
+    X = X.reshape((n_samples, -1))
 
-    # Record all defaults of svm.SVC
-    trial.record_defaults("svc_", svm.SVC, gamma="scale")
-
-    assert "svc_gamma" in trial
-    assert trial["svc_gamma"] == "scale"
+    # Extract parameters prefixed with "svc_"
+    svc_parameters = trial.prefixed("svc_")
 
     # Create a support vector classifier
-    classifier = trial.apply("svc_", svm.SVC)
+    classifier = svc_parameters.call(svm.SVC)
+
+    # svc_parameters.call automatically filled `parameters` in with the default values:
+    assert "svc_gamma" in trial
+    assert trial["svc_gamma"] == "scale"
 
     print("Classifier:", classifier)
 
     # Fit
-    X_train = data[: n_samples // 2]
-    y_train = digits.target[: n_samples // 2]
+    X_train = X[: n_samples // 2]
+    y_train = y[: n_samples // 2]
     classifier.fit(X_train, y_train)
 
     # Predict
-    X_test = data[n_samples // 2 :]
-    y_test = digits.target[n_samples // 2 :]
+    X_test = X[n_samples // 2 :]
+    y_test = y[n_samples // 2 :]
     y_test_pred = classifier.predict(X_test)
 
     # Calculate some metrics
@@ -48,5 +43,7 @@ def classifier_svm(trial):
     result = dict(zip(("macro_precision", "macro_recall", "macro_f_score"), macro_prfs))
 
     result["accuracy"] = accuracy_score(y_test, y_test_pred)
+
+    print(result)
 
     return result

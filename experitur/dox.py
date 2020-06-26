@@ -1,9 +1,7 @@
 import importlib.util
 import os.path
 import sys
-from importlib import import_module
 
-from experitur.context import Context, push_context
 from experitur.errors import ExperiturError
 
 

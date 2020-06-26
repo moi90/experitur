@@ -1,5 +1,6 @@
 from collections.abc import Mapping
 from string import Formatter
+
 import regex
 
 # BUG: format strings without matching field are changed
@@ -57,7 +58,7 @@ class RecursiveDict(Mapping):
     """
     A dict where format expressions in string values are recursively applied.
 
-    See str.format. 
+    See str.format.
     """
 
     def __init__(self, mapping, allow_missing=False):

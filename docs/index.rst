@@ -8,48 +8,31 @@ experitur
 
 **experitur** automates machine learning and other computer science experiments
 and stores the results in an easily accessible format.
-It includes grid search, parameter substitution
+It includes grid search, random search, parameter substitution, inheritance
 and resuming aborted experiments.
-
-Installation
-------------
-
-**experitur** is packaged on PyPI and can be installed with pip:
-
-.. code-block:: sh
-
-    pip install experitur
-
-Be warned that this package is currently under heavy development
-and anything might change any time!
-
-To install the development version, do:
-
-.. code-block:: sh
-
-    pip install -U git+https://github.com/moi90/experitur.git
-
-
-Getting started
----------------
-
-**experitur** is very easy to use. Just create a Python file where you describe
-your experiments like so:
-
-.. literalinclude:: ../examples/simple.py
-    :language: python
-
-You can then run your experiment:
 
 .. image:: ../examples/simple.gif
     :align: center
 
+The above example shows the execution of the following experiment:
 
-API
----
+.. literalinclude:: ../examples/simple.py
+    :language: python
 
-Have a look at the :doc:`api`.
+Read more about :py:class:`~experitur.Experiment`, :py:class:`~experitur.parameters.Grid` or the :doc:`command line reference<cli>`.
 
+
+Contents
+========
+
+.. toctree::
+    :maxdepth: 2
+
+    introduction
+    installation
+    parameter_substitution
+    cli
+    api
 
 Indices and tables
 ==================
@@ -57,11 +40,3 @@ Indices and tables
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
-
-TOC
-===
-
-.. toctree::
-    self
-    cli
-    api
