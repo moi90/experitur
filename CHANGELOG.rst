@@ -1,12 +1,21 @@
 Current
 =======
 
+- Rename Trial->TrialData, TrialParameters->Trial.
+- Add :code:`TrialCollection`.
+- Add :code:`Trial.flush()`.
+- Add reloading of experiment file after execution.
+- Add "volatile" Experiments.
 - Add :code:`TrialParameters.log`.
 - Fix endless recusion error in :py:func:`redirect_stdout`.
-- Rename :code:`callable` parameters to :code:`func`.
+- Add :code:`TrialParameters.choice`.
+- Add :code:`TrialParameters.prefixed`.
 - Remove :code:`TrialParameters.apply` to :code:`TrialParameters.call`.
 - Remove :code:`Experiment.post_grid`.
 - Make scikit-learn and pandas optional dependencies.
 - Change :code:`Experiment.__init__(parameter_grid)` to more flexible :code:`Experiment.__init__(parameters)`.
 - Context: Remove experiment constructor. Remove :code:`push_context`.
 - Remove :code:`Experiment.set_update`. The more general :code:`Experiment.command` should be used.
+- Move context, experiment, samplers, trial to core.
+- Add :code:`ParameterGenerator` decorators: :code:`Grid`, :code:`Random`, :code:`SKOpt`.
+- Change :code:`experiment` decorator to :code:`Experiment`.
