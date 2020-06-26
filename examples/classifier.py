@@ -1,13 +1,13 @@
 from sklearn import datasets, svm
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 
-from experitur import Experiment, TrialParameters
+from experitur import Experiment, Trial
 from experitur.parameters import Grid
 
 
 @Grid({"svc_kernel": ["linear", "poly", "rbf", "sigmoid"]})
 @Experiment()
-def classifier_svm(parameters: TrialParameters):
+def classifier_svm(trial: Trial):
     X, y = datasets.load_digits(return_X_y=True)
 
     n_samples = len(X)
@@ -16,14 +16,14 @@ def classifier_svm(parameters: TrialParameters):
     X = X.reshape((n_samples, -1))
 
     # Extract parameters prefixed with "svc_"
-    svc_parameters = parameters.prefixed("svc_")
+    svc_parameters = trial.prefixed("svc_")
 
     # Create a support vector classifier
     classifier = svc_parameters.call(svm.SVC)
 
     # svc_parameters.call automatically filled `parameters` in with the default values:
-    assert "svc_gamma" in parameters
-    assert parameters["svc_gamma"] == "scale"
+    assert "svc_gamma" in trial
+    assert trial["svc_gamma"] == "scale"
 
     print("Classifier:", classifier)
 

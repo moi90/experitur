@@ -47,7 +47,7 @@ class Conditions(ParameterGenerator):
     Example:
         .. code-block:: python
 
-            from experitur import Experiment, TrialParameters
+            from experitur import Experiment, Trial
             from experitur.parameters import Conditions, Grid
 
             @Conditions("a", {
@@ -55,7 +55,7 @@ class Conditions(ParameterGenerator):
                 2: Grid({"b": [3,4]}),
             })
             @Experiment()
-            def example(parameters: TrialParameters):
+            def example(parameters: Trial):
                 print(parameters["a"], parameters["b"])
 
         This example will produce "1 1", "1 2", "2 3", "2 4".

@@ -97,20 +97,20 @@ class Experiment:
 
         # When using as a decorator, the name of the experiment is automatically inferred.
         @Experiment(...)
-        def exp1(parameters):
+        def exp1(trial):
             ...
 
         # Here, the name must be supplied.
         exp2 = Experiment("exp2", parent=exp1)
 
-    When the experiment is run, `parameters` will be a :py:class:`~experitur.core.trial.TrialParameters` instance.
+    When the experiment is run, `trial` will be a :py:class:`~experitur.core.trial.Trial` instance.
     As such, it has the following characteristics:
 
     - :obj:`dict`-like interface (`trial[<name>]`): Get the value of the parameter named `name`.
     - Attribute interface (`trial.<attr>`): Get meta-data for this trial.
     - :py:meth:`~experitur.core.trial.apply`: Run a function and automatically assign parameters.
 
-    See :py:class:`~experitur.core.trial.TrialParameters` for more details.
+    See :py:class:`~experitur.core.trial.Trial` for more details.
     """
 
     def __init__(
@@ -372,10 +372,10 @@ class Experiment:
             except KeyError as exc:
                 raise TrialNotFoundError(target_name) from exc
 
-            from experitur.core.trial import TrialParameters
+            from experitur.core.trial import Trial
 
             # Inject the TrialProxy
-            cmd_wrapped = functools.partial(cmd, TrialParameters(trial))
+            cmd_wrapped = functools.partial(cmd, Trial(trial))
             # Copy over __click_params__ if they exist
             try:
                 cmd_wrapped.__click_params__ = cmd.__click_params__

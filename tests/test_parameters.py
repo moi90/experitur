@@ -1,6 +1,6 @@
 import pytest
 
-from experitur import Experiment, TrialParameters
+from experitur import Experiment, Trial
 from experitur.core.context import Context
 from experitur.parameters import Random
 

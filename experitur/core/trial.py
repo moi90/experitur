@@ -87,17 +87,17 @@ def _get_object_name(obj):
 
 
 class CallException(Exception):
-    def __init__(self, func, args, kwargs, trial_parameters: "TrialParameters"):
+    def __init__(self, func, args, kwargs, trial: "Trial"):
         self.func = func
         self.args = args
         self.kwargs = kwargs
-        self.trial_parameters = trial_parameters
+        self.trial = trial
 
     def __str__(self):
-        return f"Error calling {self.func} (args={self.args}, kwargs={self.kwargs}) with {self.trial_parameters}"
+        return f"Error calling {self.func} (args={self.args}, kwargs={self.kwargs}) with {self.trial}"
 
 
-class TrialParameters(collections.abc.MutableMapping):
+class Trial(collections.abc.MutableMapping):
     """
     Parameter configuration of the current trial.
 
@@ -191,22 +191,24 @@ class TrialParameters(collections.abc.MutableMapping):
             pass
 
         # Name could be a referenced experiment with matching parameters
-        trials = self._trial.store.match(
+        trials_data = self._trial.store.match(
             experiment=name, resolved_parameters=dict(self)
         )
 
-        if len(trials) == 1:
-            trial = trials.pop()
-            return TrialParameters(trial)
-        elif len(trials) > 1:
-            msg = "Multiple matching parent experiments: " + ", ".join(trials.keys())
+        if len(trials_data) == 1:
+            trial_data = trials_data.pop()
+            return Trial(trial_data)
+        elif len(trials_data) > 1:
+            msg = "Multiple matching parent experiments: " + ", ".join(
+                trials_data.keys()
+            )
             raise ValueError(msg)
 
         msg = "Trial has no attribute: {}".format(name)
         raise AttributeError(msg)
 
     def __repr__(self):
-        return f"<TrialParameters({dict(self)})>"
+        return f"<Trial({dict(self)})>"
 
     def record_defaults(self, func: Callable, **defaults):
         """
@@ -334,13 +336,13 @@ class TrialParameters(collections.abc.MutableMapping):
         except Exception as exc:
             raise CallException(func, args, parameters, self) from exc
 
-    def prefixed(self, prefix: str) -> "TrialParameters":
+    def prefixed(self, prefix: str) -> "Trial":
         """
-        Return new :py:class:`TrialParameters` instance with prefix applied.
+        Return new :py:class:`Trial` instance with prefix applied.
 
         Prefixes allow you to organize parameters and save keystrokes.
         """
-        return TrialParameters(self._trial, f"{self._prefix}{prefix}")
+        return Trial(self._trial, f"{self._prefix}{prefix}")
 
     def setdefaults(
         self, defaults: Union[Mapping, Iterable[Tuple[str, Any]], None] = None, **kwargs
@@ -359,7 +361,7 @@ class TrialParameters(collections.abc.MutableMapping):
 
         itemiters = []
 
-        if isinstance(defaults, TrialParameters):
+        if isinstance(defaults, Trial):
             itemiters.append(dict(defaults).items())
         elif isinstance(defaults, collections.abc.Mapping):
             itemiters.append(defaults.items())
@@ -432,17 +434,17 @@ def try_str(obj):
         return "<error>"
 
 
-class Trial:
+class TrialData:
     """
-    Trial.
+    Store data related to a trial.
 
     Arguments
         store: TrialStore
-        func (optional): Experiment function
-        data (optional): Trial data
+        data (optional): Trial data dictionary.
+        func (optional): Experiment function.
     """
 
-    def __init__(self, store: "TrialStore", data, func=None):
+    def __init__(self, store: "TrialStore", data: Mapping, func=None):
         self.store = store
         self.data = data
         self.func = func
@@ -467,7 +469,7 @@ class Trial:
         self.data["error"] = None
 
         try:
-            result = self.func(TrialParameters(self))
+            result = self.func(Trial(self))
         except (Exception, KeyboardInterrupt) as exc:
             # Log complete exc to file
             error_fn = os.path.join(self.wdir, "error.txt")
@@ -523,7 +525,7 @@ class Trial:
 class TrialCollection(Collection):
     _missing = object()
 
-    def __init__(self, trials: List[Trial]):
+    def __init__(self, trials: List[TrialData]):
         self.trials = trials
 
     def __len__(self):
@@ -532,7 +534,7 @@ class TrialCollection(Collection):
     def __iter__(self):
         yield from self.trials
 
-    def __contains__(self, trial: Trial):
+    def __contains__(self, trial: TrialData):
         return trial in self.trials
 
     def pop(self, index=-1):
@@ -576,12 +578,12 @@ class TrialCollection(Collection):
 
         return self.trials[0]
 
-    def filter(self, fn: Callable[[Trial], bool]) -> "TrialCollection":
+    def filter(self, fn: Callable[[TrialData], bool]) -> "TrialCollection":
         """
         Return a filtered version of this trial collection.
 
         Args:
-            fn (callable): A function that receives a Trial instance and returns True if the trial should be kept.
+            fn (callable): A function that receives a TrialData instance and returns True if the trial should be kept.
 
         Returns:
             A new trial collection.
@@ -687,7 +689,7 @@ class TrialStore(collections.abc.MutableMapping):
         return wdir
 
     def create(self, trial_configuration, experiment: "Experiment"):
-        """Create a :py:class:`Trial`."""
+        """Create a :py:class:`TrialData` instance."""
         trial_configuration.setdefault("parameters", {})
 
         # Calculate trial_id
@@ -720,7 +722,7 @@ class TrialStore(collections.abc.MutableMapping):
             wdir=wdir,
         )
 
-        trial = Trial(self, func=experiment.func, data=trial_configuration)
+        trial = TrialData(self, func=experiment.func, data=trial_configuration)
 
         self[trial_id] = trial
 
@@ -744,7 +746,7 @@ class FileTrialStore(TrialStore):
 
         try:
             with open(path) as fp:
-                return Trial(self, data=yaml.load(fp, Loader=yaml.Loader))
+                return TrialData(self, data=yaml.load(fp, Loader=yaml.Loader))
         except FileNotFoundError as exc:
             raise KeyError from exc
 

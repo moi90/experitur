@@ -35,7 +35,7 @@ class ParameterGeneratorIter(ABC):
         self.ignored_parameter_names: Set[str] = set()
 
     @abstractmethod
-    def __iter__(self) -> Generator[_trial.Trial, None, None]:  # pragma: no cover
+    def __iter__(self) -> Generator[_trial.TrialData, None, None]:  # pragma: no cover
         for parent_configuration in self.parent:
             while False:
                 yield merge_dicts(parent_configuration, parameters={...: ...})
@@ -152,12 +152,12 @@ class Const(ParameterGenerator):
     Example:
         .. code-block:: python
 
-            from experitur import Experiment, TrialParameters
+            from experitur import Experiment, Trial
             from experitur.parameters import Const
 
             @Const({"a": 1, "b": 2}, c=3)
             @Experiment()
-            def example1(parameters: TrialParameters):
+            def example1(parameters: Trial):
                 print(parameters["a"], parameters["b"], parameters["c"])
 
         This example will produce "1 2 3".
@@ -213,16 +213,16 @@ class Grid(ParameterGenerator):
     Example:
         .. code-block:: python
 
-            from experitur import Experiment, TrialParameters
+            from experitur import Experiment, Trial
             from experitur.parameters import Grid
 
             @Grid({"a": [1,2], "b": [3,4]})
             @Experiment()
-            def example1(parameters: TrialParameters):
+            def example1(parameters: Trial):
                 print(parameters["a"], parameters["b"])
 
             @Experiment2(parameters={"a": [1,2], "b": [3,4]})
-            def example(parameters: TrialParameters):
+            def example(parameters: Trial):
                 print(parameters["a"], parameters["b"])
 
         Both examples are equivalent and will produce "1 3", "1 4", "2 3", and "2 4".

@@ -80,13 +80,13 @@ class Random(ParameterGenerator):
     Example:
         .. code-block:: python
 
-            from experitur import Experiment, TrialParameters
+            from experitur import Experiment, Trial
             from experitur.parameters import Random
             from scipy.stats.distributions import expon
 
             @Random({"a": [1,2], "b": expon()}, 4)
             @Experiment()
-            def example(parameters: TrialParameters):
+            def example(parameters: Trial):
                 print(parameters["a"], parameters["b"])
 
         This example will produce four runs, e.g. "1 0.898", "1 0.923", "2 1.878", and "2 1.038".

@@ -1,6 +1,6 @@
 import pytest
 
-from experitur import Experiment, TrialParameters
+from experitur import Experiment, Trial
 from experitur.core.context import Context
 from experitur.parameters import Random, SKOpt
 
@@ -11,7 +11,7 @@ def test_SKOpt(tmp_path):
         parameters = SKOpt({"x": (-10.0, 10.0, "uniform"), "y": (0, 10)}, "x", 4)
 
         @Experiment(parameters=parameters)
-        def exp(trial: TrialParameters):
+        def exp(trial: Trial):
             assert type(trial["x"]) is float
             assert type(trial["y"]) is int
 
@@ -49,7 +49,7 @@ def test_SKOptTimed(tmp_path):
         )
 
         @Experiment(parameters=parameters)
-        def exp(trial: TrialParameters):
+        def exp(trial: Trial):
             return dict(trial)
 
         # Execute experiment a first time

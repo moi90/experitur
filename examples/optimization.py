@@ -1,4 +1,4 @@
-from experitur import Experiment, TrialParameters
+from experitur import Experiment, Trial
 from experitur.parameters import Grid, SKOpt
 
 
@@ -10,7 +10,7 @@ def rosenbrock_parametric(a, b, x, y):
 @SKOpt({"x": (-10.0, 10.0), "y": (-10.0, 10.0)}, "z", 10)
 @Grid({"repetition": [1, 2, 3]})
 @Experiment(active=False,)
-def exp(trial: TrialParameters):
+def exp(trial: Trial):
     z = trial.apply("", rosenbrock_parametric)
 
     return {"z": z}

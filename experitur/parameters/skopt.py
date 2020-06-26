@@ -3,7 +3,7 @@ from collections import OrderedDict
 from typing import Any, Dict, List, Mapping, Union
 
 from experitur.core.parameters import ParameterGenerator, ParameterGeneratorIter
-from experitur.core.trial import Trial
+from experitur.core.trial import TrialData
 from experitur.helpers.merge_dicts import merge_dicts
 
 try:
@@ -17,13 +17,13 @@ except ImportError:  # pragma: no cover
 
 
 def convert_trial(
-    trial: Trial, search_space: Mapping, objective, include_duration=False
+    trial_data: TrialData, search_space: Mapping, objective, include_duration=False
 ):
     """Convert a trial to a tuple (parameters, (result, time)) or None."""
-    result = trial.data.get("result", {}).get(objective, None)
-    parameters = trial.data.get("parameters", None)
-    time_start = trial.data.get("time_start", None)
-    time_end = trial.data.get("time_end", None)
+    result = trial_data.data.get("result", {}).get(objective, None)
+    parameters = trial_data.data.get("parameters", None)
+    time_start = trial_data.data.get("time_start", None)
+    time_end = trial_data.data.get("time_end", None)
 
     if None in (result, parameters, time_start, time_end):
         return None
@@ -160,13 +160,13 @@ class SKOpt(ParameterGenerator):
     Example:
         .. code-block:: python
 
-            from experitur import Experiment, TrialParameters
+            from experitur import Experiment, Trial
             from experitur.parameters import SKOpt
             from scipy.stats.distributions import log
 
             @SKOpt({"a": [1,2], "b": expon()}, "y", 4)
             @Experiment()
-            def example(parameters: TrialParameters):
+            def example(parameters: Trial):
                 print(parameters["a"], parameters["b"])
 
                 return {"y": parameters["a"] * parameters["b"]}

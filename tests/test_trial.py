@@ -9,8 +9,8 @@ from experitur.core.context import Context
 from experitur.core.experiment import Experiment
 from experitur.core.trial import (
     FileTrialStore,
+    TrialData,
     Trial,
-    TrialParameters,
     _callable_to_name,
     _format_independent_parameters,
     _match_parameters,
@@ -55,7 +55,7 @@ def test_trial_store(tmp_path):
 
             experiment2 = Experiment("test2", parent=experiment)(test2)
 
-            trial_store["foo"] = Trial(
+            trial_store["foo"] = TrialData(
                 trial_store, data={"id": "foo", "wdir": "", 1: "foo", "bar": 2}
             )
             assert trial_store["foo"].data == {
@@ -65,7 +65,7 @@ def test_trial_store(tmp_path):
                 "bar": 2,
             }
 
-            trial_store["bar/baz"] = Trial(
+            trial_store["bar/baz"] = TrialData(
                 trial_store, data={"id": "bar/baz", "wdir": "", 1: "foo", "bar": 2}
             )
             assert trial_store["bar/baz"].data == {
@@ -164,7 +164,7 @@ def test_trial_parameters(tmp_path, recwarn):
     with Context(str(tmp_path), config) as ctx:
 
         @Experiment(parameters={"a": [1], "b": [2], "c": ["{a}"]})
-        def experiment(parameters: TrialParameters):
+        def experiment(parameters: Trial):
             assert parameters["a"] == 1
             assert parameters["b"] == 2
             assert parameters["c"] == parameters["a"]
@@ -344,7 +344,7 @@ def test_trial_logging(tmp_path):
     with Context(str(tmp_path), config) as ctx:
 
         @Experiment()
-        def experiment(trial_parameters: TrialParameters):
+        def experiment(trial_parameters: Trial):
             for i in range(10):
                 trial_parameters.log({"i": i, "i10": i * 10}, ni=1 / (i + 1))
 

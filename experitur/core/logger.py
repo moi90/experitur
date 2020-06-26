@@ -8,7 +8,7 @@ import yaml
 from experitur.helpers.dumper import ExperiturDumper
 
 if TYPE_CHECKING:
-    from experitur.core.trial import Trial
+    from experitur.core.trial import TrialData
 
 try:
     import pandas as pd
@@ -19,7 +19,7 @@ LogValues = Mapping[str, Any]
 
 
 class LoggerBase:
-    def __init__(self, trial: "Trial"):
+    def __init__(self, trial: "TrialData"):
         self.trial = weakref.proxy(trial)  # Avoid cycles
 
     @abstractmethod
@@ -38,7 +38,7 @@ class LoggerBase:
 
 
 class YAMLLogger(LoggerBase):
-    def __init__(self, trial: "Trial"):
+    def __init__(self, trial: "TrialData"):
         super().__init__(trial)
 
         self.log_fn = os.path.join(self.trial.wdir, "log.yaml")
