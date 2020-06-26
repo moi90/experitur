@@ -40,3 +40,20 @@ def test_SKOpt(tmp_path):
         c_trials = ctx.store.match(experiment=exp)
         assert 4 <= len(c_trials) <= 8
 
+
+def test_SKOptTimed(tmp_path):
+    config = {"skip_existing": True}
+    with Context(str(tmp_path), config) as ctx:
+        parameters = SKOpt(
+            {"x": (-10.0, 10.0, "uniform"), "y": (0, 10)}, "x", 4, acq_func="EIps"
+        )
+
+        @Experiment(parameters=parameters)
+        def exp(trial: TrialParameters):
+            return dict(trial)
+
+        # Execute experiment a first time
+        ctx.run()
+
+        c_trials = ctx.store.match(experiment=exp)
+        assert len(c_trials) == 4

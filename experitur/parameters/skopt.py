@@ -3,6 +3,7 @@ from collections import OrderedDict
 from typing import Any, Dict, List, Mapping, Union
 
 from experitur.core.parameters import ParameterGenerator, ParameterGeneratorIter
+from experitur.core.trial import Trial
 from experitur.helpers.merge_dicts import merge_dicts
 
 try:
@@ -13,6 +14,29 @@ try:
     _SKOPT_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _SKOPT_AVAILABLE = False
+
+
+def convert_trial(
+    trial: Trial, search_space: Mapping, objective, include_duration=False
+):
+    """Convert a trial to a tuple (parameters, (result, time)) or None."""
+    result = trial.data.get("result", {}).get(objective, None)
+    parameters = trial.data.get("parameters", None)
+    time_start = trial.data.get("time_start", None)
+    time_end = trial.data.get("time_end", None)
+
+    if None in (result, parameters, time_start, time_end):
+        return None
+
+    if include_duration:
+        result = (result, (time_end - time_start).total_seconds())
+
+    return (
+        point_aslist(
+            search_space, {k: v for k, v in parameters.items() if k in search_space},
+        ),
+        result,
+    )
 
 
 class _SKOptIter(ParameterGeneratorIter):
@@ -67,17 +91,13 @@ class _SKOptIter(ParameterGeneratorIter):
                 )
 
                 # TODO: Record timing for time based `acq_func`s
+                # TODO: Provide test
                 results = [
-                    (
-                        point_aslist(
-                            self.parameter_generator.search_space,
-                            {
-                                k: v
-                                for k, v in trial.data["parameters"].items()
-                                if k in parameter_names
-                            },
-                        ),
-                        trial.data["result"][self.parameter_generator.objective],
+                    convert_trial(
+                        trial,
+                        self.parameter_generator.search_space,
+                        self.parameter_generator.objective,
+                        "ps" in optimizer.acq_func,
                     )
                     for trial in existing_trials
                     if trial.data.get("result", None)
