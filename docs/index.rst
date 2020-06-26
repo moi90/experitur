@@ -33,7 +33,6 @@ Contents
     parameter_substitution
     cli
     api
-    dev
 
 Indices and tables
 ==================
