@@ -45,6 +45,11 @@ def _get_object_name(obj):
     except AttributeError:
         pass
 
+    try:
+        return obj.__class__.__name__
+    except AttributeError:
+        pass
+
     raise ValueError(f"Unable to determine the name of {obj}")
 
 
@@ -482,6 +487,13 @@ class TrialData:
     def remove(self):
         """Remove this trial from the store."""
         del self.store[self.id]
+
+    def get_result(self, name):
+        result = self.data["result"]
+        if result is None:
+            return None
+
+        return result.get(name, None)
 
 
 class TrialCollection(Collection):

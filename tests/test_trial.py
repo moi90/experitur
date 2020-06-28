@@ -122,6 +122,8 @@ def test_trial_store(tmp_path, TrialStoreImplementation: Type[TrialStore]):
 
             assert result == {"result": (1, 2)}
 
+            assert trial.get_result("result") == (1, 2)
+
             # Write trial data back to the store
             trial.save()
 
@@ -310,16 +312,34 @@ def test_trial_parameters(tmp_path, recwarn):
             def b():
                 pass
 
+            class C:
+                pass
+
+            c = C()
+
             assert (
-                parameters.prefixed("__empty2_").choice("parameter_name", [A, b], "A")
+                parameters.prefixed("__empty2_").choice(
+                    "parameter_name", [A, b, c], "A"
+                )
                 == A
             )
 
             parameters.prefixed("__empty2_")["parameter_name"] = "b"
 
             assert (
-                parameters.prefixed("__empty2_").choice("parameter_name", [A, b], "A")
+                parameters.prefixed("__empty2_").choice(
+                    "parameter_name", [A, b, c], "A"
+                )
                 == b
+            )
+
+            parameters.prefixed("__empty2_")["parameter_name"] = "C"
+
+            assert (
+                parameters.prefixed("__empty2_").choice(
+                    "parameter_name", [A, b, c], "A"
+                )
+                == c
             )
 
             x, y = 1, 2
