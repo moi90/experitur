@@ -99,6 +99,7 @@ class _SKOptIter(ParameterGeneratorIter):
             for _ in range(n_iter):
                 optimizer = skopt.Optimizer(
                     dimensions_aslist(self.parameter_generator.search_space),
+                    n_initial_points=self.parameter_generator.n_initial_points,
                     **self.parameter_generator.kwargs,
                 )
 
@@ -174,6 +175,7 @@ class SKOpt(ParameterGenerator):
             - an instance of a :py:class:`~skopt.space.space.Dimension` object (:py:class:`~skopt.space.space.Real`, :py:class:`~skopt.space.space.Integer` or :py:class:`~skopt.space.space.Categorical`).
         objective (str): Name of the result that will be minimized. If starts with "-", the following name will be maximized instead.
         n_iter (int): Number of evaluations to find the optimum.
+        n_initial_points (int): Number of points sampled at random before actual optimization.
         **kwargs: Additional arguments for :py:class:`skopt.Optimizer`.
 
 
@@ -202,12 +204,18 @@ class SKOpt(ParameterGenerator):
     _str_attr = ["search_space", "objective", "n_iter"]
 
     def __init__(
-        self, search_space: Mapping[str, Any], objective: str, n_iter: int, **kwargs
+        self,
+        search_space: Mapping[str, Any],
+        objective: str,
+        n_iter: int,
+        n_initial_points: int = 10,
+        **kwargs,
     ):
         self.search_space = search_space = {
             k: skopt.space.check_dimension(v) for k, v in search_space.items()
         }
         self.n_iter = n_iter
+        self.n_initial_points = n_initial_points
         self.objective = objective
         self.kwargs = kwargs
 
