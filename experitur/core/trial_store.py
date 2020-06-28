@@ -45,7 +45,7 @@ class TrialStore(collections.abc.MutableMapping):
     def __enter__(self):
         return self
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(self, *_):
         pass
 
     def match(
