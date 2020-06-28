@@ -2,30 +2,31 @@ import functools
 import glob
 import os.path
 import re
+from typing import Type
 
 import pytest
 
 from experitur.core.context import Context
 from experitur.core.experiment import Experiment
-from experitur.core.trial import (
+from experitur.core.trial import Trial, TrialData
+from experitur.core.trial_store import (
     FileTrialStore,
-    TrialData,
-    Trial,
-    _callable_to_name,
+    TrialStore,
     _format_independent_parameters,
     _match_parameters,
 )
+from experitur.util import callable_to_name
 
 
 def noop():
     pass
 
 
-def test__callable_to_name():
-    assert _callable_to_name(noop) == "test_trial.noop"
-    assert _callable_to_name([noop]) == ["test_trial.noop"]
-    assert _callable_to_name((noop,)) == ("test_trial.noop",)
-    assert _callable_to_name({"noop": noop}) == {"noop": "test_trial.noop"}
+def test_callable_to_name():
+    assert callable_to_name(noop) == "test_trial.noop"
+    assert callable_to_name([noop]) == ["test_trial.noop"]
+    assert callable_to_name((noop,)) == ("test_trial.noop",)
+    assert callable_to_name({"noop": noop}) == {"noop": "test_trial.noop"}
 
 
 def test__match_parameters():
@@ -40,10 +41,16 @@ def test__format_independent_parameters():
     assert _format_independent_parameters(parameters, ["a", "b"]) == "a-1_b-2"
 
 
-def test_trial_store(tmp_path):
+@pytest.fixture(name="TrialStoreImplementation", params=[FileTrialStore])
+def _TrialStoreImplementation(request):
+    return request.param
+
+
+def test_trial_store(tmp_path, TrialStoreImplementation: Type[TrialStore]):
     with Context(str(tmp_path)) as ctx:
         ctx: Context
-        with FileTrialStore(ctx) as trial_store:
+        with TrialStoreImplementation(ctx) as trial_store:
+            trial_store: TrialStore
 
             def test(trial):
                 return {"result": (1, 2)}

@@ -76,7 +76,7 @@ class Context:
             self.wdir = wdir
 
         # Import here to break dependency cycle
-        from experitur.core.trial import FileTrialStore
+        from experitur.core.trial_store import FileTrialStore
 
         self.store = FileTrialStore(self)
 
