@@ -11,6 +11,7 @@ from experitur.core.experiment import (
     Experiment,
     TrialNotFoundError,
 )
+from experitur.core.trial import TrialData
 from experitur.dox import DOXError, load_dox
 
 
@@ -154,15 +155,26 @@ def clean(dox_fn, experiment_id, all, yes):
             ctx.store.delete_all(selected.keys())
 
 
+def _status(trial: TrialData):
+    if trial.is_failed:
+        return "!"
+
+    if trial.data.get("success", False):
+        return " "
+
+    return ">"
+
+
 def list_trials(trials):
     """Show a sorted list of trials with a status signifier.
 
     ! Failed
+    > Running
+
     """
     for trial_id, trial in sorted(trials.items()):
-        status = "!" if trial.is_failed else " "
 
-        print("{} {}".format(status, trial_id))
+        print("{} {}".format(_status(trial), trial_id))
 
 
 @cli.command()
