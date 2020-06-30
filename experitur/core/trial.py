@@ -1,40 +1,31 @@
 import collections.abc
-import copy
 import datetime
-import glob
 import inspect
 import itertools
 import os.path
-import shutil
 import traceback
-import warnings
 from abc import abstractmethod
 from collections import OrderedDict, defaultdict
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Dict,
+    Generator,
     Iterable,
     List,
     Mapping,
+    Optional,
     Tuple,
     TypeVar,
     Union,
-    overload,
 )
 
-import yaml
-
-from experitur.core.logger import LoggerBase, YAMLLogger
-from experitur.helpers.dumper import ExperiturDumper
-from experitur.helpers.merge_dicts import merge_dicts
-from experitur.recursive_formatter import RecursiveDict
-from experitur.util import callable_to_name
+from experitur.core.logger import YAMLLogger
 
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.experiment import Experiment
+    from experitur.core.trial_store import TrialStore
 
 T = TypeVar("T")
 
@@ -163,7 +154,7 @@ class Trial(collections.abc.MutableMapping):
         )
 
         if len(trials_data) == 1:
-            trial_data = trials_data.pop()
+            trial_data = trials_data.one()
             return Trial(trial_data)
         elif len(trials_data) > 1:
             msg = "Multiple matching parent experiments: " + ", ".join(
@@ -188,7 +179,7 @@ class Trial(collections.abc.MutableMapping):
         Use :py:class:`functools.partial` to pass keyword parameters to `func` that should not be recorded.
         """
 
-        __tracebackhide__ = True
+        __tracebackhide__ = True  # pylint: disable=unused-variable
 
         if not callable(func):
             raise ValueError("Only callables may be passed as first argument.")
@@ -407,7 +398,7 @@ class TrialData:
 
     Arguments
         store: TrialStore
-        data (optional): Trial data dictionary.
+        data: Trial data dictionary.
         func (optional): Experiment function.
     """
 
@@ -496,28 +487,15 @@ class TrialData:
         return result.get(name, None)
 
 
-class TrialCollection(Collection):
+class TrialCollectionBase(Sequence):
     _missing = object()
 
-    def __init__(self, trials: List[TrialData]):
-        self.trials = trials
-
-    def __len__(self):
-        return len(self.trials)
-
-    def __iter__(self):
-        yield from self.trials
-
-    def __contains__(self, trial: TrialData):
-        return trial in self.trials
-
-    def pop(self, index=-1):
-        return self.trials.pop(index)
+    __iter__: Generator[TrialData, None, None]
 
     @property
     def independent_parameters(self):
         independent_parameters = set()
-        for t in self.trials:
+        for t in self:
             independent_parameters.update(
                 t.data.get("experiment", {}).get("independent_parameters", [])
             )
@@ -528,7 +506,7 @@ class TrialCollection(Collection):
         """Independent parameters that vary in this trial collection."""
         independent_parameters = self.independent_parameters
         parameter_values = defaultdict(set)
-        for t in self.trials:
+        for t in self:
             for p in independent_parameters:
                 try:
                     v = t.data["parameters"][p]
@@ -539,28 +517,106 @@ class TrialCollection(Collection):
 
         return set(p for p in independent_parameters if len(parameter_values[p]) > 1)
 
-    def to_pandas(self):
-        import pandas as pd
+    def to_pandas(self, failed=True):
+        try:
+            from pandas import json_normalize
+        except ImportError:
+            try:
+                from pandas.io.json import json_normalize
+            except ImportError:
+                raise RuntimeError("pandas is not available.")
 
-        return pd.json_normalize([t.data for t in self.trials], max_level=1).set_index(
-            "id"
-        )
+        return json_normalize(
+            [t.data for t in self if failed or not t.is_failed], max_level=1
+        ).set_index("id")
 
+    @abstractmethod
     def one(self):
-        if len(self.trials) != 1:
-            raise ValueError("No individual trial.")
+        pass
 
-        return self.trials[0]
-
-    def filter(self, fn: Callable[[TrialData], bool]) -> "TrialCollection":
+    def filter(
+        self,
+        filter_fn: Optional[Callable[[TrialData], bool]],
+        func=None,
+        parameters=None,
+        experiment=None,
+    ) -> "TrialCollection":
         """
         Return a filtered version of this trial collection.
 
         Args:
-            fn (callable): A function that receives a TrialData instance and returns True if the trial should be kept.
+            func (callable): A function that receives a TrialData instance and returns True if the trial should be kept.
 
         Returns:
             A new trial collection.
         """
 
-        return TrialCollection(list(filter(fn, self.trials)))
+        if func is not None:
+            raise NotImplementedError()
+
+        if parameters is not None:
+            raise NotImplementedError()
+
+        if experiment is not None:
+            raise NotImplementedError()
+
+        return TrialCollection(list(filter(filter_fn, self)))
+
+    def one(self):
+        if len(self) != 1:
+            raise ValueError("No individual trial.")
+
+        return self[0]
+
+
+class TrialCollection(TrialCollectionBase):
+    def __init__(self, trials: List[TrialData]):
+        self.trials = trials
+
+    def __getitem__(self, index):
+        return self.trials[index]
+
+    def __len__(self):
+        return len(self.trials)
+
+    def __iter__(self) -> Generator[TrialData, None, None]:
+        yield from self.trials
+
+    def __contains__(self, trial: TrialData):
+        return trial in self.trials
+
+
+class RootTrialCollection(TrialCollectionBase):
+    def __init__(self, store: "TrialStore"):
+        self._store = store
+
+    def __len__(self):
+        return len(self._store)
+
+    def __getitem__(self, index) -> TrialData:
+        trial_id = sorted(self._store.keys())[index]
+        return TrialData(self._store, store[trial_id])
+
+    def filter(
+        self,
+        filter_fn: Optional[Callable[[dict], bool]] = None,
+        func=None,
+        parameters=None,
+        experiment=None,
+    ) -> "TrialCollection":
+        """
+        Return a filtered version of this trial collection.
+
+        Args:
+            filter_fn (callable): A function that receives the trial data dictionary and returns True if the trial should be kept.
+
+        Returns:
+            A new trial collection.
+        """
+
+        return TrialCollection(
+            self._store.match(
+                func=func, experiment=experiment, resolved_parameters=parameters
+            )
+        ).filter(filter_fn)
+

@@ -248,7 +248,7 @@ class Experiment:
 
             if self.ctx.config["skip_existing"]:
                 # Check, if a trial with this parameter set already exists
-                existing = self.ctx.store.match(
+                existing = self.ctx.trials.filter(
                     func=self.func,
                     parameters=trial_configuration.get("parameters", {}),
                 )
@@ -270,8 +270,7 @@ class Experiment:
 
             # Run the trial
             try:
-                with tqdm_redirect.redirect_stdout():
-                    trial.run()
+                trial.run()
             except Exception:
                 msg = textwrap.indent(traceback.format_exc(-1), "    ")
                 pbar.write("{} failed!".format(trial.data["id"]))

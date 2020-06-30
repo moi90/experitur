@@ -2,11 +2,11 @@ import collections
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Union
 
+from experitur.core.trial import RootTrialCollection, TrialCollection
 from experitur.errors import ExperiturError
 
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.experiment import Experiment
-    from experitur.core.trial import TrialCollection
 
 
 class ContextError(ExperiturError):
@@ -75,19 +75,31 @@ class Context:
         else:
             self.wdir = wdir
 
-        # Import here to break dependency cycle
-        from experitur.core.trial_store import FileTrialStore
-
-        self.store = FileTrialStore(self)
-
         # Configuration
         if config is None:
             self.config = self._default_config.copy()
         else:
             self.config = dict(self._default_config, **config)
 
+        self.store = self._initialize_store()
+        self.trials = RootTrialCollection(self.store)
+
+    def _initialize_store(self):
+
+        # Import here to break dependency cycle
+        from experitur.core.trial_store import TrialStore
+
+        store_cls = TrialStore.get_implementation(
+            self.config.get("store", "FileTrialStore")
+        )
+        return store_cls(self)
+
     def _register_experiment(self, experiment):
         self.registered_experiments.append(experiment)
+
+    def create_trial(self, trial_data, experiment: Experiment) -> TrialData:
+        trial_id = self.store.create()
+        return
 
     def run(self, experiments=None):
         """
@@ -118,26 +130,7 @@ class Context:
         if isinstance(results_fn, Path):
             results_fn = str(results_fn)
 
-        try:
-            import pandas as pd
-        except ImportError:  # pragma: no cover
-            raise RuntimeError("pandas is not available.")
-
-        try:
-            from pandas import json_normalize
-        except ImportError:
-            from pandas.io.json import json_normalize
-
-        data = []
-        for trial_id, trial in self.store.items():
-            if not failed and not trial.data.get("success", False):
-                # Skip failed trials if failed=False
-                continue
-
-            data.append(trial.data)
-
-        data = json_normalize(data, max_level=1).set_index("id")
-
+        data = self.trials.to_pandas(failed=failed)
         data.to_csv(results_fn)
 
     def get_experiment(self, name) -> "Experiment":
@@ -158,9 +151,6 @@ class Context:
         except IndexError:
             print(self.registered_experiments)
             raise KeyError(name) from None
-
-    def get_trials(self, parameters=None, experiment=None) -> "TrialCollection":
-        return self.store.match(resolved_parameters=parameters, experiment=experiment)
 
     def do(self, target, cmd, cmd_args):
         experiment_name = target.split("/")[0]

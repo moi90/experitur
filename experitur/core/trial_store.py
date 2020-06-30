@@ -3,7 +3,9 @@ import glob
 import itertools
 import os.path
 import shutil
-from typing import List, Mapping
+import threading
+from abc import abstractmethod
+from typing import TYPE_CHECKING, Dict, List, Mapping
 
 import yaml
 
@@ -12,6 +14,9 @@ from experitur.helpers.dumper import ExperiturDumper
 from experitur.helpers.merge_dicts import merge_dicts
 from experitur.recursive_formatter import RecursiveDict
 from experitur.util import callable_to_name
+
+if TYPE_CHECKING:
+    from experitur.core.context import Context
 
 
 def _match_parameters(parameters_1, parameters_2):
@@ -39,14 +44,41 @@ def _format_independent_parameters(
 
 
 class TrialStore(collections.abc.MutableMapping):
-    def __init__(self, ctx):
+    _implementations: Dict[str, "TrialStore"] = {}
+
+    def __init__(self, ctx: "Context"):
         self.ctx = ctx
 
+    # Class methods for the registration of trial store implementations.
+    @classmethod
+    def _register_implementation(cls):
+        TrialStore._implementations[cls.__name__] = cls
+
+    @staticmethod
+    def get_implementation(implementation_name) -> "TrialStore":
+        return TrialStore._implementations[implementation_name]
+
+    # Context manager logic: Open and close trial store.
     def __enter__(self):
+        self.open()
         return self
 
     def __exit__(self, *_):
-        pass
+        self.close()
+
+    def open(self):
+        """
+        Open the trial store.
+        
+        Overrided in subclasses.
+        """
+
+    def close(self):
+        """
+        Close the trial store.
+        
+        Overrided in subclasses.
+        """
 
     def match(
         self, func=None, parameters=None, experiment=None, resolved_parameters=None
@@ -179,6 +211,38 @@ class TrialStore(collections.abc.MutableMapping):
             del self[k]
 
 
+class MemoryTrialStore(TrialStore):
+    def __init__(self, ctx: "Context"):
+        super().__init__(ctx)
+        self.data = {}
+        self._lock = threading.Lock()
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, key):
+        trial_data = self.data[key]
+        return TrialData(self, data=trial_data)
+
+    def __iter__(self):
+        return iter(self.data)
+
+    def __setitem__(self, key, trial_data: TrialData):
+        self.data[key] = trial_data.data
+
+    def __delitem__(self, key):
+        del self.data[key]
+
+    def lock(self):
+        self._lock.acquire()
+
+    def release(self):
+        self._lock.release()
+
+
+MemoryTrialStore._register_implementation()  # pylint: disable=protected-access
+
+
 class FileTrialStore(TrialStore):
     PATTERN = os.path.join("{}", "trial.yaml")
     DUMPER = ExperiturDumper
@@ -214,13 +278,13 @@ class FileTrialStore(TrialStore):
 
             yield k
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, trial_data: TrialData):
         path = os.path.join(self.ctx.wdir, self.PATTERN.format(key))
         path = os.path.normpath(path)
         os.makedirs(os.path.dirname(path), exist_ok=True)
 
         with open(path, "w") as fp:
-            yaml.dump(value.data, fp, Dumper=self.DUMPER)
+            yaml.dump(trial_data.data, fp, Dumper=self.DUMPER)
 
         # raise KeyError
 
@@ -233,3 +297,49 @@ class FileTrialStore(TrialStore):
             raise KeyError
 
         shutil.rmtree(os.path.dirname(path))
+
+    def lock(self):
+        # TODO: Implement locking
+        pass
+
+    def release(self):
+        # TODO: Implement locking
+        pass
+
+
+# Make implementation known to the base class
+FileTrialStore._register_implementation()  # pylint: disable=protected-access
+
+try:
+    import zerorpc
+except ImportError:
+    pass
+else:
+
+    class RemoteFileTrialStore(TrialStore):
+        def __init__(self, ctx: "Context"):
+            super().__init__(ctx)
+
+            endpoint = self.ctx.config["remote_endpoint"]
+            self.client = zerorpc.Client(endpoint)
+
+        def create(self, trial_configuration, experiment: "Experiment"):
+            return self.client.create_trial(trial_id)
+
+        def __delitem__(self, trial_id):
+            self.client.del_trial(trial_id)
+
+        def __getitem__(self, trial_id) -> TrialData:
+            return TrialData(self, self.client.get_trial_data(trial_id))
+
+        def __setitem__(self, trial_id, trial_data: TrialData):
+            return self.client.set_trial_data(trial_id, trial_data.data)
+
+        def __iter__(self):
+            return iter(self.client.get_trial_ids())
+
+        def __len__(self):
+            return self.client.get_n_trials()
+
+    # RemoteFileTrialStore._register_implementation()  # pylint: disable=protected-access
+

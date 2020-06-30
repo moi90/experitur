@@ -71,7 +71,7 @@ class _SKOptIter(ParameterGeneratorIter):
 
         for parent_configuration in self.parent:
             # Retrieve all trials that match parent_configuration
-            existing_trials = self.experiment.ctx.store.match(
+            existing_trials = self.experiment.ctx.trials.filter(
                 func=self.experiment.func,
                 parameters=parent_configuration.get("parameters", {}),
             )
@@ -104,7 +104,7 @@ class _SKOptIter(ParameterGeneratorIter):
                 )
 
                 # Train model
-                existing_trials = self.experiment.ctx.store.match(
+                existing_trials = self.experiment.ctx.trials.filter(
                     func=self.experiment.func,
                     parameters=parent_configuration.get("parameters", {}),
                 )
