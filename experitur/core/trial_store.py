@@ -3,6 +3,7 @@ import glob
 import itertools
 import os.path
 import shutil
+import typing
 from typing import List, Mapping
 
 import yaml
@@ -12,6 +13,9 @@ from experitur.helpers.dumper import ExperiturDumper
 from experitur.helpers.merge_dicts import merge_dicts
 from experitur.recursive_formatter import RecursiveDict
 from experitur.util import callable_to_name
+
+if typing.TYPE_CHECKING:
+    from experitur.core.context import Context
 
 
 def _match_parameters(parameters_1, parameters_2):
@@ -39,7 +43,7 @@ def _format_independent_parameters(
 
 
 class TrialStore(collections.abc.MutableMapping):
-    def __init__(self, ctx):
+    def __init__(self, ctx: "Context"):
         self.ctx = ctx
 
     def __enter__(self):
@@ -176,7 +180,15 @@ class TrialStore(collections.abc.MutableMapping):
 
         return trial
 
+    def check_writable(self):
+        __tracebackhide__ = True
+
+        if not self.ctx.writable:
+            raise RuntimeError("Context is not writable.")
+
     def delete_all(self, keys):
+        self.check_writable()
+
         for k in keys:
             del self[k]
 
@@ -217,6 +229,8 @@ class FileTrialStore(TrialStore):
             yield k
 
     def __setitem__(self, key, value):
+        self.check_writable()
+
         path = os.path.join(self.ctx.wdir, self.PATTERN.format(key))
         path = os.path.normpath(path)
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -227,6 +241,8 @@ class FileTrialStore(TrialStore):
         # raise KeyError
 
     def __delitem__(self, key):
+        self.check_writable()
+
         path = os.path.join(self.ctx.wdir, self.PATTERN.format(key))
 
         try:

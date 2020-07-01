@@ -33,7 +33,7 @@ def _TrialStoreImplementation(request):
 
 
 def test_trial_store(tmp_path, TrialStoreImplementation: Type[TrialStore]):
-    with Context(str(tmp_path)) as ctx:
+    with Context(str(tmp_path), writable=True) as ctx:
         ctx: Context
         with TrialStoreImplementation(ctx) as trial_store:
             trial_store: TrialStore
@@ -121,3 +121,15 @@ def test_trial_store(tmp_path, TrialStoreImplementation: Type[TrialStore]):
 
             trial_store.create({"parameters": {"a": 1, "b": 2, "c": 2}}, experiment)
             trial_store.create({"parameters": {"a": 1, "b": 2, "c": 2}}, experiment)
+
+            # Set context read-only
+            ctx.writable = False
+            with pytest.raises(RuntimeError):
+                trial_store["foo"] = None
+
+            with pytest.raises(RuntimeError):
+                del trial_store["foo"]
+
+            with pytest.raises(RuntimeError):
+                trial_store.delete_all([])
+

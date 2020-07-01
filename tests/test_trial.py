@@ -21,7 +21,7 @@ def test_callable_to_name():
 
 
 def test_trial(tmp_path):
-    with Context(str(tmp_path)) as ctx:
+    with Context(str(tmp_path), writable=True) as ctx:
         # Dummy function
         def parametrized(a=1, b=2, c=3, d=4):
             return (a, b, c, d)
