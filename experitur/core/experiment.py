@@ -265,7 +265,7 @@ class Experiment:
 
             if self.ctx.config["skip_existing"]:
                 # Check, if a trial with this parameter set already exists
-                existing = self.ctx.store.match(
+                existing = self.ctx.trials.filter(
                     func=self.func,
                     parameters=trial_configuration.get("parameters", {}),
                 )

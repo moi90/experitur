@@ -2,7 +2,7 @@ import collections.abc
 import inspect
 import itertools
 from collections import OrderedDict, defaultdict
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -10,16 +10,17 @@ from typing import (
     Iterable,
     List,
     Mapping,
+    Optional,
     Tuple,
     TypeVar,
     Union,
 )
 
-
 from experitur.core.logger import YAMLLogger
 
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.experiment import Experiment
+    from experitur.core.trial_store import TrialStore
 
 T = TypeVar("T")
 
@@ -382,7 +383,7 @@ class Trial(collections.abc.MutableMapping):
         self._logger.log(values)
 
 
-class TrialCollection(Collection):
+class TrialCollectionBase(Sequence):
     _missing = object()
 
     def __init__(self, trials: List[Trial]):
@@ -403,7 +404,7 @@ class TrialCollection(Collection):
     @property
     def independent_parameters(self):
         independent_parameters = set()
-        for t in self.trials:
+        for t in self:
             independent_parameters.update(
                 getattr(t, "experiment", {}).get("independent_parameters", [])
             )
@@ -414,7 +415,7 @@ class TrialCollection(Collection):
         """Independent parameters that vary in this trial collection."""
         independent_parameters = self.independent_parameters
         parameter_values = defaultdict(set)
-        for t in self.trials:
+        for t in self:
             for p in independent_parameters:
                 try:
                     v = t[p]
@@ -425,28 +426,71 @@ class TrialCollection(Collection):
 
         return set(p for p in independent_parameters if len(parameter_values[p]) > 1)
 
-    def to_pandas(self):
-        import pandas as pd
+    def to_pandas(self, failed=True):
+        try:
+            from pandas import json_normalize
+        except ImportError:
+            try:
+                from pandas.io.json import json_normalize
+            except ImportError:
+                raise RuntimeError("pandas is not available.")
 
-        return pd.json_normalize([t.data for t in self.trials], max_level=1).set_index(
-            "id"
-        )
+        return json_normalize(
+            [t.data for t in self if failed or not t.is_failed], max_level=1
+        ).set_index("id")
+
+    @abstractmethod
+    def one(self):
+        pass
+
+    def filter(
+        self,
+        filter_fn: Optional[Callable[[TrialData], bool]],
+        func=None,
+        parameters=None,
+        experiment=None,
+    ) -> "TrialCollection":
+        """
+        Return a filtered version of this trial collection.
+
+        Args:
+            func (callable): A function that receives a TrialData instance and returns True if the trial should be kept.
+
+        Returns:
+            A new trial collection.
+        """
+
+        if func is not None:
+            raise NotImplementedError()
+
+        if parameters is not None:
+            raise NotImplementedError()
+
+        if experiment is not None:
+            raise NotImplementedError()
+
+        return TrialCollection(list(filter(filter_fn, self)))
 
     def one(self):
-        if len(self.trials) != 1:
+        if len(self) != 1:
             raise ValueError("No individual trial.")
 
-        return self.trials[0]
+        return self[0]
 
     def filter(self, fn: Callable[[Trial], bool]) -> "TrialCollection":
         """
         Return a filtered version of this trial collection.
 
         Args:
-            fn (callable): A function that receives a TrialData instance and returns True if the trial should be kept.
+            filter_fn (callable): A function that receives the trial data dictionary and returns True if the trial should be kept.
 
         Returns:
             A new trial collection.
         """
 
-        return TrialCollection(list(filter(fn, self.trials)))
+        return TrialCollection(
+            self._store.match(
+                func=func, experiment=experiment, resolved_parameters=parameters
+            )
+        ).filter(filter_fn)
+

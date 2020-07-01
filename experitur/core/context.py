@@ -87,11 +87,6 @@ class Context:
         else:
             self.wdir = wdir
 
-        # Import here to break dependency cycle
-        from experitur.core.trial_store import FileTrialStore
-
-        self.store = FileTrialStore(self)
-
         # Configuration
         if config is None:
             self.config = self._default_config.copy()
@@ -102,6 +97,10 @@ class Context:
 
     def _register_experiment(self, experiment):
         self.registered_experiments.append(experiment)
+
+    def create_trial(self, trial_data, experiment: Experiment) -> TrialData:
+        trial_id = self.store.create()
+        return
 
     def run(self, experiments=None):
         """

@@ -26,15 +26,42 @@ def test__format_independent_parameters():
     assert _format_trial_id("foo", parameters, ["a", "b"]) == "foo/a-1_b-2"
 
 
-@pytest.fixture(name="TrialStoreImplementation", params=[FileTrialStore])
-def _TrialStoreImplementation(request):
-    return request.param
-
-
-def test_trial_store(tmp_path, TrialStoreImplementation: Type[TrialStore]):
-    with Context(str(tmp_path), writable=True) as ctx:
+def test_file_trial_store(tmp_path):
+    config = {"store": "FileTrialStore"}
+    with Context(str(tmp_path), config) as ctx:
         ctx: Context
-        trial_store: TrialStore = TrialStoreImplementation(ctx)
+        with ctx.store:
+            ctx.store: FileTrialStore
+            # Check that folders named {}/trial.yaml do not disturb the store
+            fake_folder = os.path.join(ctx.wdir, ctx.store.PATTERN.format("fake"))
+            os.makedirs(fake_folder, exist_ok=True)
+            assert len(ctx.store) == 0
+
+
+@pytest.mark.parametrize(
+    "store", TrialStore._implementations.keys()  # pylint: disable=protected-access
+)
+def test_trial_store(tmp_path_factory, store, random_ipc_endpoint):
+    config = {"store": store}
+
+    if store == "RemoteFileTrialStore":
+        config["remote_endpoint"] = random_ipc_endpoint
+
+        #  Start server
+        import gevent
+
+        from experitur.server import ExperiturServer
+
+        server_config = {"store": "MemoryTrialStore"}
+        server_ctx = Context(str(tmp_path_factory.mktemp("server_ctx")), server_config)
+        server = ExperiturServer(server_ctx)
+        server.bind(random_ipc_endpoint)
+        gevent.spawn(server.run)
+
+    with Context(
+        str(tmp_path_factory.mktemp("client_ctx")), config, writable=True
+    ) as ctx:
+        trial_store: TrialStore = ctx.store
 
         @Experiment("test", parameters={"a": [1, 2], "b": [2, 3]})
         def test(_):

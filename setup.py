@@ -21,7 +21,7 @@ setup(
     python_requires=">=3.6",
     extras_require={
         "tests": ["pytest", "pytest-cov"],
-        "optional": ["scikit-optimize", "scikit-learn", "pandas"],
+        "optional": ["scikit-optimize", "scikit-learn", "pandas", "zerorpc"],
         "docs": [
             "sphinx >= 1.4",
             "sphinx_rtd_theme",

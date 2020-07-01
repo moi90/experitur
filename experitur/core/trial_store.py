@@ -47,8 +47,19 @@ class KeyExistsError(Exception):
 
 
 class TrialStore(collections.abc.MutableMapping):
+    _implementations: Dict[str, "TrialStore"] = {}
+
     def __init__(self, ctx: "Context"):
         self.ctx = ctx
+
+    # Class methods for the registration of trial store implementations.
+    @classmethod
+    def _register_implementation(cls):
+        TrialStore._implementations[cls.__name__] = cls
+
+    @staticmethod
+    def get_implementation(implementation_name) -> "TrialStore":
+        return TrialStore._implementations[implementation_name]
 
     def match(
         self, func=None, parameters=None, experiment=None, resolved_parameters=None
@@ -173,6 +184,38 @@ class TrialStore(collections.abc.MutableMapping):
             del self[k]
 
 
+class MemoryTrialStore(TrialStore):
+    def __init__(self, ctx: "Context"):
+        super().__init__(ctx)
+        self.data = {}
+        self._lock = threading.Lock()
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, key):
+        trial_data = self.data[key]
+        return TrialData(self, data=trial_data)
+
+    def __iter__(self):
+        return iter(self.data)
+
+    def __setitem__(self, key, trial_data: TrialData):
+        self.data[key] = trial_data.data
+
+    def __delitem__(self, key):
+        del self.data[key]
+
+    def lock(self):
+        self._lock.acquire()
+
+    def release(self):
+        self._lock.release()
+
+
+MemoryTrialStore._register_implementation()  # pylint: disable=protected-access
+
+
 class FileTrialStore(TrialStore):
     TRIAL_FN = "trial.yaml"
     DUMPER = ExperiturDumper
@@ -257,3 +300,49 @@ class FileTrialStore(TrialStore):
             raise KeyError
 
         shutil.rmtree(os.path.dirname(path))
+
+    def lock(self):
+        # TODO: Implement locking
+        pass
+
+    def release(self):
+        # TODO: Implement locking
+        pass
+
+
+# Make implementation known to the base class
+FileTrialStore._register_implementation()  # pylint: disable=protected-access
+
+try:
+    import zerorpc
+except ImportError:
+    pass
+else:
+
+    class RemoteFileTrialStore(TrialStore):
+        def __init__(self, ctx: "Context"):
+            super().__init__(ctx)
+
+            endpoint = self.ctx.config["remote_endpoint"]
+            self.client = zerorpc.Client(endpoint)
+
+        def create(self, trial_configuration, experiment: "Experiment"):
+            return self.client.create_trial(trial_id)
+
+        def __delitem__(self, trial_id):
+            self.client.del_trial(trial_id)
+
+        def __getitem__(self, trial_id) -> TrialData:
+            return TrialData(self, self.client.get_trial_data(trial_id))
+
+        def __setitem__(self, trial_id, trial_data: TrialData):
+            return self.client.set_trial_data(trial_id, trial_data.data)
+
+        def __iter__(self):
+            return iter(self.client.get_trial_ids())
+
+        def __len__(self):
+            return self.client.get_n_trials()
+
+    # RemoteFileTrialStore._register_implementation()  # pylint: disable=protected-access
+
