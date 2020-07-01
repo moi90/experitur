@@ -135,11 +135,9 @@ def test_failing_experiment(tmp_path):
         with pytest.raises(Exception):
             ctx.run()
 
-        trial_id, trial = ctx.store.popitem()
-
-        print(trial.data)
-
-        assert trial.data["success"] is False
+        trial = ctx.get_trials().pop()
+        assert trial.error == "Exception: Some error"
+        assert trial.success is False
 
 
 def test_volatile_experiment(tmp_path):
@@ -198,7 +196,7 @@ def test_minimize_maximize_list(tmp_path):
 
 def test_minimize_maximize_exclusive(tmp_path):
     config = {"skip_existing": False, "catch_exceptions": False}
-    with Context(str(tmp_path), config) as ctx:
+    with Context(str(tmp_path), config):
 
         # Check that the same metric is not at the same time marked as minimized and maximized
         with pytest.raises(ValueError):

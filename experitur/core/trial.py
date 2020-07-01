@@ -473,14 +473,6 @@ class TrialData:
         self.store[self.data["id"]] = self
 
     @property
-    def id(self):
-        return self.data["id"]
-
-    @property
-    def wdir(self):
-        return self.data["wdir"]
-
-    @property
     def is_failed(self):
         return self.data.get("error", None) is not None
 
@@ -494,6 +486,12 @@ class TrialData:
             return None
 
         return result.get(name, None)
+
+    def __getattr__(self, name):
+        try:
+            return self.data[name]
+        except KeyError:
+            raise AttributeError(name) from None
 
 
 class TrialCollection(Collection):
