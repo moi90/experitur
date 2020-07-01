@@ -33,6 +33,7 @@ from experitur.errors import ExperiturError
 from experitur.helpers import tqdm_redirect
 from experitur.helpers.merge_dicts import merge_dicts
 from experitur.recursive_formatter import RecursiveDict
+from experitur.util import ensure_dict, ensure_list
 
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.context import Context
@@ -90,6 +91,8 @@ class Experiment:
         active (:py:class:`bool`, optional): Is the experiment active? (Default: True).
             When False, the experiment will not be executed.
         volatile (:py:class:`bool`, optional): If True, the results of a successful run will not be saved (Default: False).
+        minimize (str or list of str, optional): Metric or list of metrics to minimize.
+        maximize (str or list of str, optional): Metric or list of metrics to maximize.
 
     This can be used as a constructor or a decorator:
 
@@ -121,6 +124,8 @@ class Experiment:
         meta: Optional[Mapping] = None,
         active: bool = True,
         volatile: bool = False,
+        minimize: Union[str, List[str], None] = None,
+        maximize: Union[str, List[str], None] = None,
     ):
         if not (isinstance(name, str) or name is None):
             raise ValueError(f"'name' has to be a string or None, got {name!r}")
@@ -131,6 +136,9 @@ class Experiment:
         self.meta = meta
         self.active = active
         self.volatile = volatile
+        self.minimize, self.maximize = self._validate_minimize_maximize(
+            minimize, maximize
+        )
 
         self._own_parameter_generators: List[ParameterGenerator]
         self._own_parameter_generators = check_parameter_generators(parameters)
@@ -152,6 +160,18 @@ class Experiment:
         )
 
         self.ctx._register_experiment(self)
+
+    @staticmethod
+    def _validate_minimize_maximize(minimize, maximize):
+        minimize, maximize = ensure_list(minimize), ensure_list(maximize)
+
+        common = set(minimize) & set(maximize)
+
+        if common:
+            common = ", ".join(sorted(common))
+            raise ValueError(f"minimize and maximize share common metrics: {common}")
+
+        return minimize, maximize
 
     def __call__(self, func: Callable) -> "Experiment":
         """
@@ -271,7 +291,8 @@ class Experiment:
             # Run the trial
             try:
                 with tqdm_redirect.redirect_stdout():
-                    trial.run()
+                    result = ensure_dict(trial.run())
+                self._check_trial_result(result)
             except Exception:
                 msg = textwrap.indent(traceback.format_exc(-1), "    ")
                 pbar.write("{} failed!".format(trial.data["id"]))
@@ -283,6 +304,15 @@ class Experiment:
                     trial.remove()
 
             pbar.set_description("Running trial {}... Done.".format(trial.id))
+
+    def _check_trial_result(self, trial_result: dict):
+        missing_metrics = (
+            set(self.maximize) | set(self.maximize)
+        ) - trial_result.keys()
+
+        if missing_metrics:
+            missing_metrics = ", ".join(sorted(missing_metrics))
+            raise ExperimentError(f"Missing metrics in result: {missing_metrics}")
 
     def _merge(self, other):
         """

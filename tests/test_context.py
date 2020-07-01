@@ -91,6 +91,8 @@ def test_collect(tmp_path):
         "experiment.meta",
         "experiment.parent",
         "experiment.independent_parameters",
+        "experiment.minimize",
+        "experiment.maximize",
         "resolved_parameters.b",
         "result.a",
         "parameters.b",

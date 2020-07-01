@@ -1,7 +1,11 @@
 import pytest
 
-from experitur.core.experiment import Experiment, format_trial_parameters
 from experitur.core.context import Context
+from experitur.core.experiment import (
+    Experiment,
+    ExperimentError,
+    format_trial_parameters,
+)
 from experitur.core.parameters import Grid, ParameterGenerator
 
 
@@ -178,3 +182,39 @@ def test_format_trial_parameters():
         format_trial_parameters("foo", {"a": 1, "b": 2}, "experiment")
         == "experiment:foo(a=1, b=2)"
     )
+
+
+def test_minimize_maximize_list(tmp_path):
+    config = {"skip_existing": False, "catch_exceptions": False}
+    with Context(str(tmp_path), config) as ctx:
+
+        @Experiment(maximize="a", minimize=["b", "c"])
+        def experiment(_):
+            return {}
+
+        assert isinstance(experiment.maximize, list)
+        assert isinstance(experiment.minimize, list)
+
+
+def test_minimize_maximize_exclusive(tmp_path):
+    config = {"skip_existing": False, "catch_exceptions": False}
+    with Context(str(tmp_path), config) as ctx:
+
+        # Check that the same metric is not at the same time marked as minimized and maximized
+        with pytest.raises(ValueError):
+
+            @Experiment(maximize="a", minimize="a")
+            def experiment(_):
+                pass
+
+
+def test_mimimize_nonexisting(tmp_path):
+    config = {"skip_existing": False, "catch_exceptions": False}
+    with Context(str(tmp_path), config) as ctx:
+
+        @Experiment(maximize="a")
+        def experiment(_):
+            return {}
+
+        with pytest.raises(ExperimentError):
+            ctx.run()

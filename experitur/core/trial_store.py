@@ -163,6 +163,8 @@ class TrialStore(collections.abc.MutableMapping):
                 "meta": experiment.meta,
                 # Parameters that where actually configured.
                 "independent_parameters": experiment.independent_parameters,
+                "minimize": experiment.minimize,
+                "maximize": experiment.maximize,
             },
             result=None,
             wdir=wdir,
