@@ -54,7 +54,7 @@ def run(dox_fn, skip_existing, catch, clean_failed, yes, reload):
     }
 
     while True:
-        with Context(wdir, config) as ctx:
+        with Context(wdir, config, writable=True) as ctx:
             if clean_failed:
                 selected = {
                     trial_id: trial

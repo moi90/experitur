@@ -53,7 +53,7 @@ def test_trial(tmp_path):
 
 def test_trial_parameters(tmp_path, recwarn):
     config = {"catch_exceptions": False}
-    with Context(str(tmp_path), config) as ctx:
+    with Context(str(tmp_path), config, writable=True) as ctx:
 
         @Experiment(parameters={"a": [1], "b": [2], "c": ["{a}"]})
         def experiment(parameters: Trial):
@@ -251,7 +251,7 @@ def test_trial_logging(tmp_path):
 
     print(tmp_path)
 
-    with Context(str(tmp_path), config) as ctx:
+    with Context(str(tmp_path), config, writable=True) as ctx:
 
         @Experiment()
         def experiment(trial_parameters: Trial):

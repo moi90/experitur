@@ -7,7 +7,7 @@ from experitur.parameters import Random, SKOpt
 
 def test_SKOpt(tmp_path):
     config = {"skip_existing": True}
-    with Context(str(tmp_path), config) as ctx:
+    with Context(str(tmp_path), config, writable=True) as ctx:
         parameters = SKOpt({"x": (-10.0, 10.0, "uniform"), "y": (0, 10)}, "x", 4)
 
         @Experiment(parameters=parameters, minimize="x")
@@ -43,7 +43,7 @@ def test_SKOpt(tmp_path):
 
 def test_SKOptTimed(tmp_path):
     config = {"skip_existing": True}
-    with Context(str(tmp_path), config) as ctx:
+    with Context(str(tmp_path), config, writable=True) as ctx:
         parameters = SKOpt(
             {"x": (-10.0, 10.0, "uniform"), "y": (0, 10)}, "x", 4, acq_func="EIps"
         )

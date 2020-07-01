@@ -1,6 +1,6 @@
 import collections
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Union
+from typing import TYPE_CHECKING, List, Mapping, Optional, Union
 
 from experitur.errors import ExperiturError
 
@@ -61,13 +61,24 @@ def _order_experiments(experiments) -> List["Experiment"]:
 
 
 class Context:
+    """
+    experitur context.
+
+    Args:
+        wdir (str): Working directory.
+        config (dict, optional): Configuration dict.
+        writable (bool, default False): Set this context writable.
+    """
+
     # Default configuration values
     _default_config = {
         "skip_existing": True,
         "catch_exceptions": False,
     }
 
-    def __init__(self, wdir=None, config=None):
+    def __init__(
+        self, wdir: str = None, config: Optional[Mapping] = None, writable: bool = False
+    ):
         self.registered_experiments = []
 
         if wdir is None:
@@ -86,6 +97,8 @@ class Context:
         else:
             self.config = dict(self._default_config, **config)
 
+        self.writable = writable
+
     def _register_experiment(self, experiment):
         self.registered_experiments.append(experiment)
 
@@ -93,6 +106,9 @@ class Context:
         """
         Run the specified experiments or all.
         """
+
+        if not self.writable:
+            raise ContextError("No experiments can be run in a read-only context.")
 
         if experiments is None:
             experiments = self.registered_experiments

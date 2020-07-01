@@ -1,6 +1,11 @@
 import pytest
 
-from experitur.core.context import Context, DependencyError, get_current_context
+from experitur.core.context import (
+    Context,
+    ContextError,
+    DependencyError,
+    get_current_context,
+)
 from experitur.core.experiment import Experiment
 from experitur.parameters import Grid
 
@@ -15,7 +20,7 @@ def test_Context_enter():
 
 
 def test__order_experiments_fail(tmp_path):
-    with Context(str(tmp_path)) as ctx:
+    with Context(str(tmp_path), writable=True) as ctx:
         # Create a dependency circle
         a = Experiment("a")
         b = Experiment("b", parent=a)
@@ -26,7 +31,7 @@ def test__order_experiments_fail(tmp_path):
 
 
 def test_dependencies(tmp_path):
-    with Context(str(tmp_path)) as ctx:
+    with Context(str(tmp_path), writable=True) as ctx:
 
         @Experiment("a")
         def a(trial):
@@ -38,7 +43,7 @@ def test_dependencies(tmp_path):
 
 
 def test_get_experiment(tmp_path):
-    with Context(str(tmp_path)) as ctx:
+    with Context(str(tmp_path), writable=True) as ctx:
 
         @Experiment("a")
         def a(trial):
@@ -64,7 +69,7 @@ def test_merge_config(tmp_path):
 
 
 def test_collect(tmp_path):
-    with Context(str(tmp_path)) as ctx:
+    with Context(str(tmp_path), writable=True) as ctx:
 
         @Grid({"a": [1, 2, 3], "b": [1, 2, 3]})
         @Experiment()
@@ -104,3 +109,14 @@ def test_collect(tmp_path):
         "success",
         "error",
     }
+
+
+def test_readonly(tmp_path):
+    with Context(str(tmp_path), writable=False) as ctx:
+
+        @Experiment()
+        def experiment(parameters):
+            return dict(parameters)
+
+    with pytest.raises(ContextError):
+        ctx.run()

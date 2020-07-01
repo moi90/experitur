@@ -11,7 +11,7 @@ from experitur.core.parameters import Grid, ParameterGenerator
 
 def test_merge(tmp_path):
     config = {"skip_existing": False}
-    with Context(str(tmp_path), config) as ctx:
+    with Context(str(tmp_path), config, writable=True) as ctx:
 
         sampler = Grid({"a": [1, 2]})
 
@@ -126,7 +126,7 @@ def test_parameter_generator_order(tmp_path):
 
 def test_failing_experiment(tmp_path):
     config = {"catch_exceptions": False}
-    with Context(str(tmp_path), config) as ctx:
+    with Context(str(tmp_path), config, writable=True) as ctx:
 
         @Experiment(volatile=True)
         def experiment(trial):
@@ -142,7 +142,7 @@ def test_failing_experiment(tmp_path):
 
 def test_volatile_experiment(tmp_path):
     config = {"catch_exceptions": False}
-    with Context(str(tmp_path), config) as ctx:
+    with Context(str(tmp_path), config, writable=True) as ctx:
 
         @Experiment(volatile=True)
         def experiment(trial):
@@ -155,7 +155,7 @@ def test_volatile_experiment(tmp_path):
 
 def test_parameter_substitution(tmp_path):
     config = {"skip_existing": False}
-    with Context(str(tmp_path), config) as ctx:
+    with Context(str(tmp_path), config, writable=True) as ctx:
 
         @Experiment(parameters={"a1": [1], "a2": [2], "b": [1, 2], "a": ["{a{b}}"]})
         def experiment(trial):
@@ -208,7 +208,7 @@ def test_minimize_maximize_exclusive(tmp_path):
 
 def test_mimimize_nonexisting(tmp_path):
     config = {"skip_existing": False, "catch_exceptions": False}
-    with Context(str(tmp_path), config) as ctx:
+    with Context(str(tmp_path), config, writable=True) as ctx:
 
         @Experiment(maximize="a")
         def experiment(_):
