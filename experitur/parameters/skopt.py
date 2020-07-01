@@ -1,18 +1,16 @@
 import logging
 from collections import OrderedDict
-from typing import Any, Dict, List, Mapping, Union
+from typing import Any, Mapping
 
 from experitur.core.parameters import ParameterGenerator, ParameterGeneratorIter
-from experitur.core.trial import TrialData
+from experitur.core.trial import Trial
 from experitur.helpers.merge_dicts import merge_dicts
 
 try:
     import skopt
     from skopt.utils import (
         dimensions_aslist,
-        point_asdict,
         point_aslist,
-        check_x_in_space,
     )
     import skopt.space
 
@@ -21,27 +19,30 @@ except ImportError:  # pragma: no cover
     _SKOPT_AVAILABLE = False
 
 
+def convert_objective(value, maximize):
+    if maximize:
+        return -value
+    return value
+
+
 def convert_trial(
-    trial_data: TrialData, search_space: Mapping, objective: str, include_duration=False
+    trial: Trial,
+    search_space: Mapping,
+    objective: str,
+    include_duration=False,
+    maximize=False,
 ):
     """Convert a trial to a tuple (parameters, (result, time)) or None."""
 
-    if objective.startswith("-"):
-        objective = objective[1:]
-        maximize = True
-    else:
-        maximize = False
-
-    result = trial_data.data.get("result", {}).get(objective, None)
-    parameters = trial_data.data.get("resolved_parameters", None)
-    time_start = trial_data.data.get("time_start", None)
-    time_end = trial_data.data.get("time_end", None)
+    result = getattr(trial, "result", {}).get(objective, None)
+    parameters = getattr(trial, "resolved_parameters", None)
+    time_start = getattr(trial, "time_start", None)
+    time_end = getattr(trial, "time_end", None)
 
     if None in (result, parameters, time_start, time_end):
         return None
 
-    if maximize:
-        result = -result
+    result = convert_objective(result, maximize)
 
     if include_duration:
         result = (result, (time_end - time_start).total_seconds())
@@ -62,6 +63,17 @@ class _SKOptIter(ParameterGeneratorIter):
         if not _SKOPT_AVAILABLE:
             raise RuntimeError("scikit-optimize is not available.")  # pragma: no cover
 
+        objective = self.parameter_generator.objective
+
+        if objective in self.experiment.maximize:
+            maximize = True
+        elif objective in self.experiment.minimize:
+            maximize = False
+        else:
+            raise ValueError(
+                f"Could not determine if {objective} should be minimized or maximized. Specify minimize or maximize in Experiment."
+            )
+
         # Parameter names that are relevant in this context
         parameter_names = set(
             k
@@ -71,7 +83,7 @@ class _SKOptIter(ParameterGeneratorIter):
 
         for parent_configuration in self.parent:
             # Retrieve all trials that match parent_configuration
-            existing_trials = self.experiment.ctx.trials.filter(
+            existing_trials = self.experiment.ctx.get_trials(
                 func=self.experiment.func,
                 parameters=parent_configuration.get("parameters", {}),
             )
@@ -81,7 +93,7 @@ class _SKOptIter(ParameterGeneratorIter):
                 tuple(
                     sorted(
                         (k, v)
-                        for k, v in trial.data["parameters"].items()
+                        for k, v in trial.parameters.items()
                         if k in parameter_names
                     )
                 )
@@ -104,13 +116,11 @@ class _SKOptIter(ParameterGeneratorIter):
                 )
 
                 # Train model
-                existing_trials = self.experiment.ctx.trials.filter(
+                existing_trials = self.experiment.ctx.get_trials(
                     func=self.experiment.func,
                     parameters=parent_configuration.get("parameters", {}),
                 )
 
-                # TODO: Record timing for time based `acq_func`s
-                # TODO: Provide test
                 results = _filter_results(
                     optimizer,
                     (
@@ -119,6 +129,7 @@ class _SKOptIter(ParameterGeneratorIter):
                             self.parameter_generator.search_space,
                             self.parameter_generator.objective,
                             "ps" in optimizer.acq_func,
+                            maximize,
                         )
                         for trial in existing_trials
                     ),
@@ -130,7 +141,7 @@ class _SKOptIter(ParameterGeneratorIter):
 
                 if results:
                     X, Y = zip(*results)
-                    print(f"Current minimum: {min(Y)}")
+                    print(f"Current optimum: {convert_objective(min(Y), maximize)}")
 
                     optimizer.tell(X, Y)
 

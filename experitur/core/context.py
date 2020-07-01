@@ -1,8 +1,9 @@
 import collections
+import os.path
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Union
+from typing import TYPE_CHECKING, List, Mapping, Optional, Union
 
-from experitur.core.trial import RootTrialCollection, TrialCollection
+from experitur.core.trial import TrialCollection, Trial
 from experitur.errors import ExperiturError
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -61,13 +62,24 @@ def _order_experiments(experiments) -> List["Experiment"]:
 
 
 class Context:
+    """
+    experitur context.
+
+    Args:
+        wdir (str): Working directory.
+        config (dict, optional): Configuration dict.
+        writable (bool, default False): Set this context writable.
+    """
+
     # Default configuration values
     _default_config = {
         "skip_existing": True,
         "catch_exceptions": False,
     }
 
-    def __init__(self, wdir=None, config=None):
+    def __init__(
+        self, wdir: str = None, config: Optional[Mapping] = None, writable: bool = False
+    ):
         self.registered_experiments = []
 
         if wdir is None:
@@ -81,18 +93,7 @@ class Context:
         else:
             self.config = dict(self._default_config, **config)
 
-        self.store = self._initialize_store()
-        self.trials = RootTrialCollection(self.store)
-
-    def _initialize_store(self):
-
-        # Import here to break dependency cycle
-        from experitur.core.trial_store import TrialStore
-
-        store_cls = TrialStore.get_implementation(
-            self.config.get("store", "FileTrialStore")
-        )
-        return store_cls(self)
+        self.writable = writable
 
     def _register_experiment(self, experiment):
         self.registered_experiments.append(experiment)
@@ -105,6 +106,9 @@ class Context:
         """
         Run the specified experiments or all.
         """
+
+        if not self.writable:
+            raise ContextError("No experiments can be run in a read-only context.")
 
         if experiments is None:
             experiments = self.registered_experiments
@@ -130,7 +134,24 @@ class Context:
         if isinstance(results_fn, Path):
             results_fn = str(results_fn)
 
-        data = self.trials.to_pandas(failed=failed)
+        try:
+            from pandas import json_normalize
+        except ImportError:
+            try:
+                from pandas.io.json import json_normalize
+            except ImportError:  # pragma: no cover
+                raise RuntimeError("pandas is not available.")
+
+        data = []
+        for trial_data in self.store.values():
+            if not failed and not trial_data.get("success", False):
+                # Skip failed trials if failed=False
+                continue
+
+            data.append(trial_data)
+
+        data = json_normalize(data, max_level=1).set_index("id")
+
         data.to_csv(results_fn)
 
     def get_experiment(self, name) -> "Experiment":
@@ -152,6 +173,18 @@ class Context:
             print(self.registered_experiments)
             raise KeyError(name) from None
 
+    def get_trials(
+        self, func=None, parameters=None, experiment=None
+    ) -> TrialCollection:
+        return TrialCollection(
+            [
+                Trial(td, self.store)
+                for td in self.store.match(
+                    func=func, resolved_parameters=parameters, experiment=experiment
+                )
+            ]
+        )
+
     def do(self, target, cmd, cmd_args):
         experiment_name = target.split("/")[0]
 
@@ -170,6 +203,9 @@ class Context:
         item = _context_stack.pop()
 
         assert item is self
+
+    def get_trial_wdir(self, trial_id):
+        return os.path.normpath(os.path.join(self.wdir, os.path.normpath(trial_id)))
 
 
 _context_stack: List[Context] = []

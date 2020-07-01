@@ -1,17 +1,12 @@
 import collections.abc
-import datetime
 import inspect
 import itertools
-import os.path
-import traceback
-from abc import abstractmethod
 from collections import OrderedDict, defaultdict
 from collections.abc import Collection, Sequence
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Generator,
     Iterable,
     List,
     Mapping,
@@ -46,52 +41,68 @@ def _get_object_name(obj):
 
 class CallException(Exception):
     def __init__(self, func, args, kwargs, trial: "Trial"):
+        super().__init__(
+            f"Error calling {func} (args={args}, kwargs={kwargs}) with {trial}"
+        )
         self.func = func
         self.args = args
         self.kwargs = kwargs
         self.trial = trial
 
-    def __str__(self):
-        return f"Error calling {self.func} (args={self.args}, kwargs={self.kwargs}) with {self.trial}"
-
 
 class Trial(collections.abc.MutableMapping):
     """
-    Parameter configuration of the current trial.
+    Data related to a trial.
 
+    Arguments
+        store: TrialStore
+        data (optional): Trial data dictionary.
+        func (optional): Experiment function.
+    
     This is automatically instanciated by experitur and provided to the experiment function:
 
     .. code-block:: python
 
         @Experiment(parameters={"a": [1,2,3], "prefix_a": [10]})
-        def exp1(parameters):
+        def exp1(trial: Trial):
             # Access current value of parameter `a` (item access)
-            parameters["a"]
+            trial["a"]
 
             # Access extra data (attribute access)
-            parameters.id # Trial ID
-            parameters.wdir # Trial working directory
+            trial.id # Trial ID
+            trial.wdir # Trial working directory
 
             def func(a=1, b=2):
                 ...
 
-            # Record default parameters of `func`
-            parameters.record_defaults(func)
+            # Record default trial of `func`
+            trial.record_defaults(func)
 
             # Call `func` with current value of parameter `a` and `b`=5
-            parameters.call(func, b=5)
+            trial.call(func, b=5)
 
-            # Access only parameters starting with a certain prefix
-            parameters_prefix = parameters.prefix("prefix_")
+            # Access only trial starting with a certain prefix
+            trial_prefix = trial.prefix("prefix_")
 
             # All the above works as expected:
-            # parameters_prefix.<attr>, parameters_prefix[<key>], parameters_prefix.record_defaults, parameters_prefix.call, ...
-            # In our case, parameters_prefix["a"] == 10.
+            # trial_prefix.<attr>, trial_prefix[<key>], trial_prefix.record_defaults, trial_prefix.call, ...
+            # In our case, trial_prefix["a"] == 10.
     """
 
-    def __init__(self, trial: "Trial", prefix: str = ""):
-        self._trial = trial
+    def __init__(self, data: Mapping, store: "TrialStore", prefix: str = ""):
+        self._store = store
+        self._data = data
         self._prefix = prefix
+
+        self._validate_data()
+
+        self._logger = YAMLLogger(self)
+
+    def _validate_data(self):
+        if "wdir" not in self._data:
+            raise ValueError("data has to contain 'wdir'")
+        if "id" not in self._data:
+            raise ValueError("data has to contain 'id'")
 
     # MutableMapping provides concrete generic implementations of all
     # methods except for __getitem__, __setitem__, __delitem__,
@@ -99,74 +110,65 @@ class Trial(collections.abc.MutableMapping):
 
     def __getitem__(self, name):
         """Get the value of a parameter."""
-        return self._trial.data["resolved_parameters"][f"{self._prefix}{name}"]
+        return self._data["resolved_parameters"][f"{self._prefix}{name}"]
 
     def __setitem__(self, name, value):
         """Set the value of a parameter."""
-        self._trial.data["resolved_parameters"][f"{self._prefix}{name}"] = value
+        self._data["resolved_parameters"][f"{self._prefix}{name}"] = value
 
     def __delitem__(self, name):
         """Delete a parameter."""
-        del self._trial.data["resolved_parameters"][f"{self._prefix}{name}"]
+        del self._data["resolved_parameters"][f"{self._prefix}{name}"]
 
     def __iter__(self):
         start = len(self._prefix)
         return (
             k[start:]
-            for k in self._trial.data["resolved_parameters"]
+            for k in self._data["resolved_parameters"]
             if k.startswith(self._prefix)
         )
 
     def __len__(self):
         return sum(1 for k in self)
 
+    def __repr__(self):
+        return f"<Trial({dict(self)})>"
+
     # Overwrite get to save supplied default value
     def get(self, key, default=None):
         return self.setdefault(key, default)
 
-    def __getattr__(self, name):
-        """
-        Magic attributes.
+    def save(self):
+        self._store[self.id] = self._data
 
-        `name` can be one of the following:
+    @property
+    def is_failed(self):
+        return self._data.get("error", None) is not None
 
-        - A trial property:
+    def remove(self):
+        """Remove this trial from the store."""
+        del self._store[self.id]
 
-            - :code:`trial.id`: Trial ID
-            - :code:`trial.wdir`: Trial working directory
+    def get_result(self, name):
+        result = self._data["result"]
+        if result is None:
+            return None
 
-        - An experiment (:code:`trial.<experiment_name>`):
+        return result.get(name, None)
 
-            This way you can access data of the trial of a
-            different experiment with its parameters matching the parameters
-            of the current trial.
-        """
+    def __getattr__(self, name: str):
+        __tracebackhide__ = True  # pylint: disable=unused-variable
 
-        # Name could be a data item (e.g. wdir, id, ...)
         try:
-            return self._trial.data[name]
+            return self._data[name]
         except KeyError:
-            pass
+            raise AttributeError(name) from None
 
-        # Name could be a referenced experiment with matching parameters
-        trials_data = self._trial.store.match(
-            experiment=name, resolved_parameters=dict(self)
-        )
-
-        if len(trials_data) == 1:
-            trial_data = trials_data.one()
-            return Trial(trial_data)
-        elif len(trials_data) > 1:
-            msg = "Multiple matching parent experiments: " + ", ".join(
-                trials_data.keys()
-            )
-            raise ValueError(msg)
-
-        msg = "Trial has no attribute: {}".format(name)
-        raise AttributeError(msg)
-
-    def __repr__(self):
-        return f"<Trial({dict(self)})>"
+    def __setattr__(self, name: str, value):
+        if name.startswith("_"):
+            object.__setattr__(self, name, value)
+        else:
+            self._data[name] = value
 
     def record_defaults(self, func: Callable, **defaults):
         """
@@ -300,7 +302,7 @@ class Trial(collections.abc.MutableMapping):
 
         Prefixes allow you to organize parameters and save keystrokes.
         """
-        return Trial(self._trial, f"{self._prefix}{prefix}")
+        return Trial(self._data, self._store, f"{self._prefix}{prefix}")
 
     def setdefaults(
         self, defaults: Union[Mapping, Iterable[Tuple[str, Any]], None] = None, **kwargs
@@ -370,10 +372,6 @@ class Trial(collections.abc.MutableMapping):
 
         return mapping[entry_name]
 
-    def flush(self):
-        """Flush trial data to disk."""
-        self._trial.save()
-
     def log(self, values, **kwargs):
         """
         Record metrics.
@@ -382,122 +380,33 @@ class Trial(collections.abc.MutableMapping):
             values (Mapping): Values to log.
         """
         values = {**values, **kwargs}
-        self._trial.logger.log(values)
-
-
-def try_str(obj):
-    try:
-        return str(obj)
-    except:  # pylint: disable=bare-except # noqa: E722
-        return "<error>"
-
-
-class TrialData:
-    """
-    Store data related to a trial.
-
-    Arguments
-        store: TrialStore
-        data: Trial data dictionary.
-        func (optional): Experiment function.
-    """
-
-    def __init__(self, store: "TrialStore", data: Mapping, func=None):
-        self.store = store
-        self.data = data
-        self.func = func
-
-        self._validate_data()
-
-        self.logger = YAMLLogger(self)
-
-    def _validate_data(self):
-        if "wdir" not in self.data:
-            raise ValueError("data has to contain 'wdir'")
-        if "id" not in self.data:
-            raise ValueError("data has to contain 'id'")
-
-    def run(self):
-        """Run the current trial and save the results."""
-
-        # Record intital state
-        self.data["success"] = False
-        self.data["time_start"] = datetime.datetime.now()
-        self.data["result"] = None
-        self.data["error"] = None
-
-        try:
-            result = self.func(Trial(self))
-        except (Exception, KeyboardInterrupt) as exc:
-            # Log complete exc to file
-            error_fn = os.path.join(self.wdir, "error.txt")
-            with open(error_fn, "w") as f:
-                f.write(str(exc))
-                f.write(traceback.format_exc())
-                f.write("\n")
-                for k, v in inspect.trace()[-1][0].f_locals.items():
-                    f.write(f"{k}: {try_str(v)}\n")
-
-            self.data["error"] = ": ".join(
-                filter(None, (exc.__class__.__name__, str(exc)))
-            )
-
-            print("\n", flush=True)
-            print(
-                f"Error running {self.id}.\n"
-                f"See {error_fn} for the complete traceback.",
-                flush=True,
-            )
-
-            raise exc
-
-        else:
-            self.data["result"] = result
-            self.data["success"] = True
-        finally:
-            self.data["time_end"] = datetime.datetime.now()
-            self.save()
-
-        return self.data["result"]
-
-    def save(self):
-        self.store[self.data["id"]] = self
-
-    @property
-    def id(self):
-        return self.data["id"]
-
-    @property
-    def wdir(self):
-        return self.data["wdir"]
-
-    @property
-    def is_failed(self):
-        return self.data.get("error", None) is not None
-
-    def remove(self):
-        """Remove this trial from the store."""
-        del self.store[self.id]
-
-    def get_result(self, name):
-        result = self.data["result"]
-        if result is None:
-            return None
-
-        return result.get(name, None)
+        self._logger.log(values)
 
 
 class TrialCollectionBase(Sequence):
     _missing = object()
 
-    __iter__: Generator[TrialData, None, None]
+    def __init__(self, trials: List[Trial]):
+        self.trials = trials
+
+    def __len__(self):
+        return len(self.trials)
+
+    def __iter__(self):
+        yield from self.trials
+
+    def __contains__(self, trial: Trial):
+        return trial in self.trials
+
+    def pop(self, index=-1):
+        return self.trials.pop(index)
 
     @property
     def independent_parameters(self):
         independent_parameters = set()
         for t in self:
             independent_parameters.update(
-                t.data.get("experiment", {}).get("independent_parameters", [])
+                getattr(t, "experiment", {}).get("independent_parameters", [])
             )
         return independent_parameters
 
@@ -509,7 +418,7 @@ class TrialCollectionBase(Sequence):
         for t in self:
             for p in independent_parameters:
                 try:
-                    v = t.data["parameters"][p]
+                    v = t[p]
                 except KeyError:
                     parameter_values[p].add(self._missing)
                 else:
@@ -568,42 +477,7 @@ class TrialCollectionBase(Sequence):
 
         return self[0]
 
-
-class TrialCollection(TrialCollectionBase):
-    def __init__(self, trials: List[TrialData]):
-        self.trials = trials
-
-    def __getitem__(self, index):
-        return self.trials[index]
-
-    def __len__(self):
-        return len(self.trials)
-
-    def __iter__(self) -> Generator[TrialData, None, None]:
-        yield from self.trials
-
-    def __contains__(self, trial: TrialData):
-        return trial in self.trials
-
-
-class RootTrialCollection(TrialCollectionBase):
-    def __init__(self, store: "TrialStore"):
-        self._store = store
-
-    def __len__(self):
-        return len(self._store)
-
-    def __getitem__(self, index) -> TrialData:
-        trial_id = sorted(self._store.keys())[index]
-        return TrialData(self._store, store[trial_id])
-
-    def filter(
-        self,
-        filter_fn: Optional[Callable[[dict], bool]] = None,
-        func=None,
-        parameters=None,
-        experiment=None,
-    ) -> "TrialCollection":
+    def filter(self, fn: Callable[[Trial], bool]) -> "TrialCollection":
         """
         Return a filtered version of this trial collection.
 

@@ -1,4 +1,5 @@
 import importlib
+import operator
 import os
 import sys
 
@@ -8,9 +9,9 @@ from experitur import __version__
 from experitur.core.context import Context
 from experitur.core.experiment import (
     CommandNotFoundError,
-    Experiment,
     TrialNotFoundError,
 )
+from experitur.core.trial import Trial
 from experitur.dox import DOXError, load_dox
 
 
@@ -20,7 +21,6 @@ def cli():  # pragma: no cover
     pass
 
 
-# TODO: --reload: Rerun the DOX file until all trials are executed
 @cli.command()
 @click.argument("dox_fn")
 @click.option(
@@ -53,20 +53,18 @@ def run(dox_fn, skip_existing, catch, clean_failed, yes, reload):
     }
 
     while True:
-        with Context(wdir, config) as ctx:
+        with Context(wdir, config, writable=True) as ctx:
+            ctx: Context
             if clean_failed:
-                selected = {
-                    trial_id: trial
-                    for trial_id, trial in ctx.store.items()
-                    if trial.is_failed
-                }
+                selected = [trial for trial in ctx.get_trials() if trial.is_failed]
                 if selected:
                     click.echo(
                         "The following {} trials will be deleted:".format(len(selected))
                     )
                     list_trials(selected)
                     if yes or click.confirm("Continue?"):
-                        ctx.store.delete_all(selected.keys())
+                        for trial in selected:
+                            trial.remove()
 
             # Load the DOX
             try:
@@ -77,6 +75,7 @@ def run(dox_fn, skip_existing, catch, clean_failed, yes, reload):
             # Run
             ctx.run()
 
+        # TODO: Reload only first-party
         new_dox_mtime = os.path.getmtime(dox_fn)
         if reload and new_dox_mtime > dox_mtime:
             dox_mtime = new_dox_mtime
@@ -85,7 +84,7 @@ def run(dox_fn, skip_existing, catch, clean_failed, yes, reload):
             for module in set(sys.modules.values()) - initial_modules:
                 try:
                     importlib.reload(module)
-                except Exception:
+                except:  # pytlint: disable=bare-except
                     print(f"Error reloading {module}")
             continue
 
@@ -132,12 +131,11 @@ def clean(dox_fn, experiment_id, all, yes):
 
     wdir = os.path.splitext(dox_fn)[0]
     with Context(wdir) as ctx:
-        selected = {
-            trial_id: trial
-            for trial_id, trial in ctx.store.items()
+        selected = [
+            trial
+            for trial in ctx.get_trials(experiment=experiment_id)
             if (trial.is_failed or all)
-            and (experiment_id is None or trial.data.get("experiment") == experiment_id)
-        }
+        ]
 
         n_selected = len(selected)
 
@@ -154,15 +152,25 @@ def clean(dox_fn, experiment_id, all, yes):
             ctx.store.delete_all(selected.keys())
 
 
+def _status(trial: Trial):
+    if trial.is_failed:
+        return "!"
+
+    if getattr(trial, "success", False):
+        return " "
+
+    return ">"
+
+
 def list_trials(trials):
     """Show a sorted list of trials with a status signifier.
 
     ! Failed
-    """
-    for trial_id, trial in sorted(trials.items()):
-        status = "!" if trial.is_failed else " "
+    > Running
 
-        print("{} {}".format(status, trial_id))
+    """
+    for trial in sorted(trials, key=operator.attrgetter("id")):
+        print("{} {}".format(_status(trial), trial.id))
 
 
 @cli.command()
@@ -173,7 +181,8 @@ def show(dox_fn, experiment_id=None):
 
     wdir = os.path.splitext(dox_fn)[0]
     with Context(wdir) as ctx:
-        list_trials(ctx.store)
+        trials = ctx.get_trials(experiment=experiment_id)
+        list_trials(trials)
 
 
 @cli.command()

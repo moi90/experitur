@@ -1,4 +1,3 @@
-import glob
 import os.path
 from typing import Type
 
@@ -6,13 +5,13 @@ import pytest
 
 from experitur.core.context import Context
 from experitur.core.experiment import Experiment
-from experitur.core.trial import TrialData
 from experitur.core.trial_store import (
     FileTrialStore,
     TrialStore,
-    _format_independent_parameters,
+    _format_trial_id,
     _match_parameters,
 )
+from experitur.helpers.merge_dicts import merge_dicts
 
 
 def test__match_parameters():
@@ -23,8 +22,8 @@ def test__match_parameters():
 
 def test__format_independent_parameters():
     parameters = {"a": 1, "b": 2}
-    assert _format_independent_parameters(parameters, []) == "_"
-    assert _format_independent_parameters(parameters, ["a", "b"]) == "a-1_b-2"
+    assert _format_trial_id("foo", parameters, []) == "foo/_"
+    assert _format_trial_id("foo", parameters, ["a", "b"]) == "foo/a-1_b-2"
 
 
 def test_file_trial_store(tmp_path):
@@ -59,86 +58,158 @@ def test_trial_store(tmp_path_factory, store, random_ipc_endpoint):
         server.bind(random_ipc_endpoint)
         gevent.spawn(server.run)
 
-    with Context(str(tmp_path_factory.mktemp("client_ctx")), config) as ctx:
-        ctx: Context
-        with ctx.store:
+    with Context(
+        str(tmp_path_factory.mktemp("client_ctx")), config, writable=True
+    ) as ctx:
+        trial_store: TrialStore = ctx.store
 
-            def test(trial):
-                return {"result": (1, 2)}
+        @Experiment("test", parameters={"a": [1, 2], "b": [2, 3]})
+        def test(_):
+            return {"result": (1, 2)}
 
-            experiment = Experiment("test", parameters={"a": [1, 2], "b": [2, 3]})(test)
+        @Experiment("test2", parent=test)
+        def test2(_):  # pylint: disable=unused-variable
+            return {"result": (2, 4)}
 
-            def test2(trial):
-                return {"result": (2, 4)}
+        trial_data = trial_store.create(
+            {"experiment": {"name": "test2", "varying_parameters": []},}
+        )
+        assert "id" in trial_data
+        assert trial_data["id"] == "test2/_"
 
-            experiment2 = Experiment("test2", parent=experiment)(test2)
+        assert trial_store["test2/_"] == {
+            "id": "test2/_",
+            "parameters": {},
+            "resolved_parameters": {},
+            "experiment": {"name": "test2", "varying_parameters": []},
+        }
 
-            ctx.store["foo"] = TrialData(
-                ctx.store, data={"id": "foo", "wdir": "", 1: "foo", "bar": 2}
-            )
-            assert ctx.store["foo"].data == {
-                "id": "foo",
-                "wdir": "",
+        trial_store["test2/_"] = merge_dicts(
+            trial_store["test2/_"], foo="bar", bar="baz"
+        )
+        assert trial_store["test2/_"] == {
+            "id": "test2/_",
+            "parameters": {},
+            "foo": "bar",
+            "bar": "baz",
+            "resolved_parameters": {},
+            "experiment": {"name": "test2", "varying_parameters": []},
+        }
+
+        # Check that storing an unknown trial_id raises a KeyError
+        with pytest.raises(KeyError):
+            trial_store["foo"] = {}
+
+        # Check that accessing an unknown trial_id raises a KeyError
+        with pytest.raises(KeyError):
+            _ = trial_store["foo"]
+
+        trial_data = trial_store.create(
+            {
                 1: "foo",
                 "bar": 2,
+                "experiment": {"name": "test2", "varying_parameters": []},
             }
+        )
+        assert "id" in trial_data
+        assert trial_data["id"] == "test2/_.1"
+        assert trial_store["test2/_.1"] == {
+            "id": "test2/_.1",
+            1: "foo",
+            "bar": 2,
+            "parameters": {},
+            "resolved_parameters": {},
+            "experiment": {"name": "test2", "varying_parameters": []},
+        }
 
-            ctx.store["bar/baz"] = TrialData(
-                ctx.store, data={"id": "bar/baz", "wdir": "", 1: "foo", "bar": 2}
-            )
-            assert ctx.store["bar/baz"].data == {
-                "id": "bar/baz",
-                "wdir": "",
+        trial_data = trial_store.create(
+            {
                 1: "foo",
                 "bar": 2,
+                "experiment": {"name": "test2", "varying_parameters": []},
+                "parameters": {"a": 1},
             }
+        )
+        assert trial_data["id"] == "test2/a-1"
 
-            trial = ctx.store.create({"parameters": {"a": 1, "b": 2}}, experiment)
-
-            assert trial.data["id"] == "test/a-1_b-2"
-
-            assert "test/a-1_b-2" in ctx.store
-
-            assert len(ctx.store) == 3
-
-            del ctx.store["bar/baz"]
-            del ctx.store["foo"]
-
-            with pytest.raises(KeyError):
-                del ctx.store["foo"]
-
-            ctx.store.create({"parameters": {"a": 2, "b": 3}}, experiment)
-            ctx.store.create({"parameters": {"a": 3, "b": 4}}, experiment)
-            ctx.store.create({"parameters": {"a": 3, "b": 4}}, experiment2)
-
-            assert set(trial.id for trial in ctx.store.match(func=test)) == {
-                "test/a-1_b-2",
-                "test/a-2_b-3",
-                "test/a-3_b-4",
+        trial = trial_store.create(
+            {
+                "parameters": {"a": 1, "b": 2},
+                "experiment": {"name": "test3", "varying_parameters": ["a", "b"]},
             }
+        )
 
-            assert set(
-                trial.id for trial in ctx.store.match(parameters={"a": 1, "b": 2})
-            ) == {"test/a-1_b-2"}
+        fake_folder = os.path.join(ctx.wdir, "fake", trial_store.TRIAL_FN)
+        os.makedirs(fake_folder, exist_ok=True)
 
-            assert set(trial.id for trial in ctx.store.match(experiment="test2")) == {
-                "test2/a-3_b-4"
+        assert trial["id"] == "test3/a-1_b-2"
+
+        assert "test3/a-1_b-2" in trial_store
+
+        assert len(trial_store) == 4
+
+        del trial_store["test2/_"]
+        del trial_store["test2/_.1"]
+
+        assert len(trial_store) == 2
+
+        with pytest.raises(KeyError):
+            del trial_store["foo"]
+
+        # Check that match(func) works
+        trial_data = trial_store.create(
+            {
+                "experiment": {
+                    "name": "func_test1",
+                    "varying_parameters": [],
+                    "func": "foo",
+                },
+                "parameters": {"a": 1, "b": 2},
             }
+        )
+        trial_data = trial_store.create(
+            {
+                "experiment": {
+                    "name": "func_test2",
+                    "varying_parameters": [],
+                    "func": "foo",
+                },
+                "parameters": {"a": 1, "b": 2},
+            }
+        )
+        trial_data = trial_store.create(
+            {
+                "experiment": {
+                    "name": "func_test3",
+                    "varying_parameters": [],
+                    "func": "foo",
+                },
+                "parameters": {"a": 1, "b": 2},
+            }
+        )
 
-            result = trial.run()
+        result = trial_store.match(func="foo")
 
-            assert result == {"result": (1, 2)}
+        assert isinstance(result, list)
+        assert all(isinstance(td, dict) for td in result)
 
-            assert trial.get_result("result") == (1, 2)
+        assert set(trial["id"] for trial in result) == {
+            "func_test1/_",
+            "func_test2/_",
+            "func_test3/_",
+        }
 
-            # Write trial data back to the store
-            trial.save()
+        assert set(
+            trial["id"] for trial in trial_store.match(parameters={"a": 1, "b": 2})
+        ) == {"func_test1/_", "func_test2/_", "func_test3/_", "test3/a-1_b-2",}
 
-            assert ctx.store["test/a-1_b-2"].data["result"] == {"result": (1, 2)}
+        # Set context read-only
+        ctx.writable = False
+        with pytest.raises(RuntimeError):
+            trial_store["foo"] = None
 
-            ctx.store.create({"parameters": {"a": 1, "b": 2, "c": 1}}, experiment)
+        with pytest.raises(RuntimeError):
+            del trial_store["foo"]
 
-            experiment.parameter_generator.generators[0].grid["c"] = [1, 2, 3]
-
-            ctx.store.create({"parameters": {"a": 1, "b": 2, "c": 2}}, experiment)
-            ctx.store.create({"parameters": {"a": 1, "b": 2, "c": 2}}, experiment)
+        with pytest.raises(RuntimeError):
+            trial_store.delete_all([])

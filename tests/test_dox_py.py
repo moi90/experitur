@@ -42,7 +42,7 @@ def test_dox_py(dox_py_fn):
     wdir = os.path.splitext(dox_py_fn)[0]
     os.makedirs(wdir, exist_ok=True)
 
-    with Context(wdir) as ctx:
+    with Context(wdir, writable=True) as ctx:
         load_dox(dox_py_fn)
 
         # Execute experiments

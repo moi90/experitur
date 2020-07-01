@@ -34,7 +34,7 @@ def test_Random(tmp_path):
 
 def test_RandomRepeat(tmp_path):
     config = {"skip_existing": True}
-    with Context(str(tmp_path), config) as ctx:
+    with Context(str(tmp_path), config, writable=True) as ctx:
         parameters = Random({"a": [1, 2, 3], "b": [1, 2, 3], "c": [1, 2, 3]}, 4)
 
         @Experiment(parameters=parameters)
