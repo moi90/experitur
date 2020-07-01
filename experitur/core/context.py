@@ -1,12 +1,13 @@
 import collections
+import os.path
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Mapping, Optional, Union
 
+from experitur.core.trial import TrialCollection, Trial
 from experitur.errors import ExperiturError
 
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.experiment import Experiment
-    from experitur.core.trial import TrialCollection
 
 
 class ContextError(ExperiturError):
@@ -135,22 +136,20 @@ class Context:
             results_fn = str(results_fn)
 
         try:
-            import pandas as pd
-        except ImportError:  # pragma: no cover
-            raise RuntimeError("pandas is not available.")
-
-        try:
             from pandas import json_normalize
         except ImportError:
-            from pandas.io.json import json_normalize
+            try:
+                from pandas.io.json import json_normalize
+            except ImportError:  # pragma: no cover
+                raise RuntimeError("pandas is not available.")
 
         data = []
-        for trial_id, trial in self.store.items():
-            if not failed and not trial.data.get("success", False):
+        for trial_data in self.store.values():
+            if not failed and not trial_data.get("success", False):
                 # Skip failed trials if failed=False
                 continue
 
-            data.append(trial.data)
+            data.append(trial_data)
 
         data = json_normalize(data, max_level=1).set_index("id")
 
@@ -175,8 +174,17 @@ class Context:
             print(self.registered_experiments)
             raise KeyError(name) from None
 
-    def get_trials(self, parameters=None, experiment=None) -> "TrialCollection":
-        return self.store.match(resolved_parameters=parameters, experiment=experiment)
+    def get_trials(
+        self, func=None, parameters=None, experiment=None
+    ) -> TrialCollection:
+        return TrialCollection(
+            [
+                Trial(td, self.store)
+                for td in self.store.match(
+                    func=func, resolved_parameters=parameters, experiment=experiment
+                )
+            ]
+        )
 
     def do(self, target, cmd, cmd_args):
         experiment_name = target.split("/")[0]
@@ -196,6 +204,9 @@ class Context:
         item = _context_stack.pop()
 
         assert item is self
+
+    def get_trial_wdir(self, trial_id):
+        return os.path.normpath(os.path.join(self.wdir, os.path.normpath(trial_id)))
 
 
 _context_stack: List[Context] = []

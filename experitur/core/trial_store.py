@@ -4,11 +4,11 @@ import itertools
 import os.path
 import shutil
 import typing
-from typing import List, Mapping
+from abc import abstractmethod
+from typing import Dict, List, Mapping
 
 import yaml
 
-from experitur.core.trial import TrialCollection, TrialData
 from experitur.helpers.dumper import ExperiturDumper
 from experitur.helpers.merge_dicts import merge_dicts
 from experitur.recursive_formatter import RecursiveDict
@@ -27,8 +27,8 @@ def _match_parameters(parameters_1, parameters_2):
     return False
 
 
-def _format_independent_parameters(
-    trial_parameters: Mapping, independent_parameters: List[str]
+def _format_trial_id(
+    experiment_name, trial_parameters: Mapping, independent_parameters: List[str]
 ):
     if len(independent_parameters) > 0:
         trial_id = "_".join(
@@ -39,22 +39,20 @@ def _format_independent_parameters(
     else:
         trial_id = "_"
 
-    return trial_id
+    return f"{experiment_name}/{trial_id}"
+
+
+class KeyExistsError(Exception):
+    pass
 
 
 class TrialStore(collections.abc.MutableMapping):
     def __init__(self, ctx: "Context"):
         self.ctx = ctx
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_):
-        pass
-
     def match(
         self, func=None, parameters=None, experiment=None, resolved_parameters=None
-    ) -> TrialCollection:
+    ) -> List[Dict]:
         func = callable_to_name(func)
 
         from experitur.core.experiment import Experiment
@@ -62,126 +60,108 @@ class TrialStore(collections.abc.MutableMapping):
         if isinstance(experiment, Experiment):
             experiment = experiment.name
 
-        trials = []
+        trial_data_list = []
         for trial in self.values():
-            experiment_ = trial.data.get("experiment", {})
+            experiment_ = trial.get("experiment", {})
             if func is not None and callable_to_name(experiment_.get("func")) != func:
                 continue
 
             if parameters is not None and not _match_parameters(
-                parameters, trial.data.get("parameters", {})
+                parameters, trial.get("parameters", {})
             ):
                 continue
 
             if resolved_parameters is not None and not _match_parameters(
-                resolved_parameters, trial.data.get("resolved_parameters", {})
+                resolved_parameters, trial.get("resolved_parameters", {})
             ):
                 continue
 
             if experiment is not None and experiment_.get("name") != str(experiment):
                 continue
 
-            trials.append(trial)
+            trial_data_list.append(trial)
 
-        return TrialCollection(trials)
+        return trial_data_list
 
-    def _make_unique_trial_id(
-        self,
-        experiment_name: str,
-        trial_parameters: Mapping,
-        varying_parameters: List[str],
-    ):
-        trial_id = _format_independent_parameters(trial_parameters, varying_parameters)
+    @abstractmethod
+    def _create(self, trial_data):
+        """
+        Create an entry using the trial_data["id"].
 
-        trial_id = "{}/{}".format(experiment_name, trial_id)
+        Returns:
+            trial_data
+
+        Raises:
+            KeyExistsError if a trial with the specified id already exists.
+        """
+
+    def create(self, trial_configuration):
+        """Create a :py:class:`TrialData` instance."""
+
+        trial_configuration.setdefault("parameters", {})
+
+        trial_configuration = merge_dicts(
+            trial_configuration,
+            resolved_parameters=RecursiveDict(
+                trial_configuration["parameters"], allow_missing=True
+            ).as_dict(),
+        )
+
+        trial_parameters = trial_configuration["parameters"]
+        experiment_varying_parameters = sorted(
+            trial_configuration["experiment"]["varying_parameters"]
+        )
+        experiment_name = trial_configuration["experiment"]["name"]
+
+        # First try: Use the varying parameters of the currently running experiment
+        trial_id = _format_trial_id(
+            experiment_name, trial_parameters, experiment_varying_parameters
+        )
 
         try:
-            existing_trial = self[trial_id]
-        except KeyError:
-            # If there is no existing trial with this id, it is unique
-            return trial_id
+            return self._create(merge_dicts(trial_configuration, id=trial_id))
+        except KeyExistsError:
+            pass
 
-        # Otherwise, we have to incorporate more independent parameters
+        existing_trial = self[trial_id]
+
+        # Second try: Incorporate more independent parameters
         new_independent_parameters = []
 
-        existing_trial.data.setdefault("parameters", {})
-
         # Look for parameters in existing_trial that have differing values
-        for name, value in existing_trial.data["parameters"].items():
+        for name, value in existing_trial["parameters"].items():
             if name in trial_parameters and trial_parameters[name] != value:
                 new_independent_parameters.append(name)
 
         # Look for parameters that did not exist previously
         for name in trial_parameters.keys():
-            if name not in existing_trial.data["parameters"]:
+            if name not in existing_trial["parameters"]:
                 new_independent_parameters.append(name)
 
         if new_independent_parameters:
-            # If we found parameters where this trial is different from the existing one, append these to independent
-            varying_parameters.extend(new_independent_parameters)
-            return self._make_unique_trial_id(
-                experiment_name, trial_parameters, varying_parameters
+
+            trial_id = _format_trial_id(
+                experiment_name,
+                trial_parameters,
+                sorted(set(experiment_varying_parameters + new_independent_parameters)),
             )
 
-        # Otherwise, we just append a version number
+            try:
+                return self._create(merge_dicts(trial_configuration, id=trial_id))
+            except KeyExistsError:
+                pass
+
+        # Otherwise, just append a version number
         for i in itertools.count(1):
             test_trial_id = "{}.{}".format(trial_id, i)
 
             try:
-                existing_trial = self[test_trial_id]
-            except KeyError:
-                # If there is no existing trial with this id, it is unique
-                return test_trial_id
-
-    def _make_wdir(self, trial_id):
-        wdir = os.path.join(self.ctx.wdir, os.path.normpath(trial_id))
-        os.makedirs(wdir, exist_ok=True)
-        return wdir
-
-    def create(self, trial_configuration, experiment: "Experiment"):
-        """Create a :py:class:`TrialData` instance."""
-        trial_configuration.setdefault("parameters", {})
-
-        # Calculate trial_id
-        trial_id = self._make_unique_trial_id(
-            experiment.name,
-            trial_configuration["parameters"],
-            experiment.varying_parameters,
-        )
-
-        wdir = self._make_wdir(trial_id)
-
-        # TODO: Structured experiment meta-data
-        trial_configuration = merge_dicts(
-            trial_configuration,
-            id=trial_id,
-            resolved_parameters=RecursiveDict(
-                trial_configuration["parameters"], allow_missing=True
-            ).as_dict(),
-            experiment={
-                "name": experiment.name,
-                "parent": experiment.parent.name
-                if experiment.parent is not None
-                else None,
-                "func": callable_to_name(experiment.func),
-                "meta": experiment.meta,
-                # Parameters that where actually configured.
-                "independent_parameters": experiment.independent_parameters,
-                "minimize": experiment.minimize,
-                "maximize": experiment.maximize,
-            },
-            result=None,
-            wdir=wdir,
-        )
-
-        trial = TrialData(self, func=experiment.func, data=trial_configuration)
-
-        self[trial_id] = trial
-
-        return trial
+                return self._create(merge_dicts(trial_configuration, id=test_trial_id))
+            except KeyExistsError:
+                continue
 
     def check_writable(self):
-        __tracebackhide__ = True
+        __tracebackhide__ = True  # pylint: disable=unused-variable
 
         if not self.ctx.writable:
             raise RuntimeError("Context is not writable.")
@@ -194,25 +174,29 @@ class TrialStore(collections.abc.MutableMapping):
 
 
 class FileTrialStore(TrialStore):
-    PATTERN = os.path.join("{}", "trial.yaml")
+    TRIAL_FN = "trial.yaml"
     DUMPER = ExperiturDumper
+
+    def _get_trial_fn(self, trial_id):
+        return os.path.join(self.ctx.get_trial_wdir(trial_id), self.TRIAL_FN)
 
     def __len__(self):
         return sum(1 for _ in self)
 
-    def __getitem__(self, key):
-        path = os.path.join(self.ctx.wdir, self.PATTERN.format(key))
-        path = os.path.normpath(path)
+    def __getitem__(self, trial_id):
+        path = self._get_trial_fn(trial_id)
 
         try:
             with open(path) as fp:
-                return TrialData(self, data=yaml.load(fp, Loader=yaml.Loader))
+                return yaml.load(fp, Loader=yaml.Loader)
         except FileNotFoundError as exc:
-            raise KeyError from exc
+            raise KeyError(trial_id) from exc
+        except:
+            print(f"Error reading {path}")
+            raise
 
     def __iter__(self):
-        path = os.path.join(self.ctx.wdir, self.PATTERN.format("**"))
-        path = os.path.normpath(path)
+        path = self._get_trial_fn("**")
 
         left, right = path.split("**", 1)
 
@@ -228,22 +212,44 @@ class FileTrialStore(TrialStore):
 
             yield k
 
-    def __setitem__(self, key, value):
+    def _create(self, trial_data: dict):
+        trial_id = trial_data["id"]
+
+        if not isinstance(trial_data, dict):
+            raise ValueError(f"trial_data has to be dict, got {trial_data!r}")
+
+        wdir = self.ctx.get_trial_wdir(trial_id)
+
+        try:
+            os.makedirs(wdir, exist_ok=False)
+        except FileExistsError:
+            raise KeyExistsError(trial_id) from None
+
+        path = self._get_trial_fn(trial_id)
+        with open(path, "x") as fp:
+            yaml.dump(trial_data, fp, Dumper=self.DUMPER)
+
+        return trial_data
+
+    def __setitem__(self, trial_id: str, trial_data: dict):
         self.check_writable()
 
-        path = os.path.join(self.ctx.wdir, self.PATTERN.format(key))
-        path = os.path.normpath(path)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        if not isinstance(trial_data, dict):
+            raise ValueError(f"trial_data has to be dict, got {trial_data!r}")
 
-        with open(path, "w") as fp:
-            yaml.dump(value.data, fp, Dumper=self.DUMPER)
+        path = self._get_trial_fn(trial_id)
 
-        # raise KeyError
+        try:
+            with open(path, "r+") as fp:
+                fp.truncate()
+                yaml.dump(trial_data, fp, Dumper=self.DUMPER)
+        except FileNotFoundError:
+            raise KeyError(trial_id) from None
 
-    def __delitem__(self, key):
+    def __delitem__(self, trial_id):
         self.check_writable()
 
-        path = os.path.join(self.ctx.wdir, self.PATTERN.format(key))
+        path = self._get_trial_fn(trial_id)
 
         try:
             os.remove(path)

@@ -1,18 +1,16 @@
 import logging
 from collections import OrderedDict
-from typing import Any, Dict, List, Mapping, Union
+from typing import Any, Mapping
 
 from experitur.core.parameters import ParameterGenerator, ParameterGeneratorIter
-from experitur.core.trial import TrialData
+from experitur.core.trial import Trial
 from experitur.helpers.merge_dicts import merge_dicts
 
 try:
     import skopt
     from skopt.utils import (
         dimensions_aslist,
-        point_asdict,
         point_aslist,
-        check_x_in_space,
     )
     import skopt.space
 
@@ -28,7 +26,7 @@ def convert_objective(value, maximize):
 
 
 def convert_trial(
-    trial_data: TrialData,
+    trial: Trial,
     search_space: Mapping,
     objective: str,
     include_duration=False,
@@ -36,10 +34,10 @@ def convert_trial(
 ):
     """Convert a trial to a tuple (parameters, (result, time)) or None."""
 
-    result = trial_data.data.get("result", {}).get(objective, None)
-    parameters = trial_data.data.get("resolved_parameters", None)
-    time_start = trial_data.data.get("time_start", None)
-    time_end = trial_data.data.get("time_end", None)
+    result = getattr(trial, "result", {}).get(objective, None)
+    parameters = getattr(trial, "resolved_parameters", None)
+    time_start = getattr(trial, "time_start", None)
+    time_end = getattr(trial, "time_end", None)
 
     if None in (result, parameters, time_start, time_end):
         return None
@@ -85,7 +83,7 @@ class _SKOptIter(ParameterGeneratorIter):
 
         for parent_configuration in self.parent:
             # Retrieve all trials that match parent_configuration
-            existing_trials = self.experiment.ctx.store.match(
+            existing_trials = self.experiment.ctx.get_trials(
                 func=self.experiment.func,
                 parameters=parent_configuration.get("parameters", {}),
             )
@@ -95,7 +93,7 @@ class _SKOptIter(ParameterGeneratorIter):
                 tuple(
                     sorted(
                         (k, v)
-                        for k, v in trial.data["parameters"].items()
+                        for k, v in trial.parameters.items()
                         if k in parameter_names
                     )
                 )
@@ -118,13 +116,11 @@ class _SKOptIter(ParameterGeneratorIter):
                 )
 
                 # Train model
-                existing_trials = self.experiment.ctx.store.match(
+                existing_trials = self.experiment.ctx.get_trials(
                     func=self.experiment.func,
                     parameters=parent_configuration.get("parameters", {}),
                 )
 
-                # TODO: Record timing for time based `acq_func`s
-                # TODO: Provide test
                 results = _filter_results(
                     optimizer,
                     (

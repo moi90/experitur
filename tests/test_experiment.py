@@ -16,7 +16,7 @@ def test_merge(tmp_path):
         sampler = Grid({"a": [1, 2]})
 
         @Experiment("a", parameters=sampler, meta={"a": "foo"})
-        def a(trial):
+        def a(_):
             pass
 
         b = Experiment("b", parent=a)
@@ -31,10 +31,10 @@ def test_merge(tmp_path):
 
         # Parameters in a and b should be the same
         a_params = set(
-            tuple(t.data["parameters"].items()) for t in ctx.store.match(experiment=a)
+            tuple(t["parameters"].items()) for t in ctx.store.match(experiment=a)
         )
         b_params = set(
-            tuple(t.data["parameters"].items()) for t in ctx.store.match(experiment=b)
+            tuple(t["parameters"].items()) for t in ctx.store.match(experiment=b)
         )
 
         assert a_params == b_params
@@ -45,9 +45,7 @@ def test_merge(tmp_path):
 
         assert len(c_trials) == 4
 
-        parameter_configurations = set(
-            tuple(t.data["parameters"].items()) for t in c_trials
-        )
+        parameter_configurations = set(tuple(t["parameters"].items()) for t in c_trials)
 
         # Assert exististence of all grid  cells
         assert parameter_configurations == {
@@ -62,25 +60,25 @@ def test_parameters(tmp_path):
     with Context(str(tmp_path)):
 
         @Experiment()
-        def exp1(parameters):
+        def exp1(_):  # pylint: disable=unused-variable
             pass
 
         @Experiment(parameters={"a": [1, 2, 3]})
-        def exp2(parameters):
+        def exp2(_):  # pylint: disable=unused-variable
             pass
 
         @Experiment(parameters=[{"a": [1, 2, 3]}])
-        def exp3(parameters):
+        def exp3(_):  # pylint: disable=unused-variable
             pass
 
         @Experiment(parameters=Grid({}))
-        def exp4(parameters):
+        def exp4(_):  # pylint: disable=unused-variable
             pass
 
         with pytest.raises(ValueError):
 
             @Experiment(parameters=1)
-            def exp5(parameters):
+            def exp5(_):  # pylint: disable=unused-variable
                 pass
 
 
@@ -110,16 +108,19 @@ def test_parameter_generator_order(tmp_path):
         @PG1()
         @PG2()
         @Experiment()
-        def parent_experiment(parameters):
+        def parent_experiment(_):
             pass
 
         @PG3()
         @PG4()
         @Experiment(parameters=PG5(), parent=parent_experiment)
-        def child_experiment(parameters):
+        def child_experiment(_):
             pass
 
-        pg_types = [type(pg) for pg in child_experiment._parameter_generators]
+        pg_types = [
+            type(pg)
+            for pg in child_experiment._parameter_generators  # pylint: disable=protected-access
+        ]
 
         assert pg_types == [PG1, PG2, PG3, PG4, PG5]
 
@@ -129,7 +130,7 @@ def test_failing_experiment(tmp_path):
     with Context(str(tmp_path), config, writable=True) as ctx:
 
         @Experiment(volatile=True)
-        def experiment(trial):
+        def experiment(_):  # pylint: disable=unused-variable
             raise Exception("Some error")
 
         with pytest.raises(Exception):
@@ -145,7 +146,7 @@ def test_volatile_experiment(tmp_path):
     with Context(str(tmp_path), config, writable=True) as ctx:
 
         @Experiment(volatile=True)
-        def experiment(trial):
+        def experiment(_):  # pylint: disable=unused-variable
             pass
 
         ctx.run()
@@ -164,8 +165,8 @@ def test_parameter_substitution(tmp_path):
         ctx.run()
 
         valid = [
-            t.data["resolved_parameters"]["a"] == t.data["resolved_parameters"]["b"]
-            and isinstance(t.data["resolved_parameters"]["a"], int)
+            t["resolved_parameters"]["a"] == t["resolved_parameters"]["b"]
+            and isinstance(t["resolved_parameters"]["a"], int)
             for t in ctx.store.match(experiment=experiment)
         ]
 
@@ -184,7 +185,7 @@ def test_format_trial_parameters():
 
 def test_minimize_maximize_list(tmp_path):
     config = {"skip_existing": False, "catch_exceptions": False}
-    with Context(str(tmp_path), config) as ctx:
+    with Context(str(tmp_path), config):
 
         @Experiment(maximize="a", minimize=["b", "c"])
         def experiment(_):
@@ -202,7 +203,7 @@ def test_minimize_maximize_exclusive(tmp_path):
         with pytest.raises(ValueError):
 
             @Experiment(maximize="a", minimize="a")
-            def experiment(_):
+            def experiment(_):  # pylint: disable=unused-variable
                 pass
 
 
@@ -211,7 +212,7 @@ def test_mimimize_nonexisting(tmp_path):
     with Context(str(tmp_path), config, writable=True) as ctx:
 
         @Experiment(maximize="a")
-        def experiment(_):
+        def experiment(_):  # pylint: disable=unused-variable
             return {}
 
         with pytest.raises(ExperimentError):

@@ -25,7 +25,7 @@ class _RandomSamplerIter(ParameterGeneratorIter):
             # produce missing sub-configurations.
 
             # Retrieve all trials that match parent_configuration
-            existing_trials = self.experiment.ctx.store.match(
+            existing_trials = self.experiment.ctx.get_trials(
                 func=self.experiment.func,
                 parameters=parent_configuration.get("parameters", {}),
             )
@@ -36,7 +36,7 @@ class _RandomSamplerIter(ParameterGeneratorIter):
                     tuple(
                         sorted(
                             (k, v)
-                            for k, v in trial.data["parameters"].items()
+                            for k, v in trial.parameters.items()
                             if k in parameter_names
                         )
                     )

@@ -35,3 +35,5 @@ def ensure_dict(obj):
 
     if obj is None:
         return {}
+
+    raise ValueError("Expected mapping or None, got {obj!r}")
