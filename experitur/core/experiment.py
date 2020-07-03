@@ -3,6 +3,7 @@ import datetime
 import functools
 import inspect
 import os
+import socket
 import textwrap
 import traceback
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, Union
@@ -127,7 +128,7 @@ class Experiment:
         self.ctx = get_current_context()
         self.name = name
         self.parent = parent
-        self.meta = meta
+        self.meta = merge_dicts({"hostname": socket.gethostname()}, meta)
         self.active = active
         self.volatile = volatile
         self.minimize, self.maximize = self._validate_minimize_maximize(

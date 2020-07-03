@@ -9,6 +9,22 @@ from experitur.core.experiment import (
 from experitur.core.parameters import Grid, ParameterGenerator
 
 
+def test_meta(tmp_path):
+    with Context(str(tmp_path), writable=True):
+
+        @Experiment()
+        def a(_):
+            pass
+
+        @Experiment(meta=dict(foo="bar"))
+        def b(_):
+            pass
+
+    assert "hostname" in a.meta
+    assert "hostname" in b.meta
+    assert b.meta["foo"] == "bar"
+
+
 def test_merge(tmp_path):
     config = {"skip_existing": False}
     with Context(str(tmp_path), config, writable=True) as ctx:
