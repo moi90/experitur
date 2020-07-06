@@ -208,6 +208,9 @@ class Context:
     def get_trial_wdir(self, trial_id):
         return os.path.normpath(os.path.join(self.wdir, os.path.normpath(trial_id)))
 
+    def get_trial(self, trial_id) -> Trial:
+        Trial(self.store[trial_id], self.store)
+
 
 _context_stack: List[Context] = []
 
