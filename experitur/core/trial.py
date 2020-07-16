@@ -1,12 +1,16 @@
 import collections.abc
+import glob
 import inspect
 import itertools
+import os.path
 from collections import OrderedDict, defaultdict
 from collections.abc import Collection
+from numbers import Real
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    Generator,
     Iterable,
     List,
     Mapping,
@@ -385,8 +389,8 @@ class Trial(collections.abc.MutableMapping):
 class TrialCollection(Collection):
     _missing = object()
 
-    def __init__(self, trials: List[Trial]):
-        self.trials = trials
+    def __init__(self, trials: Iterable[Trial]):
+        self.trials = list(trials)
 
     def __len__(self):
         return len(self.trials)
@@ -450,3 +454,25 @@ class TrialCollection(Collection):
         """
 
         return TrialCollection(list(filter(fn, self.trials)))
+
+    def groupby(
+        self, parameters=None
+    ) -> Generator[Tuple[dict, "TrialCollection"], None, None]:
+        if isinstance(parameters, str):
+            parameters = [parameters]
+
+        if parameters is None:
+            yield {}, self
+            return
+
+        def make_key(trial: Trial):
+            key = {p: trial[p] for p in parameters}
+
+            return frozenset(key.items())
+
+        trials = defaultdict(list)
+        for trial in self.trials:
+            trials[make_key(trial)].append(trial)
+
+        for key, group in trials.items():
+            yield dict(key), TrialCollection(group)
