@@ -65,7 +65,7 @@ class ParameterGenerator(ABC):
         self, experiment: "Experiment", parent: Optional[ParameterGeneratorIter] = None,
     ):
         """
-        Return a SamplerIter to sample parameter configurations.
+        Return a ParameterGeneratorIter to sample parameter configurations.
 
         Parameters:
                 experiment (Experiment): Experiment instance.
@@ -132,9 +132,14 @@ def parameter_product(p: Mapping[str, Iterable]):
 class _ConstIter(ParameterGeneratorIter):
     def __iter__(self):
         for parent_configuration in self.parent:
-            yield merge_dicts(
-                parent_configuration, parameters=self.parameter_generator.parameters
-            )
+            # Parameter names that are relevant in this context
+            parameters = {
+                k: v
+                for k, v in self.parameter_generator.parameters.items()
+                if k not in self.ignored_parameter_names
+            }
+
+            yield merge_dicts(parent_configuration, parameters=parameters)
 
 
 class Const(ParameterGenerator):
