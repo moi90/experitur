@@ -19,6 +19,9 @@ def callable_to_name(obj):
 
 def ensure_list(obj):
     """Accepts a thing, a list of things or None and turns it into a list."""
+    if isinstance(obj, (str, bytes)):
+        return [obj]
+
     if isinstance(obj, Iterable):
         return list(obj)
 
