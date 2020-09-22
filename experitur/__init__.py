@@ -1,4 +1,4 @@
-from experitur.access import get_trial
+from experitur.access import get_trial, get_current_trial
 from experitur.core.experiment import Experiment
 from experitur.core.trial import Trial
 from experitur.errors import ExperiturError
