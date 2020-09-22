@@ -31,6 +31,10 @@ def fixture_dox_py_fn(tmp_path):
                     "second_experiment",
                     parent=baseline
                 )
+
+                third_experiment = Experiment(
+                    parent=baseline
+                )
                 """
             )
         )
@@ -44,6 +48,9 @@ def test_dox_py(dox_py_fn):
 
     with Context(wdir, writable=True) as ctx:
         load_dox(dox_py_fn)
+
+        # Make sure that the experiment name is guessed from the module
+        ctx.get_experiment("third_experiment")
 
         # Execute experiments
         ctx.run()
