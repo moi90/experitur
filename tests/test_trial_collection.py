@@ -36,7 +36,7 @@ def test_groupby(tmp_path):
     trials = ctx.get_trials()
 
     for group_key, group in trials.groupby(parameters="a"):
-        assert group_key.keys() == ["a"]
+        assert set(group_key.keys()) == set(["a"])
         assert group_key["a"] in (1, 2)
 
         assert "a" not in group.varying_parameters

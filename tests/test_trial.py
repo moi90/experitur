@@ -164,7 +164,7 @@ def test_trial_parameters(tmp_path):
             ):
                 trial.prefixed("__empty1_").call(identity)
 
-            def fun(*_, **_):
+            def fun(*_, **__):
                 pass
 
             trial.prefixed("__empty1b_").call(fun)
