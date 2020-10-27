@@ -23,8 +23,8 @@ def test__order_experiments_fail(tmp_path):
     with Context(str(tmp_path), writable=True) as ctx:
         # Create a dependency circle
         a = Experiment("a")
-        b = Experiment("b", parent=a)
-        a.parent = b
+        b = Experiment("b", depends_on=a)
+        a.add_dependency(b)
 
         with pytest.raises(DependencyError):
             ctx.run()

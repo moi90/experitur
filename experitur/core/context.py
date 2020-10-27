@@ -18,10 +18,10 @@ class DependencyError(ContextError):
     pass
 
 
-def _format_dependencies(experiments):
+def _format_dependencies(experiments: List["Experiment"]):
     msg = []
     for exp in experiments:
-        msg.append("{} -> {}".format(exp, exp.parent))
+        msg.append("{} -> {}".format(exp, ", ".join(str(d) for d in exp.depends_on)))
     return "\n".join(msg)
 
 
@@ -32,20 +32,23 @@ def _order_experiments(experiments) -> List["Experiment"]:
     stack = collections.deque(experiments)
 
     while stack:
-        exp = stack.pop()
+        exp: "Experiment" = stack.pop()
 
-        parent = exp.parent
-        if parent is not None:
-            if parent not in experiments:
-                experiments.add(parent)
-                stack.append(parent)
+        for dependency in exp.depends_on:
+            if dependency not in experiments:
+                experiments.add(dependency)
+                stack.append(dependency)
 
     done = set()
     experiments_ordered = []
 
     while experiments:
         # Get all without dependencies
-        ready = {exp for exp in experiments if exp.parent is None or exp.parent in done}
+        ready = {
+            exp
+            for exp in experiments
+            if not exp.depends_on or all(d in done for d in exp.depends_on)
+        }
 
         if not ready:
             raise DependencyError(

@@ -122,6 +122,7 @@ class Experiment:
         volatile: bool = False,
         minimize: Union[str, List[str], None] = None,
         maximize: Union[str, List[str], None] = None,
+        depends_on: Optional[List["Experiment"]] = None,
     ):
         if not (isinstance(name, str) or name is None):
             raise ValueError(f"'name' has to be a string or None, got {name!r}")
@@ -139,9 +140,14 @@ class Experiment:
         )
         self.active = active
         self.volatile = volatile
+
         self.minimize, self.maximize = self._validate_minimize_maximize(
             minimize, maximize
         )
+
+        self.depends_on: List["Experiment"] = [depends_on] if isinstance(
+            depends_on, Experiment
+        ) else [] if depends_on is None else depends_on
 
         self._own_parameter_generators: List[ParameterGenerator]
         self._own_parameter_generators = check_parameter_generators(parameters)
@@ -175,6 +181,9 @@ class Experiment:
             raise ValueError(f"minimize and maximize share common metrics: {common}")
 
         return minimize, maximize
+
+    def add_dependency(self, dependency: "Experiment"):
+        self.depends_on.append(dependency)
 
     def __call__(self, func: Callable) -> "Experiment":
         """
