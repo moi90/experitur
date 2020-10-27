@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, 
 import click
 import tqdm
 
+import experitur
 from experitur.core.context import get_current_context
 from experitur.core.parameters import (
     Multi,
@@ -128,7 +129,14 @@ class Experiment:
         self.ctx = get_current_context()
         self.name = name
         self.parent = parent
-        self.meta = merge_dicts({"hostname": socket.gethostname()}, meta)
+        self.meta = merge_dicts(
+            {
+                "hostname": socket.gethostname(),
+                "pid": os.getpid(),
+                "experitur_version": experitur.__version__,
+            },
+            meta,
+        )
         self.active = active
         self.volatile = volatile
         self.minimize, self.maximize = self._validate_minimize_maximize(
