@@ -1,8 +1,11 @@
-from experitur.core.experiment import Experiment
+import pytest
+
 from experitur.core.context import Context
+from experitur.core.experiment import Experiment
 from experitur.core.parameters import Grid
 
 
+@pytest.mark.xfail(strict=True)
 def test_trial_collection(tmp_path):
     config = {"skip_existing": False}
     with Context(str(tmp_path), config, writable=True) as ctx:
