@@ -49,7 +49,9 @@ def test_trial_parameters(tmp_path):
     with Context(str(tmp_path), config, writable=True) as ctx:
 
         @Experiment(parameters={"a": [1], "b": [2], "c": ["{a}"]})
-        def experiment(trial: Trial):  # pylint: disable=unused-variable
+        def experiment(trial: Trial):
+            assert ctx.current_trial == trial
+
             assert trial["a"] == 1
             assert trial["b"] == 2
             assert trial["c"] == trial["a"]
@@ -220,6 +222,8 @@ def test_trial_parameters(tmp_path):
                 trial.prefixed("__empty3_").choice("parameter_name", A, "A")  # type: ignore
 
         ctx.run()
+
+        assert ctx.current_trial is None
 
 
 def test_trial_logging(tmp_path):

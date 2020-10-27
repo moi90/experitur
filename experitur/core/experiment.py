@@ -338,6 +338,7 @@ class Experiment:
         trial.save()
 
         try:
+            self.ctx._set_current_trial(trial)
             result = self.func(trial)
         except (Exception, KeyboardInterrupt) as exc:
             # TODO: Store.log_error()
@@ -367,6 +368,7 @@ class Experiment:
         finally:
             trial.time_end = datetime.datetime.now()
             trial.save()
+            self.ctx._set_current_trial(None)
 
         return trial.result
 

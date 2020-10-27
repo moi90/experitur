@@ -103,6 +103,8 @@ class Context:
 
         self.writable = writable
 
+        self._current_trial = None
+
     def _register_experiment(self, experiment):
         self.registered_experiments.append(experiment)
 
@@ -212,7 +214,14 @@ class Context:
         return os.path.normpath(os.path.join(self.wdir, os.path.normpath(trial_id)))
 
     def get_trial(self, trial_id) -> Trial:
-        Trial(self.store[trial_id], self.store)
+        return Trial(self.store[trial_id], self.store)
+
+    def _set_current_trial(self, trial: Optional[Trial] = None):
+        self._current_trial = trial
+
+    @property
+    def current_trial(self):
+        return self._current_trial
 
 
 _context_stack: List[Context] = []
