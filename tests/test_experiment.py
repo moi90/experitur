@@ -7,6 +7,7 @@ from experitur.core.experiment import (
     format_trial_parameters,
 )
 from experitur.core.parameters import Grid, ParameterGenerator
+from experitur.core.trial import Trial
 
 
 def test_meta(tmp_path):
@@ -233,3 +234,18 @@ def test_mimimize_nonexisting(tmp_path):
 
         with pytest.raises(ExperimentError):
             ctx.run()
+
+
+def test_trials(tmp_path):
+    config = {"skip_existing": False}
+    with Context(str(tmp_path), config, writable=True) as ctx:
+
+        sampler = Grid({"a": [1, 2]})
+
+        @Experiment("a", parameters=Grid({"a": [1, 2], "b": [3, 4]}))
+        def a(trial: Trial):
+            return dict(trial)
+
+    ctx.run()
+
+    assert len(a.trials) == 4

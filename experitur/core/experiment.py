@@ -519,3 +519,7 @@ class Experiment:
         else:
             msg = "target={} is not implemented.".format(target)
             raise NotImplementedError(msg)
+
+    @property
+    def trials(self):
+        return self.ctx.get_trials(experiment=self)
