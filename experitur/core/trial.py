@@ -148,6 +148,10 @@ class Trial(collections.abc.MutableMapping):
     def is_failed(self):
         return self._data.get("error", None) is not None
 
+    @property
+    def is_successful(self):
+        return self._data.get("success", False)
+
     def remove(self):
         """Remove this trial from the store."""
         del self._store[self.id]

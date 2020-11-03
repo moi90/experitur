@@ -326,6 +326,9 @@ class Experiment:
 
             pbar.set_description("Running trial {}... Done.".format(trial.id))
 
+            if self.ctx.should_stop():
+                return
+
     def run_trial(self, trial: Trial):
         """Run the current trial and save the results."""
 

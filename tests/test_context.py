@@ -123,3 +123,17 @@ def test_readonly(tmp_path):
 
     with pytest.raises(ContextError):
         ctx.run()
+
+
+def test_stop(tmp_path):
+    with Context(str(tmp_path), writable=True) as ctx:
+
+        @Grid({"a": [1, 2, 3]})
+        @Experiment()
+        def experiment(trial):  # pylint: disable=unused-variable
+            ctx.stop()
+            return dict(trial)
+
+        ctx.run()
+
+        assert len(ctx.get_trials(experiment=experiment)) == 1

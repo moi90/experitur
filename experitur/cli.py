@@ -92,6 +92,22 @@ def run(dox_fn, skip_existing, catch, clean_failed, yes, reload):
         break
 
 
+@cli.command()
+@click.argument("dox_fn")
+@click.argument("--clear/--no-clear", default=False)
+def stop(dox_fn, clear):
+    """Stop experiments after the current trial finished."""
+    wdir = os.path.splitext(dox_fn)[0]
+
+    with Context(wdir, writable=True) as ctx:
+        if clear:
+            ctx.stop(False)
+            print("Stop signal cleared.")
+        else:
+            ctx.stop()
+            print("Stop signal set.")
+
+
 @cli.command(context_settings=dict(ignore_unknown_options=True,))
 @click.argument("dox_fn")
 @click.argument("cmd")

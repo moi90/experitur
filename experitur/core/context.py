@@ -125,8 +125,18 @@ class Context:
         print(
             "Running experiments:", ", ".join(exp.name for exp in ordered_experiments)
         )
-        for exp in ordered_experiments:
-            exp.run()
+
+        try:
+            for exp in ordered_experiments:
+                exp.run()
+        finally:
+            # If no more trials are running (also in other processes) clear the stop signal
+            running_trials = self.get_trials().filter(
+                lambda trial: not trial.is_failed and not trial.is_successful
+            )
+            if not running_trials:
+                # Clear stop
+                self.stop(False)
 
     def collect(self, results_fn: Union[str, Path], failed=False):
         """
@@ -222,6 +232,25 @@ class Context:
     @property
     def current_trial(self):
         return self._current_trial
+
+    def stop(self, stop=True):
+        """Save/clear stop signal."""
+
+        flag_fn = os.path.join(self.wdir, "stop")
+
+        if stop:
+            with open(flag_fn, "w"):
+                pass
+        else:
+            try:
+                os.unlink(flag_fn)
+            except Exception:  # pylint: disable=broad-except
+                pass
+
+    def should_stop(self):
+        flag_fn = os.path.join(self.wdir, "stop")
+
+        return os.path.isfile(flag_fn)
 
 
 _context_stack: List[Context] = []
