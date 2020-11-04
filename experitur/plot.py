@@ -1,16 +1,22 @@
+import itertools
 from abc import ABC, abstractmethod
 from inspect import signature
-from typing import TYPE_CHECKING, Tuple, Union
+from typing import TYPE_CHECKING, List, Mapping, Optional, Tuple, Union
 
 import matplotlib.cm
 import matplotlib.colors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import skopt.optimizer
 from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Patch
-from scipy.stats.distributions import uniform
+from matplotlib.ticker import MaxNLocator
+from scipy.stats.distributions import rv_discrete, uniform
 from sklearn.neighbors import KNeighborsRegressor
+from sklearn.preprocessing import LabelBinarizer
+
+from experitur.util import freeze
 
 if TYPE_CHECKING:
     from experitur.core.trial import TrialCollection
@@ -90,6 +96,61 @@ class Normalize(Transformer):
         return X_orig
 
 
+class CategoricalEncoder(Transformer):
+    """OneHotEncoder that can handle categorical variables."""
+
+    def __init__(self):
+        """Convert labeled categories into one-hot encoded features."""
+        self._lb = LabelBinarizer()
+
+    def fit(self, X):
+        """Fit a list or array of categories.
+
+        Parameters
+        ----------
+        X : array-like, shape=(n_categories,)
+            List of categories.
+        """
+        self.mapping_ = {v: i for i, v in enumerate(X)}
+        self.inverse_mapping_ = {i: v for v, i in self.mapping_.items()}
+        self._lb.fit([self.mapping_[v] for v in X])
+        self.n_classes = len(self._lb.classes_)
+
+        return self
+
+    def transform(self, X):
+        """Transform an array of categories to a one-hot encoded representation.
+
+        Parameters
+        ----------
+        X : array-like, shape=(n_samples,)
+            List of categories.
+
+        Returns
+        -------
+        Xt : array-like, shape=(n_samples, n_categories)
+            The one-hot encoded categories.
+        """
+        return self._lb.transform([self.mapping_[v] for v in X])
+
+    def inverse_transform(self, Xt):
+        """Inverse transform one-hot encoded categories back to their original
+           representation.
+
+        Parameters
+        ----------
+        Xt : array-like, shape=(n_samples, n_categories)
+            One-hot encoded categories.
+
+        Returns
+        -------
+        X : array-like, shape=(n_samples,)
+            The original categories.
+        """
+        Xt = np.asarray(Xt)
+        return [self.inverse_mapping_[i] for i in self._lb.inverse_transform(Xt)]
+
+
 class Dimension(ABC):
     name: str
     transformer: "Any"
@@ -115,21 +176,27 @@ class Dimension(ABC):
         """Evenly sample the original space."""
         pass
 
+    def prepare(self, X):
+        """
+        Prepare the values in X.
+
+        E.g. fill NaNs, replace values, ...
+        """
+
+        if not isinstance(X, pd.Series):
+            X = pd.Series(X)
+
+        return X
+
     def transform(self, X):
         """Transform samples form the original space to a warped space."""
-
-        # Replace NaNs
 
         try:
             return self.transformer.transform(X)
         except:
-            print(f"{self!r}")
-            print(f"{X!r}")
+            print(f"self: {self!r}")
+            print(f"X: {X!r}")
             raise
-
-    @abstractmethod
-    def fillna(self, X):
-        pass
 
     @property
     def transformed_size(self):
@@ -137,7 +204,7 @@ class Dimension(ABC):
 
     def __repr__(self):
         parameters = ", ".join(
-            f"{p}={getattr(self, p)}" for p in signature(self.__init__).parameters
+            f"{p}={getattr(self, p)!r}" for p in signature(self.__init__).parameters
         )
         return f"{self.__class__.__name__}({parameters})"
 
@@ -176,7 +243,12 @@ class Numeric(Dimension):
 
     def init(self, name, values):
         # Replace NaNs
-        values = self.fillna(values)
+        values = self.prepare(values)
+
+        if np.isnan(values).any():
+            print(
+                f"Warning: {name} contains NaN values. Supply dimensions={{'{name}': Real/Integer(..., fillna=...)}}."
+            )
 
         values = np.asarray(values)
 
@@ -201,24 +273,24 @@ class Numeric(Dimension):
         """Transform samples form the original space to a warped space."""
 
         # Replace NaNs
-        X = self.fillna(X)
+        X = self.prepare(X)
 
         try:
             return self.transformer.transform(X)
         except:
-            print(f"{self!r}")
-            print(f"{X!r}")
+            print(f"self: {self!r}")
+            print(f"X: {X!r}")
             raise
 
     def inverse_transform(self, Xt):
         return self.transformer.inverse_transform(Xt)
 
-    def fillna(self, X):
-        if self.replace_na is not None:
-            if np.isscalar(X):
-                return X if not_na(X) else self.replace_na
+    def prepare(self, X):
+        X = super().prepare(X)
 
-            return np.asarray([x if not_na(x) else self.replace_na for x in X])
+        if self.replace_na is not None:
+            return X.fillna(self.replace_na)
+
         return X
 
 
@@ -230,13 +302,102 @@ class Integer(Numeric):
     pass
 
 
+class _PassThroughMissingDict(dict):
+    def __missing__(self, key):
+        return key
+
+
 class Categorical(Dimension):
-    def init(self, name, values):
+    """
+    Args:
+        replace (dict, optional): Map string representations to other strings.
+    """
+
+    def __init__(
+        self, categories=None, name=None, replace: Optional[Mapping[str, str]] = None
+    ):
         self.name = name
+        self.categories = categories
+        self.replace = replace
+
+    def init(self, name, values):
+        if self.name is None:
+            self.name = name
+
+        values = self.prepare(values)
+
+        if self.categories is None:
+            self.categories = sorted(set(values))
+
         return self
 
-    def __repr__(self):
-        return f"{self.__class__.__name__}(name={self.name})"
+    def prepare(self, X):
+        X: pd.Series = super().prepare(X)
+
+        X = X.astype(str)
+
+        if self.replace is not None:
+            replace = _PassThroughMissingDict(self.replace)
+            X = X.map(replace)
+
+        return X
+
+    @property
+    def transformer(self):
+        try:
+            return self._transformer  # pylint: disable=access-member-before-definition
+        except AttributeError:
+            pass
+
+        self._transformer = CategoricalEncoder()
+        self._transformer.fit(self.categories)
+
+        return self._transformer
+
+    def transform(self, X):
+        """Transform samples form the original space to a warped space."""
+
+        X = self.prepare(X)
+
+        try:
+            return self.transformer.transform(X)
+        except:
+            print()
+            print(f"self: {self!r}")
+            print(f"X: {X!r}")
+            raise
+
+    @property
+    def transformed_size(self):
+        return len(self.categories)
+
+    def rvs_transformed(self, n_samples):
+        """Draw samples in the transformed space."""
+
+        prior = np.tile(1.0 / len(self.categories), len(self.categories))
+
+        numerical = rv_discrete(values=(range(len(self.categories)), prior)).rvs(
+            size=n_samples
+        )
+
+        return self.transform(np.array(self.categories)[numerical])
+
+    def linspace(self, n_samples):
+        """Evenly sample the original space."""
+
+        return np.array(
+            list(itertools.islice(itertools.cycle(self.categories), n_samples))
+        )
+
+    def to_numeric(self, X):
+        X = self.prepare(X)
+
+        mapping = {x: i for i, x in enumerate(self.categories)}
+        X = X.map(mapping)
+
+        assert not X.isna().any()
+
+        return X
 
 
 _KIND_TO_DIMENSION = {
@@ -249,7 +410,7 @@ _KIND_TO_DIMENSION = {
 
 
 class Space:
-    def __init__(self, dimensions):
+    def __init__(self, dimensions: List[Dimension]):
         self.dimensions = dimensions
 
     def __repr__(self):
@@ -275,15 +436,22 @@ def partial_dependence(
 
     # One-dimensional case
     if j is None:
-        xi = space.dimensions[i].linspace(n_points)
-        xi_t = space.dimensions[i].transform(xi)
+        dim_i = space.dimensions[i]
+        xi = dim_i.linspace(n_points)
+        xi_t = dim_i.transform(xi)
         yi = []
         for x_ in xi_t:
+            # Copy
             sample_points_ = np.array(sample_points)
 
             # Partial dependence according to Friedman (2001)
             sample_points_[:, dim_locs[i] : dim_locs[i + 1]] = x_
             yi.append(np.mean(model.predict(sample_points_)))
+
+        if isinstance(dim_i, Categorical):
+            dim_i: Categorical
+            xi = xi[: len(dim_i.categories)]
+            yi = yi[: len(dim_i.categories)]
 
         return xi, yi
 
@@ -379,6 +547,11 @@ def _plot_partial_dependence_nd(
         dim_row = space.dimensions[i_dim]
         axes_i[i].set_ylabel(dim_row)
 
+        if isinstance(dim_row, Integer):
+            axes_i[i].get_yaxis().set_major_locator(MaxNLocator(integer=True))
+
+        results_i = results[varying_parameters[i_dim]]
+
         # Show partial dependence of dim_row on objective
         xi, yit = partial_dependence(
             space, model, i_dim, n_points=n_points, sample_points=samples
@@ -386,10 +559,17 @@ def _plot_partial_dependence_nd(
 
         yi = objective_dim.inverse_transform(yit)
 
+        if isinstance(i_dim, Categorical):
+            i_dim: Categorical
+            xi = i_dim.to_numeric(xi)
+            results_i = i_dim.to_numeric(results_i)
+            axes_i[i].set_yticks(list(range(len(i_dim.categories))))
+            axes_i[i].set_yticklabels(i_dim.categories)
+
         axes_i[i].plot(yi, xi)
         axes_i[i].scatter(
             results[objective],
-            dim_row.fillna(results[varying_parameters[i_dim]]),
+            results_i,
             c=results[objective],
             cmap=cmap,
             ec="w",
@@ -398,28 +578,46 @@ def _plot_partial_dependence_nd(
 
         # Show optimum
         axes_i[i].axhline(
-            dim_row.fillna(results.loc[idx_opt, varying_parameters[i_dim]]),
-            c="r",
-            ls="--",
+            results_i.loc[idx_opt], c="r", ls="--",
         )
 
         for j, j_dim in enumerate(reversed(range(i_dim + 1, n_parameters))):
             dim_col = space.dimensions[j_dim]
 
+            results_j = results[varying_parameters[j_dim]]
+
+            if isinstance(j_dim, Categorical):
+                j_dim: Categorical
+                results_j = j_dim.to_numeric(results_j)
+                axes_j[j].set_xticks(list(range(len(i_dim.categories))))
+                axes_j[j].set_xticklabels(i_dim.categories)
+
             if i == n_parameters - 2:
                 # Show partial dependence of dim_col on objective
                 axes_j[j].set_xlabel(dim_col)
+
+                if isinstance(dim_col, Integer):
+                    axes_j[j].get_xaxis().set_major_locator(MaxNLocator(integer=True))
+
                 xi, yit = partial_dependence(
                     space, model, j_dim, n_points=n_points, sample_points=samples
                 )
 
                 yi = objective_dim.inverse_transform(yit)
 
+                if isinstance(i_dim, Categorical):
+                    i_dim: Categorical
+                    xi = i_dim.to_numeric(xi)
+
+                if isinstance(j_dim, Categorical):
+                    j_dim: Categorical
+                    yi = j_dim.to_numeric(yi)
+
                 axes_j[j].plot(xi, yi)
 
                 # Plot true observations
                 axes_j[j].scatter(
-                    dim_col.fillna(results[varying_parameters[j_dim]]),
+                    results_j,
                     results[objective],
                     c=results[objective],
                     cmap=cmap,
@@ -429,14 +627,16 @@ def _plot_partial_dependence_nd(
 
                 # Show optimum
                 axes_j[j].axvline(
-                    dim_col.fillna(results.loc[idx_opt, varying_parameters[j_dim]]),
-                    c="r",
-                    ls="--",
+                    results_j.loc[idx_opt], c="r", ls="--",
                 )
 
             # Show partial dependence of dim_col/dim_col on objective
             axes_ij[i, j].set_xlabel(dim_col)
             axes_ij[i, j].set_ylabel(dim_row)
+
+            # Hide tick labels for inner subplots
+            plt.setp(axes_ij[i, j].get_xticklabels(), visible=False)
+            plt.setp(axes_ij[i, j].get_yticklabels(), visible=False)
 
             xi, yi, zit = partial_dependence(
                 space, model, i_dim, j_dim, sample_points=samples, n_points=n_points
@@ -444,7 +644,16 @@ def _plot_partial_dependence_nd(
 
             zi = objective_dim.inverse_transform(zit)
 
+            if isinstance(i_dim, Categorical):
+                i_dim: Categorical
+                yi = i_dim.to_numeric(yi)
+
+            if isinstance(j_dim, Categorical):
+                j_dim: Categorical
+                xi = j_dim.to_numeric(xi)
+
             levels = 50
+
             cnt = axes_ij[i, j].contourf(xi, yi, zi, levels, norm=color_norm, cmap=cmap)
 
             # Fix for countour lines showing in PDF autput:
@@ -454,8 +663,8 @@ def _plot_partial_dependence_nd(
 
             # Plot true observations
             axes_ij[i, j].scatter(
-                dim_col.fillna(results[varying_parameters[j_dim]]),
-                dim_row.fillna(results[varying_parameters[i_dim]]),
+                results_j,
+                results_i,
                 c=results[objective],
                 cmap=cmap,
                 ec="w",
@@ -466,10 +675,7 @@ def _plot_partial_dependence_nd(
             # Plot optimum
             # TODO:
             axes_ij[i, j].scatter(
-                dim_col.fillna(results.loc[idx_opt, varying_parameters[j_dim]]),
-                dim_row.fillna(results.loc[idx_opt, varying_parameters[i_dim]]),
-                fc="none",
-                ec="r",
+                results_j.loc[idx_opt], results_i.loc[idx_opt], fc="none", ec="r",
             )
 
     # ax[-2, 0].set_xlabel(objective_dim)
@@ -517,7 +723,7 @@ def _plot_partial_dependence_1d(
 
     ax.plot(xi, yi)
     ax.scatter(
-        space.dimensions[0].fillna(results[parameter]),
+        results[parameter],
         results[objective],
         c=results[objective],
         cmap=cmap,
@@ -527,7 +733,7 @@ def _plot_partial_dependence_1d(
 
     # Show optimum
     ax.axvline(
-        space.dimensions[0].fillna(results.loc[idx_opt, parameter]), c="r", ls="--",
+        results.loc[idx_opt, parameter], c="r", ls="--",
     )
 
 
@@ -540,30 +746,48 @@ def plot_partial_dependence(
     dimensions=None,
     model=None,
     objective_dim=None,
-    cmap="viridis_r",
+    cmap=None,
     maximize=False,
     runtime_unit="s",
 ):
     if dimensions is None:
         dimensions = {}
 
+    if cmap is None:
+        cmap = "viridis" if maximize else "viridis"
+
     runtime_divisor = _RUNTIME_DIVISORS[runtime_unit]
 
     varying_parameters = sorted(trials.varying_parameters.keys())
-    n_parameters = len(varying_parameters)
 
     results = pd.DataFrame(
-        {
-            objective: t.result.get(objective),
-            "_runtime": (t.time_end - t.time_start).total_seconds() / runtime_divisor,
-            **{p: t.get(p) for p in varying_parameters},
-        }
-        for t in trials
-        if t.result is not None
+        (
+            {
+                objective: t.result.get(objective),
+                "_runtime": (t.time_end - t.time_start).total_seconds()
+                / runtime_divisor,
+                **{p: t.get(p) for p in varying_parameters},
+            }
+            for t in trials
+            if t.result is not None
+        ),
+        dtype=object,
     )
 
     results[objective] = pd.to_numeric(results[objective])
-    results = results.dropna(subset=[objective]).infer_objects()
+    results = results.dropna(subset=[objective])
+
+    varying_parameters = [
+        c
+        for c in results.columns
+        if c not in (objective, "_runtime")
+        and len(set(freeze(x) for x in results[c])) > 1
+    ]
+    n_parameters = len(varying_parameters)
+
+    for c in results.columns:
+        if not isinstance(dimensions.get(c), Categorical):
+            results[c] = results[c].infer_objects()
 
     objective_dim = Dimension.from_values(
         f"Runtime ({runtime_unit})" if objective == "_runtime" else objective,
@@ -587,13 +811,21 @@ def plot_partial_dependence(
         ]
     )
 
+    # Prepare results
+    for p, dim in zip(varying_parameters, space.dimensions):
+        results[p] = dim.prepare(results[p])
+
+    print(space)
+
     n_samples = 1000
     n_points = 50
     samples = space.rvs_transformed(n_samples=n_samples)
 
     y = objective_dim.transform(results[objective])
 
-    Xt = space.transform(*(results[p].to_numpy() for p in varying_parameters))
+    Xt = space.transform(*(results[p] for p in varying_parameters))
+
+    print(Xt)
 
     if model is None:
         n_neighbors = min(5, len(Xt))
