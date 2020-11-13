@@ -1,5 +1,6 @@
 import collections.abc
 import glob
+import hashlib
 import itertools
 import os.path
 import shutil
@@ -28,13 +29,31 @@ def _match_parameters(parameters_1, parameters_2):
 
 
 def _format_trial_id(
-    experiment_name, trial_parameters: Mapping, independent_parameters: List[str]
+    experiment_name,
+    trial_parameters: Mapping,
+    independent_parameters: List[str],
+    shorten=True,
 ):
     if len(independent_parameters) > 0:
-        trial_id = "_".join(
-            "{}-{!s}".format(k, trial_parameters.get(k, "na"))
-            for k in independent_parameters
+        parameter_values = sorted(
+            (
+                "{}-{!s}".format(k, trial_parameters.get(k, "na"))
+                for k in independent_parameters
+            ),
+            key=len,
         )
+
+        hashed = []
+        while parameter_values:
+            hashed_str = hashlib.sha1("".join(hashed).encode()).hexdigest()[:7]
+            parts = ([hashed_str] if hashed else []) + sorted(parameter_values)
+            trial_id = "_".join(parts)
+
+            if not shorten or len(trial_id) < 192:
+                break
+
+            hashed.append(parameter_values.pop())
+
         trial_id = trial_id.replace("/", "_")
     else:
         trial_id = "_"
