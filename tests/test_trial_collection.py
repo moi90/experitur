@@ -5,7 +5,6 @@ from experitur.core.experiment import Experiment
 from experitur.core.parameters import Grid
 
 
-@pytest.mark.xfail(strict=True)
 def test_trial_collection(tmp_path):
     config = {"skip_existing": False}
     with Context(str(tmp_path), config, writable=True) as ctx:
@@ -19,8 +18,8 @@ def test_trial_collection(tmp_path):
 
     trials = ctx.get_trials(experiment=a)
 
-    assert trials.varying_parameters == {"a": [1, 2], "b": [3, 4]}
-    assert trials.invariant_parameters == {"c": [5]}
+    assert trials.varying_parameters == {"a": {1, 2}, "b": {3, 4}}
+    assert trials.invariant_parameters == {"c": 5}
 
 
 def test_groupby(tmp_path):

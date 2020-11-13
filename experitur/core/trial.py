@@ -19,8 +19,8 @@ from typing import (
     Union,
 )
 
-
 from experitur.core.logger import YAMLLogger
+from experitur.util import freeze
 
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.experiment import Experiment
@@ -429,9 +429,33 @@ class TrialCollection(Collection):
                 except KeyError:
                     parameter_values[p].add(self._missing)
                 else:
-                    parameter_values[p].add(v)
+                    parameter_values[p].add(freeze(v))
 
-        return set(p for p in independent_parameters if len(parameter_values[p]) > 1)
+        return {
+            p: parameter_values[p]
+            for p in independent_parameters
+            if len(parameter_values[p]) > 1
+        }
+
+    @property
+    def invariant_parameters(self):
+        """Independent parameters that do not vary in this trial collection."""
+        independent_parameters = self.independent_parameters
+        parameter_values = defaultdict(set)
+        for t in self.trials:
+            for p in independent_parameters:
+                try:
+                    v = t[p]
+                except KeyError:
+                    parameter_values[p].add(self._missing)
+                else:
+                    parameter_values[p].add(freeze(v))
+
+        return {
+            p: parameter_values[p].pop()
+            for p in independent_parameters
+            if len(parameter_values[p]) == 1
+        }
 
     def to_pandas(self):
         import pandas as pd

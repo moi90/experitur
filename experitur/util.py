@@ -40,3 +40,12 @@ def ensure_dict(obj):
         return {}
 
     raise ValueError("Expected mapping or None, got {obj!r}")
+
+def freeze(value):
+    if isinstance(value, list):
+        return tuple(value)
+
+    if isinstance(value, set):
+        return frozenset(value)
+
+    return value
