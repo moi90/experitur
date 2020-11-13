@@ -1,14 +1,17 @@
 import collections.abc
+import contextlib
 import glob
 import hashlib
 import itertools
 import os.path
 import shutil
+import tempfile
 import typing
 from abc import abstractmethod
 from typing import Dict, Iterator, List, Mapping, Optional
 
 import yaml
+from filelock import SoftFileLock
 
 from experitur.helpers.dumper import ExperiturDumper
 from experitur.helpers.merge_dicts import merge_dicts
@@ -212,6 +215,13 @@ class FileTrialStore(TrialStore):
     TRIAL_FN = "trial.yaml"
     DUMPER = ExperiturDumper
 
+    def __init__(self, ctx: "Context"):
+        super().__init__(ctx)
+
+        self._lock = SoftFileLock(
+            os.path.join(ctx.wdir, "trial_store.lock"), timeout=10
+        )
+
     def _get_trial_fn(self, trial_id):
         return os.path.join(self.ctx.get_trial_wdir(trial_id), self.TRIAL_FN)
 
@@ -241,6 +251,7 @@ class FileTrialStore(TrialStore):
 
         left, right = path.split(pattern, 1)
 
+        with self._lock:
             for entry_fn in glob.iglob(path, recursive=True):
                 if os.path.isdir(entry_fn):
                     continue
@@ -261,16 +272,17 @@ class FileTrialStore(TrialStore):
 
         wdir = self.ctx.get_trial_wdir(trial_id)
 
-        try:
-            os.makedirs(wdir, exist_ok=False)
-        except FileExistsError:
-            raise KeyExistsError(trial_id) from None
+        with self._lock:
+            try:
+                os.makedirs(wdir, exist_ok=False)
+            except FileExistsError:
+                raise KeyExistsError(trial_id) from None
 
-        path = self._get_trial_fn(trial_id)
-        with open(path, "x") as fp:
-            yaml.dump(trial_data, fp, Dumper=self.DUMPER)
+            path = self._get_trial_fn(trial_id)
+            with open(path, "x") as fp:
+                yaml.dump(trial_data, fp, Dumper=self.DUMPER)
 
-        return trial_data
+            return trial_data
 
     def __setitem__(self, trial_id: str, trial_data: dict):
         self.check_writable()
@@ -280,21 +292,59 @@ class FileTrialStore(TrialStore):
 
         path = self._get_trial_fn(trial_id)
 
-        try:
-            with open(path, "r+") as fp:
-                fp.truncate()
+        # Prevent concurrent modification of the data file
+        lock_fn = os.path.dirname(path) + ".lock"
+        with SoftFileLock(lock_fn, timeout=10):
+            # Check that file exists
+            if not os.path.isfile(path):
+                raise KeyError(trial_id)
+
+            # Write new contents atomically
+            with self._open_atomic(path, "w") as fp:
                 yaml.dump(trial_data, fp, Dumper=self.DUMPER)
-        except FileNotFoundError:
-            raise KeyError(trial_id) from None
+
+    @staticmethod
+    @contextlib.contextmanager
+    def _open_atomic(fn, mode):
+        """
+        Open a file atomically.
+        
+        The context manager returns a temporary file handle
+        and uses os.replace to replace the actual file with it after it has been written.
+        """
+
+        path = os.path.dirname(fn)
+
+        # Create temporary file
+        temp_fh = tempfile.NamedTemporaryFile(mode=mode, dir=path, delete=False,)
+
+        yield temp_fh
+
+        # Reliably flush file contents
+        temp_fh.flush()
+        os.fsync(temp_fh.fileno())
+        temp_fh.close()
+
+        # Cleanup
+        try:
+            os.replace(temp_fh.name, fn)
+        finally:
+            try:
+                os.remove(temp_fh.name)
+            except:  # pylint: disable=bare-except
+                pass
 
     def __delitem__(self, trial_id):
         self.check_writable()
 
         path = self._get_trial_fn(trial_id)
 
-        try:
-            os.remove(path)
-        except FileNotFoundError:
-            raise KeyError
+        # Prevent concurrent modification of the data file
+        lock_fn = os.path.dirname(path) + ".lock"
+        with self._lock, SoftFileLock(lock_fn, timeout=10):
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                raise KeyError
 
-        shutil.rmtree(os.path.dirname(path))
+            shutil.rmtree(os.path.dirname(path))
