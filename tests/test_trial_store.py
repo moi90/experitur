@@ -172,9 +172,15 @@ def test_trial_store(tmp_path, TrialStoreImplementation: Type[TrialStore]):
             "func_test3/_",
         }
 
+        # parameters
         assert set(
             trial["id"] for trial in trial_store.match(parameters={"a": 1, "b": 2})
         ) == {"func_test1/_", "func_test2/_", "func_test3/_", "test3/a-1_b-2",}
+
+        # experiment
+        assert set(
+            trial["id"] for trial in trial_store.match(experiment="func_test1")
+        ) == {"func_test1/_"}
 
         # Set context read-only
         ctx.writable = False

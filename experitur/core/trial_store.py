@@ -6,7 +6,7 @@ import os.path
 import shutil
 import typing
 from abc import abstractmethod
-from typing import Dict, List, Mapping
+from typing import Dict, Iterator, List, Mapping, Optional
 
 import yaml
 
@@ -69,6 +69,13 @@ class TrialStore(collections.abc.MutableMapping):
     def __init__(self, ctx: "Context"):
         self.ctx = ctx
 
+    @abstractmethod
+    def iter(self, prefix: Optional[str] = None) -> Iterator:
+        pass
+
+    def __iter__(self):
+        return self.iter()
+
     def match(
         self, func=None, parameters=None, experiment=None, resolved_parameters=None
     ) -> List[Dict]:
@@ -77,28 +84,37 @@ class TrialStore(collections.abc.MutableMapping):
         from experitur.core.experiment import Experiment
 
         if isinstance(experiment, Experiment):
+            if experiment.name is None:
+                raise ValueError(f"Experiment {experiment!r} has no name set")
             experiment = experiment.name
 
+        if experiment is not None:
+            prefix = experiment + "/"
+        else:
+            prefix = None
+
         trial_data_list = []
-        for trial in self.values():
-            experiment_ = trial.get("experiment", {})
+        for trial_id in self.iter(prefix):
+            trial_data = self[trial_id]
+
+            experiment_ = trial_data.get("experiment", {})
             if func is not None and callable_to_name(experiment_.get("func")) != func:
                 continue
 
             if parameters is not None and not _match_parameters(
-                parameters, trial.get("parameters", {})
+                parameters, trial_data.get("parameters", {})
             ):
                 continue
 
             if resolved_parameters is not None and not _match_parameters(
-                resolved_parameters, trial.get("resolved_parameters", {})
+                resolved_parameters, trial_data.get("resolved_parameters", {})
             ):
                 continue
 
-            if experiment is not None and experiment_.get("name") != str(experiment):
+            if experiment is not None and experiment_.get("name") != experiment:
                 continue
 
-            trial_data_list.append(trial)
+            trial_data_list.append(trial_data)
 
         return trial_data_list
 
@@ -214,22 +230,28 @@ class FileTrialStore(TrialStore):
             print(f"Error reading {path}")
             raise
 
-    def __iter__(self):
-        path = self._get_trial_fn("**")
+    def iter(self, prefix=None):
 
-        left, right = path.split("**", 1)
+        if prefix is None:
+            pattern = "**"
+        else:
+            pattern = prefix + "**"
 
-        for entry_fn in glob.iglob(path, recursive=True):
-            if os.path.isdir(entry_fn):
-                continue
+        path = self._get_trial_fn(pattern)
 
-            # Convert entry_fn back to key
-            k = entry_fn[len(left) : -len(right)]
+        left, right = path.split(pattern, 1)
 
-            # Keys use forward slashes
-            k = k.replace("\\", "/")
+            for entry_fn in glob.iglob(path, recursive=True):
+                if os.path.isdir(entry_fn):
+                    continue
 
-            yield k
+                # Convert entry_fn back to key
+                k = entry_fn[len(left) : -len(right)]
+
+                # Keys use forward slashes
+                k = k.replace("\\", "/")
+
+                yield k
 
     def _create(self, trial_data: dict):
         trial_id = trial_data["id"]
