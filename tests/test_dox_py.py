@@ -32,6 +32,7 @@ def fixture_dox_py_fn(tmp_path):
                     parent=baseline
                 )
 
+                # This experiment shouldn't be executed, because this combination of callable and parameters was already executed.
                 third_experiment = Experiment(
                     parent=baseline
                 )
@@ -55,7 +56,12 @@ def test_dox_py(dox_py_fn):
         # Execute experiments
         ctx.run()
 
-    assert len(ctx.store) == 2, "Trials: {}".format(", ".join(ctx.store.keys()))
+    # This fails currently, because of the [resolved_]parameters and RecursiveDict mess.
+    assert (
+        len(ctx.store) == 2
+    ), "Trials: {}. Expected only baseline to have been executed.".format(
+        ", ".join(ctx.store.keys())
+    )
 
 
 @pytest.fixture(name="unknown_fn")

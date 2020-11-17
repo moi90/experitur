@@ -26,6 +26,7 @@ from experitur.util import callable_to_name, ensure_list
 
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.context import Context
+    from experitur.core.trial import TrialCollection
 
 
 def try_str(obj):
@@ -73,6 +74,31 @@ def format_trial_parameters(func=None, parameters=None, experiment=None):
         func = "{}:{}".format(str(experiment), func)
 
     return func + parameters
+
+
+class _SkipCache:
+    def __init__(self, experiment: "Experiment"):
+        self.experiment = experiment
+
+        self._trial_collection: Optional[TrialCollection] = None
+
+    def __contains__(self, parameters):
+        if self._trial_collection is not None:
+            existing = self._trial_collection.match(resolved_parameters=parameters)
+            if existing:
+                return True
+
+        # If configuration was not yet found, update cache...
+        self._trial_collection = self.experiment.ctx.get_trials(
+            func=self.experiment.func
+        )
+
+        # ... and retry
+        existing = self._trial_collection.match(resolved_parameters=parameters)
+        if existing:
+            return True
+
+        return False
 
 
 class Experiment:
@@ -271,6 +297,8 @@ class Experiment:
         # Generate trial configurations
         trial_configurations = parameter_generator.generate(self)
 
+        skip_cache = _SkipCache(self)
+
         pbar = tqdm.tqdm(trial_configurations, unit="")
         for trial_configuration in pbar:
             # Inject experiment data into trial_configuration
@@ -281,22 +309,17 @@ class Experiment:
             if self._pre_trial is not None:
                 self._pre_trial(self.ctx, trial_configuration)
 
-            if self.ctx.config["skip_existing"]:
-                # Check, if a trial with this parameter set already exists
-                existing = self.ctx.store.match(
-                    func=self.func,
-                    parameters=trial_configuration.get("parameters", {}),
-                )
-                if len(existing):
-                    pbar.write(
-                        "Skip existing configuration: {}".format(
-                            format_trial_parameters(
-                                func=self.func, parameters=trial_configuration
-                            )
-                        )
+            parameters = trial_configuration.get("parameters", {})
+
+            if self.ctx.config["skip_existing"] and parameters in skip_cache:
+                pbar.write(
+                    "Skip existing configuration: {}".format(
+                        format_trial_parameters(func=self.func, parameters=parameters)
                     )
-                    pbar.set_description("[Skipped]")
-                    continue
+                )
+                pbar.write("")
+                pbar.set_description("[Skipped]")
+                continue
 
             trial_configuration = self.ctx.store.create(trial_configuration)
 

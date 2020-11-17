@@ -249,3 +249,18 @@ def test_trials(tmp_path):
     ctx.run()
 
     assert len(a.trials) == 4
+
+
+def test_skip(tmp_path):
+    config = {"skip_existing": True}
+    with Context(str(tmp_path), config, writable=True) as ctx:
+
+        @Experiment("a", parameters=Grid({"a": [1, 2], "b": [3, 4]}))
+        def a(trial: Trial):
+            return dict(trial)
+
+        Experiment("b", parent=a)
+
+    ctx.run()
+
+    assert len(ctx.get_trials()) == 4

@@ -10,6 +10,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    Dict,
     Generator,
     Iterable,
     List,
@@ -20,7 +21,7 @@ from typing import (
 )
 
 from experitur.core.logger import YAMLLogger
-from experitur.util import freeze
+from experitur.util import callable_to_name, freeze
 
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.experiment import Experiment
@@ -504,3 +505,43 @@ class TrialCollection(Collection):
 
         for key, group in trials.items():
             yield dict(key), TrialCollection(group)
+
+    def match(
+        self, func=None, parameters=None, experiment=None, resolved_parameters=None
+    ) -> List[Dict]:
+        func = callable_to_name(func)
+
+        from experitur.core.experiment import Experiment
+
+        if isinstance(experiment, Experiment):
+            if experiment.name is None:
+                raise ValueError(f"Experiment {experiment!r} has no name set")
+            experiment = experiment.name
+
+        from experitur.core.trial_store import _match_parameters
+
+        trial_data_list = []
+        for trial in self.trials:
+            if (
+                func is not None
+                and callable_to_name(trial.experiment.get("func")) != func
+            ):
+                continue
+
+            if parameters is not None and not _match_parameters(
+                parameters, trial.parameters
+            ):
+                continue
+
+            if resolved_parameters is not None and not _match_parameters(
+                resolved_parameters, trial.resolved_parameters
+            ):
+                continue
+
+            if experiment is not None and trial.experiment.get("name") != experiment:
+                continue
+
+            trial_data_list.append(trial)
+
+        return TrialCollection(trial_data_list)
+
