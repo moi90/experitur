@@ -27,18 +27,30 @@ def test_groupby(tmp_path):
 
         @Experiment(parameters=Grid({"a": [1, 2], "b": [3, 4], "c": [5, 6]}))
         def a(trial):
-            pass
+            return dict(trial)
 
         @Experiment(parent=a)
         def b(trial):
-            pass
+            return dict(trial)
 
     ctx.run()
 
     trials = ctx.get_trials()
 
-    for group_key, group in trials.groupby(parameters="a"):
-        assert set(group_key.keys()) == set(["a"])
+    groups = trials.groupby(parameters="a")
+
+    assert len(groups) == 2
+
+    for group_key, group in groups:
+        assert set(group_key.keys()) == {"a"}
         assert group_key["a"] in (1, 2)
 
         assert "a" not in group.varying_parameters
+
+    result = groups.filter(lambda trial: trial["b"] == 3)
+
+    assert len(result) == 2
+
+    trials = result.coalesce()
+
+    assert set(trials.varying_parameters.keys()) == {"a", "c"}

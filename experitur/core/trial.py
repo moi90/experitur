@@ -15,6 +15,7 @@ from typing import (
     Iterable,
     List,
     Mapping,
+    Optional,
     Tuple,
     TypeVar,
     Union,
@@ -391,14 +392,27 @@ class Trial(collections.abc.MutableMapping):
         self._logger.log(values)
 
 
-class TrialCollection(Collection):
+class TrialCollection(collections.abc.MutableSequence):
     _missing = object()
 
     def __init__(self, trials: Iterable[Trial]):
         self.trials = list(trials)
 
+    def __init__(self, trials: Optional[Iterable[Trial]] = None):
+        if trials is None:
+            trials = []
+        else:
+            trials = list(trials)
+        self.trials = trials
+
     def __len__(self):
         return len(self.trials)
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return TrialCollection(self.trials[index])
+
+        return self.trials[index]
 
     def __iter__(self):
         yield from self.trials
@@ -406,8 +420,20 @@ class TrialCollection(Collection):
     def __contains__(self, trial: Trial):
         return trial in self.trials
 
+    def __add__(self, other):
+        return TrialCollection(self.trials + other.trials)
+
+    def __delitem__(self, index):
+        del self.trials[index]
+
+    def __setitem__(self, index, o):
+        self.trials[index] = o
+
     def pop(self, index=-1):
         return self.trials.pop(index)
+
+    def insert(self, index, trial: Trial):
+        self.trials.insert(index, trial)
 
     @property
     def independent_parameters(self):
@@ -476,7 +502,7 @@ class TrialCollection(Collection):
         Return a filtered version of this trial collection.
 
         Args:
-            fn (callable): A function that receives a TrialData instance and returns True if the trial should be kept.
+            fn (callable): A function that receives a Trial instance and returns True if the trial should be kept.
 
         Returns:
             A new trial collection.
@@ -485,26 +511,28 @@ class TrialCollection(Collection):
         return TrialCollection(list(filter(fn, self.trials)))
 
     def groupby(
-        self, parameters=None
+        self, parameters=None, experiment=False,
     ) -> Generator[Tuple[dict, "TrialCollection"], None, None]:
         if isinstance(parameters, str):
             parameters = [parameters]
 
-        if parameters is None:
-            yield {}, self
-            return
+        if not experiment and parameters is None:
+            return TrialCollectionGroupby({})
 
         def make_key(trial: Trial):
-            key = {p: trial[p] for p in parameters}
+            key = {}
+            if parameters is not None:
+                key.update({p: trial.get(p) for p in parameters})
+            if experiment:
+                key["__experiment"] = trial.experiment["name"]
 
             return frozenset(key.items())
 
-        trials = defaultdict(list)
+        groups = defaultdict(TrialCollection)
         for trial in self.trials:
-            trials[make_key(trial)].append(trial)
+            groups[make_key(trial)].append(trial)
 
-        for key, group in trials.items():
-            yield dict(key), TrialCollection(group)
+        return TrialCollectionGroupby(groups)
 
     def match(
         self, func=None, parameters=None, experiment=None, resolved_parameters=None
@@ -544,4 +572,43 @@ class TrialCollection(Collection):
             trial_data_list.append(trial)
 
         return TrialCollection(trial_data_list)
+
+
+class TrialCollectionGroupby(collections.abc.Sized, collections.abc.Iterable):
+    def __init__(self, groups: Mapping[Any, TrialCollection]):
+        self.groups = groups
+
+    def __len__(self):
+        return len(self.groups)
+
+    def __iter__(self):
+        for key, group in self.groups.items():
+            yield dict(key), group
+
+    def __repr__(self):
+        return f"<TrialCollectionGroupby {list(self.groups.items())}>"
+
+    def filter(self, fn: Callable[[Trial], bool]) -> "TrialCollectionGroupby":
+        """
+        Apply a filter to each of the groups.
+
+        Args:
+            fn (callable): A function that receives a Trial instance and returns True if the trial should be kept.
+
+        Returns:
+            A new TrialCollectionGroupby.
+        """
+
+        return TrialCollectionGroupby({k: v.filter(fn) for k, v in self.groups.items()})
+
+    def coalesce(self):
+        """
+        Coalesce the individual groups into one TrialCollection.
+        """
+
+        trials = []
+        for group in self.groups.values():
+            trials.extend(group)
+
+        return TrialCollection(trials)
 
