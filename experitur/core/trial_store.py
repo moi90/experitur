@@ -15,7 +15,7 @@ from filelock import SoftFileLock
 
 from experitur.helpers.dumper import ExperiturDumper
 from experitur.helpers.merge_dicts import merge_dicts
-from experitur.recursive_formatter import RecursiveDict
+
 from experitur.util import callable_to_name
 
 if typing.TYPE_CHECKING:
@@ -31,39 +31,6 @@ def _match_parameters(parameters_1, parameters_2):
     return False
 
 
-def _format_trial_id(
-    experiment_name,
-    trial_parameters: Mapping,
-    independent_parameters: List[str],
-    shorten=True,
-):
-    if len(independent_parameters) > 0:
-        parameter_values = sorted(
-            (
-                "{}-{!s}".format(k, trial_parameters.get(k, "na"))
-                for k in independent_parameters
-            ),
-            key=len,
-        )
-
-        hashed = []
-        while parameter_values:
-            hashed_str = hashlib.sha1("".join(hashed).encode()).hexdigest()[:7]
-            parts = ([hashed_str] if hashed else []) + sorted(parameter_values)
-            trial_id = "_".join(parts)
-
-            if not shorten or len(trial_id) < 192:
-                break
-
-            hashed.append(parameter_values.pop())
-
-        trial_id = trial_id.replace("/", "_")
-    else:
-        trial_id = "_"
-
-    return f"{experiment_name}/{trial_id}"
-
-
 class KeyExistsError(Exception):
     pass
 
@@ -73,7 +40,7 @@ class TrialStore(collections.abc.MutableMapping):
         self.ctx = ctx
 
     @abstractmethod
-    def iter(self, prefix: Optional[str] = None) -> Iterator:
+    def iter(self, prefix: Optional[str] = None) -> Iterator[str]:
         pass
 
     def __iter__(self):
@@ -133,70 +100,8 @@ class TrialStore(collections.abc.MutableMapping):
             KeyExistsError if a trial with the specified id already exists.
         """
 
-    def create(self, trial_configuration):
-        """Create a :py:class:`TrialData` instance."""
-
-        trial_configuration.setdefault("parameters", {})
-
-        trial_configuration = merge_dicts(
-            trial_configuration,
-            resolved_parameters=RecursiveDict(
-                trial_configuration["parameters"], allow_missing=True
-            ).as_dict(),
-        )
-
-        trial_parameters = trial_configuration["parameters"]
-        experiment_varying_parameters = sorted(
-            trial_configuration["experiment"]["varying_parameters"]
-        )
-        experiment_name = trial_configuration["experiment"]["name"]
-
-        # First try: Use the varying parameters of the currently running experiment
-        trial_id = _format_trial_id(
-            experiment_name, trial_parameters, experiment_varying_parameters
-        )
-
-        try:
-            return self._create(merge_dicts(trial_configuration, id=trial_id))
-        except KeyExistsError:
-            pass
-
-        existing_trial = self[trial_id]
-
-        # Second try: Incorporate more independent parameters
-        new_independent_parameters = []
-
-        # Look for parameters in existing_trial that have differing values
-        for name, value in existing_trial["parameters"].items():
-            if name in trial_parameters and trial_parameters[name] != value:
-                new_independent_parameters.append(name)
-
-        # Look for parameters that did not exist previously
-        for name in trial_parameters.keys():
-            if name not in existing_trial["parameters"]:
-                new_independent_parameters.append(name)
-
-        if new_independent_parameters:
-
-            trial_id = _format_trial_id(
-                experiment_name,
-                trial_parameters,
-                sorted(set(experiment_varying_parameters + new_independent_parameters)),
-            )
-
-            try:
-                return self._create(merge_dicts(trial_configuration, id=trial_id))
-            except KeyExistsError:
-                pass
-
-        # Otherwise, just append a version number
-        for i in itertools.count(1):
-            test_trial_id = "{}.{}".format(trial_id, i)
-
-            try:
-                return self._create(merge_dicts(trial_configuration, id=test_trial_id))
-            except KeyExistsError:
-                continue
+    def create(self, trial_id, trial_data):
+        return self._create(merge_dicts(trial_data, id=trial_id))
 
     def check_writable(self):
         __tracebackhide__ = True  # pylint: disable=unused-variable

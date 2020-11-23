@@ -16,7 +16,7 @@ def test_trial_collection(tmp_path):
     # Run experiments
     ctx.run()
 
-    trials = ctx.get_trials(experiment=a)
+    trials = ctx.trials.match(experiment=a)
 
     assert trials.varying_parameters == {"a": {1, 2}, "b": {3, 4}}
     assert trials.invariant_parameters == {"c": 5}
@@ -35,7 +35,7 @@ def test_groupby(tmp_path):
 
     ctx.run()
 
-    trials = ctx.get_trials()
+    trials = ctx.trials.match()
 
     groups = trials.groupby(parameters="a")
 

@@ -153,7 +153,7 @@ def test_failing_experiment(tmp_path):
         with pytest.raises(Exception):
             ctx.run()
 
-        trial = ctx.get_trials().pop()
+        trial = ctx.trials.one()
         assert trial.error == "Exception: Some error"
         assert trial.success is False
 
@@ -263,4 +263,4 @@ def test_skip(tmp_path):
 
     ctx.run()
 
-    assert len(ctx.get_trials()) == 4
+    assert len(ctx.trials) == 4

@@ -3,7 +3,8 @@ import os.path
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Mapping, Optional, Union
 
-from experitur.core.trial import TrialCollection, Trial
+from experitur.core.root_trial_collection import RootTrialCollection
+from experitur.core.trial import Trial, TrialCollection
 from experitur.errors import ExperiturError
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -94,6 +95,7 @@ class Context:
         from experitur.core.trial_store import FileTrialStore
 
         self.store = FileTrialStore(self)
+        self.trials = RootTrialCollection(self)
 
         # Configuration
         if config is None:
@@ -131,7 +133,7 @@ class Context:
                 exp.run()
         finally:
             # If no more trials are running (also in other processes) clear the stop signal
-            running_trials = self.get_trials().filter(
+            running_trials = self.trials.filter(
                 lambda trial: not trial.is_failed and not trial.is_successful
             )
             if not running_trials:
@@ -150,23 +152,7 @@ class Context:
         if isinstance(results_fn, Path):
             results_fn = str(results_fn)
 
-        try:
-            from pandas import json_normalize
-        except ImportError:
-            try:
-                from pandas.io.json import json_normalize
-            except ImportError:  # pragma: no cover
-                raise RuntimeError("pandas is not available.")
-
-        data = []
-        for trial_data in self.store.values():
-            if not failed and not trial_data.get("success", False):
-                # Skip failed trials if failed=False
-                continue
-
-            data.append(trial_data)
-
-        data = json_normalize(data, max_level=1).set_index("id")
+        data = self.trials.to_pandas()
 
         data.to_csv(results_fn)
 
@@ -192,13 +178,8 @@ class Context:
     def get_trials(
         self, func=None, parameters=None, experiment=None
     ) -> TrialCollection:
-        return TrialCollection(
-            [
-                Trial(td, self.store)
-                for td in self.store.match(
-                    func=func, resolved_parameters=parameters, experiment=experiment
-                )
-            ]
+        return self.trials.match(
+            func=func, resolved_parameters=parameters, experiment=experiment
         )
 
     def do(self, target, cmd, cmd_args):

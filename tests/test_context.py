@@ -136,4 +136,4 @@ def test_stop(tmp_path):
 
         ctx.run()
 
-        assert len(ctx.get_trials(experiment=experiment)) == 1
+        assert len(ctx.trials.match(experiment=experiment)) == 1

@@ -15,6 +15,7 @@ from typing import (
     Iterable,
     List,
     Mapping,
+    MutableMapping,
     Optional,
     Tuple,
     TypeVar,
@@ -94,8 +95,10 @@ class Trial(collections.abc.MutableMapping):
             # In our case, trial_prefix["a"] == 10.
     """
 
-    def __init__(self, data: Mapping, store: "TrialStore", prefix: str = ""):
-        self._store = store
+    def __init__(
+        self, data: MutableMapping, root: "RootTrialCollection", prefix: str = "",
+    ):
+        self._root = root
         self._data = data
         self._prefix = prefix
 
@@ -144,7 +147,9 @@ class Trial(collections.abc.MutableMapping):
         return self.setdefault(key, default)
 
     def save(self):
-        self._store[self.id] = self._data
+
+        # Write to the store
+        self._root.update(self)
 
     @property
     def is_failed(self):
@@ -154,9 +159,10 @@ class Trial(collections.abc.MutableMapping):
     def is_successful(self):
         return self._data.get("success", False)
 
+
     def remove(self):
         """Remove this trial from the store."""
-        del self._store[self.id]
+        self._root.remove(self)
 
     def get_result(self, name):
         result = self._data["result"]
@@ -311,7 +317,7 @@ class Trial(collections.abc.MutableMapping):
 
         Prefixes allow you to organize parameters and save keystrokes.
         """
-        return Trial(self._data, self._store, f"{self._prefix}{prefix}")
+        return Trial(self._data, self._root, f"{self._prefix}{prefix}")
 
     def setdefaults(
         self, defaults: Union[Mapping, Iterable[Tuple[str, Any]], None] = None, **kwargs
@@ -426,19 +432,18 @@ class TrialCollection(collections.abc.MutableSequence):
     def __delitem__(self, index):
         del self.trials[index]
 
-    def __setitem__(self, index, o):
-        self.trials[index] = o
 
-    def pop(self, index=-1):
-        return self.trials.pop(index)
+class BaseTrialCollection(collections.abc.Collection):
+    class _Missing:
+        def __repr__(self):
+            return "<missing>"
 
-    def insert(self, index, trial: Trial):
-        self.trials.insert(index, trial)
+    _missing = _Missing()
 
     @property
     def independent_parameters(self):
         independent_parameters = set()
-        for t in self.trials:
+        for t in self:
             independent_parameters.update(
                 getattr(t, "experiment", {}).get("independent_parameters", [])
             )
@@ -449,7 +454,7 @@ class TrialCollection(collections.abc.MutableSequence):
         """Independent parameters that vary in this trial collection."""
         independent_parameters = self.independent_parameters
         parameter_values = defaultdict(set)
-        for t in self.trials:
+        for t in self:
             for p in independent_parameters:
                 try:
                     v = t[p]
@@ -469,7 +474,7 @@ class TrialCollection(collections.abc.MutableSequence):
         """Independent parameters that do not vary in this trial collection."""
         independent_parameters = self.independent_parameters
         parameter_values = defaultdict(set)
-        for t in self.trials:
+        for t in self:
             for p in independent_parameters:
                 try:
                     v = t[p]
@@ -487,15 +492,22 @@ class TrialCollection(collections.abc.MutableSequence):
     def to_pandas(self):
         import pandas as pd
 
-        return pd.json_normalize([t.data for t in self.trials], max_level=1).set_index(
-            "id"
-        )
+        tdata = [t._data for t in self]
+
+        if not tdata:
+            raise ValueError("Empty trial collection.")
+
+        try:
+            return pd.json_normalize(tdata, max_level=1).set_index("id")
+        except:
+            print("Can't convert to pandas:", tdata)
+            raise
 
     def one(self):
-        if len(self.trials) != 1:
+        if len(self) != 1:
             raise ValueError("No individual trial.")
 
-        return self.trials[0]
+        return next(iter(self))
 
     def filter(self, fn: Callable[[Trial], bool]) -> "TrialCollection":
         """
@@ -508,7 +520,9 @@ class TrialCollection(collections.abc.MutableSequence):
             A new trial collection.
         """
 
-        return TrialCollection(list(filter(fn, self.trials)))
+        result = TrialCollection([t for t in self if fn(t)])
+
+        return result
 
     def groupby(
         self, parameters=None, experiment=False,
@@ -529,10 +543,64 @@ class TrialCollection(collections.abc.MutableSequence):
             return frozenset(key.items())
 
         groups = defaultdict(TrialCollection)
-        for trial in self.trials:
+        for trial in self:
             groups[make_key(trial)].append(trial)
 
         return TrialCollectionGroupby(groups)
+
+    def __str__(self):
+        return self.format()
+
+    def format(self, process_info=True, status=True, time=True):
+        """
+        Format TrialCollection.
+
+        Args:
+            process_info: Show process information like hostname and PID.
+        """
+
+        result = []
+
+        if len(self):
+            result.append(f"{len(self)} trials:")
+        else:
+            result.append("0 trials")
+
+        for i, trial in enumerate(self):
+            result.append(f"{i:2d}: {trial.id}")
+            descr = trial.descr(self)
+            if descr:
+                result.append(f"    {trial.descr(self)}")
+
+            if process_info:
+                hostname = trial.experiment["meta"].get("hostname", "<no host>")
+                pid = str(trial.experiment["meta"].get("pid", "<no pid>"))
+                result.append(f"    {hostname}:{pid}")
+
+            if time:
+                runtime = trial.runtime
+                if runtime is not None:
+                    result.append(f"    {runtime!s}")
+
+            if status:
+                status_chr = _trial_status_chr(trial)
+                status_long = {
+                    "!": "Failed",
+                    "+": "Successful",
+                    ">": "Running",
+                    "Z": "Zombie",
+                }[status_chr]
+                result.append(f"    {status_chr} {status_long}")
+
+        return "\n".join(result)
+
+    def print(self):
+        print(self.format())
+
+    def sorted(self, key=None, reverse=False):
+        if key is None:
+            key = operator.attrgetter("id")
+        return TrialCollection(sorted(self, key=key, reverse=reverse))
 
     def match(
         self, func=None, parameters=None, experiment=None, resolved_parameters=None
@@ -549,7 +617,7 @@ class TrialCollection(collections.abc.MutableSequence):
         from experitur.core.trial_store import _match_parameters
 
         trial_data_list = []
-        for trial in self.trials:
+        for trial in self:
             if (
                 func is not None
                 and callable_to_name(trial.experiment.get("func")) != func
@@ -572,6 +640,48 @@ class TrialCollection(collections.abc.MutableSequence):
             trial_data_list.append(trial)
 
         return TrialCollection(trial_data_list)
+
+
+class TrialCollection(collections.abc.MutableSequence, BaseTrialCollection):
+    def __init__(self, trials: Optional[Iterable[Trial]] = None):
+        if trials is None:
+            trials = []
+        else:
+            trials = list(trials)
+        self.trials = trials
+
+    def __len__(self):
+        return len(self.trials)
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return TrialCollection(self.trials[index])
+
+        return self.trials[index]
+
+    def __iter__(self):
+        yield from self.trials
+
+    def __contains__(self, trial: Trial):
+        return trial in self.trials
+
+    def __add__(self, other):
+        return TrialCollection(self.trials + other.trials)
+
+    def __delitem__(self, index):
+        del self.trials[index]
+
+    def __setitem__(self, index, o):
+        self.trials[index] = o
+
+    def pop(self, index=-1):
+        return self.trials.pop(index)
+
+    def insert(self, index, trial: Trial):
+        self.trials.insert(index, trial)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.trials!r})"
 
 
 class TrialCollectionGroupby(collections.abc.Sized, collections.abc.Iterable):

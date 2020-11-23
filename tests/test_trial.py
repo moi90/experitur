@@ -36,7 +36,7 @@ def test_trial(tmp_path):
 
         ctx.run()
 
-        trial1 = ctx.get_trials(experiment=experiment1).one()
+        trial1 = ctx.trials.match(experiment=experiment1).one()
         assert trial1.result == {"a": 1, "b": 2, "c": 3, "d": 5}
 
         assert len(ctx.store) == 1
@@ -240,7 +240,7 @@ def test_trial_logging(tmp_path):
 
     ctx.run()
 
-    trial = ctx.get_trials().one()
+    trial = ctx.trials.one()
 
     log_entries = trial._logger.read()
     assert log_entries == [

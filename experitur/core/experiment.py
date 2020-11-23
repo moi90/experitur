@@ -22,7 +22,8 @@ from experitur.core.trial import Trial
 from experitur.errors import ExperiturError
 from experitur.helpers import tqdm_redirect
 from experitur.helpers.merge_dicts import merge_dicts
-from experitur.util import callable_to_name, ensure_list
+from experitur.recursive_formatter import RecursiveDict
+from experitur.util import callable_to_name, ensure_dict, ensure_list
 
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.context import Context
@@ -321,13 +322,18 @@ class Experiment:
                 pbar.set_description("[Skipped]")
                 continue
 
-            trial_configuration = self.ctx.store.create(trial_configuration)
+            trial_configuration = merge_dicts(
+                trial_configuration,
+                resolved_parameters=RecursiveDict(
+                    trial_configuration["parameters"], allow_missing=True
+                ).as_dict(),
+            )
 
-            wdir = self.ctx.get_trial_wdir(trial_configuration["id"])
-
-            os.makedirs(wdir, exist_ok=True)
-
-            trial = Trial(merge_dicts(trial_configuration, wdir=wdir), self.ctx.store)
+            trial = self.ctx.trials.create(trial_configuration)
+            os.makedirs(trial.wdir, exist_ok=True)
+            trial._record_used_parameters = (
+                True  # pylint: disable=record_used_parameters
+            )
 
             pbar.write("Trial {}".format(trial.id))
             pbar.set_description("Running trial {}...".format(trial.id))
