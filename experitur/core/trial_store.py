@@ -1,21 +1,17 @@
 import collections.abc
 import contextlib
 import glob
-import hashlib
-import itertools
 import os.path
-import shutil
 import tempfile
 import typing
 from abc import abstractmethod
-from typing import Dict, Iterator, List, Mapping, Optional
+from typing import Dict, Iterator, List, Optional
 
 import yaml
 from filelock import SoftFileLock
 
 from experitur.helpers.dumper import ExperiturDumper
 from experitur.helpers.merge_dicts import merge_dicts
-
 from experitur.util import callable_to_name
 
 if typing.TYPE_CHECKING:
@@ -137,13 +133,18 @@ class FileTrialStore(TrialStore):
         path = self._get_trial_fn(trial_id)
 
         try:
-            with open(path) as fp:
-                return yaml.load(fp, Loader=yaml.Loader)
+            with open(path) as f:
+                trial_data = yaml.load(f, Loader=yaml.Loader)
         except FileNotFoundError as exc:
             raise KeyError(trial_id) from exc
         except:
             print(f"Error reading {path}")
             raise
+
+        # Make sure that the trial_id always matches the requested trial_id.
+        # The stored trial_id can differ if the directory was moved.
+        trial_data["id"] = trial_id
+        return trial_data
 
     def iter(self, prefix=None):
 
@@ -159,6 +160,9 @@ class FileTrialStore(TrialStore):
         with self._lock:
             for entry_fn in glob.iglob(path, recursive=True):
                 if os.path.isdir(entry_fn):
+                    continue
+
+                if ".trash" in entry_fn.split(os.path.sep):
                     continue
 
                 # Convert entry_fn back to key
@@ -242,14 +246,23 @@ class FileTrialStore(TrialStore):
     def __delitem__(self, trial_id):
         self.check_writable()
 
-        path = self._get_trial_fn(trial_id)
+        with self._lock:
+            old_path = self.ctx.get_trial_wdir(trial_id)
 
-        # Prevent concurrent modification of the data file
-        lock_fn = os.path.dirname(path) + ".lock"
-        with self._lock, SoftFileLock(lock_fn, timeout=10):
-            try:
-                os.remove(path)
-            except FileNotFoundError:
-                raise KeyError
+            if not os.path.isdir(old_path):
+                raise KeyError(trial_id)
 
-            shutil.rmtree(os.path.dirname(path))
+            new_path_base = new_path = os.path.normpath(
+                os.path.join(self.ctx.wdir, ".trash", os.path.normpath(trial_id))
+            )
+
+            i = 0
+            while True:
+                if not os.path.isdir(new_path):
+                    break
+
+                new_path = f"{new_path_base}.{i:d}"
+                i += 1
+
+            os.renames(old_path, new_path)
+
