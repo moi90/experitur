@@ -41,6 +41,11 @@ def ensure_dict(obj):
 
     raise ValueError("Expected mapping or None, got {obj!r}")
 
+
+def format_parameters(parameters: Mapping):
+    return ", ".join(f"{k}={v}" for k, v in sorted(parameters.items()))
+
+
 def freeze(value):
     if isinstance(value, list):
         return tuple(value)

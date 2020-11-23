@@ -5,6 +5,7 @@ from typing import Any, Mapping
 from experitur.core.parameters import ParameterGenerator, ParameterGeneratorIter
 from experitur.core.trial import Trial
 from experitur.helpers.merge_dicts import merge_dicts
+from experitur.util import format_parameters
 
 try:
     import skopt
@@ -156,7 +157,9 @@ class _SKOptIter(ParameterGeneratorIter):
                     self.parameter_generator.search_space, optimizer.ask()
                 )
 
-                self.parameter_generator.logger.info(f"Suggestion: {parameters}")
+                self.parameter_generator.logger.info(
+                    f"Suggestion: {format_parameters(parameters)}"
+                )
 
                 yield merge_dicts(parent_configuration, parameters=parameters)
 
