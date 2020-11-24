@@ -1,12 +1,15 @@
-from experitur.plot import plot_partial_dependence
+import matplotlib
+import pytest
+
 from experitur.core.context import Context
 from experitur.core.experiment import Experiment
 from experitur.parameters import Grid
-import matplotlib
+from experitur.plot import plot_partial_dependence
 
 matplotlib.use("Agg")
 
 
+@pytest.mark.slow
 def test_plot_partial_dependence(tmp_path):
     with Context(str(tmp_path), writable=True) as ctx:
 
