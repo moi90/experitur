@@ -386,15 +386,33 @@ class Trial(collections.abc.MutableMapping):
 
         return mapping[entry_name]
 
-    def log(self, values, **kwargs):
+    def log(self, values=None, **kwargs):
         """
         Record metrics.
 
         Args:
-            values (Mapping): Values to log.
+            values (Mapping, optional): Values to log.
         """
-        values = {**values, **kwargs}
+        if values is not None:
+            values = {**values, **kwargs}
+        else:
+            values = kwargs
         self._logger.log(values)
+
+    def get_log(self, aggregate=True):
+        if not aggregate:
+            yield from self._logger.read()
+            return
+
+        acc = {}
+        for entry in self._logger.read():
+            if any(k in acc for k in entry.keys()):
+                yield acc
+                acc = entry.copy()
+            else:
+                acc.update(entry)
+        # yield final entry
+        yield acc
 
 
 class BaseTrialCollection(collections.abc.Collection):

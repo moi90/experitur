@@ -242,7 +242,7 @@ def test_trial_logging(tmp_path):
 
     trial = ctx.trials.one()
 
-    log_entries = trial._logger.read()
+    log_entries = list(trial.get_log())
     assert log_entries == [
         {"i": i, "i10": i * 10, "ni": 1 / (i + 1)} for i in range(10)
     ]
