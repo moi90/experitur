@@ -22,6 +22,8 @@ from typing import (
     Union,
 )
 
+import numpy as np
+
 from experitur.core.logger import YAMLLogger
 from experitur.util import callable_to_name, freeze
 
@@ -423,6 +425,75 @@ class Trial(collections.abc.MutableMapping):
             raise ValueError(f"Too many matches for {pattern}: {matches}")
 
         return matches[0]
+
+    def should_prune(self) -> bool:
+        pruning_config = self._data.get("pruning_config", None)
+
+        # If pruning is not configured, do not prune.
+        if pruning_config is None:
+            return False
+
+        parameters = pruning_config["parameters"]
+        step_name = pruning_config["step_name"]
+        minimize = pruning_config["minimize"]
+        invert_signs = pruning_config["invert_signs"]
+        min_steps = pruning_config["min_steps"]
+        min_count = pruning_config["min_count"]
+        quantile = pruning_config["quantile"]
+
+        def prep_entry(entry):
+            if step_name not in entry or minimize not in entry:
+                return None
+            return entry[step_name], ((-1) ** invert_signs) * entry[minimize]
+
+        if not self._logger.last_entry:
+            raise RuntimeError("No log available for current trial.")
+
+        last_entry = prep_entry(self._logger.last_entry)
+
+        if last_entry is None:
+            raise RuntimeError(
+                "Log of the current trial does not contain {step_name} and/or {minimize}."
+            )
+
+        own_max_step, own_last_metric = last_entry
+
+        # If this trial ran less than min_steps, do not prune.
+        if own_max_step < min_steps:
+            return False
+
+        comparison_trials = self._root.match(resolved_parameters=parameters).filter(
+            lambda trial: trial.id != self.id
+        )
+
+        surviving_trials = 0
+        best_metrics_sofar = []
+        for trial in comparison_trials:
+            log = list(
+                filter(None, (prep_entry(e) for e in trial.get_log(aggregate=True)))
+            )
+
+            if not log:
+                continue
+
+            best_metrics_sofar.append(min(e[1] for e in log if e[0] <= own_max_step))
+            trial_max_step = max(e[0] for e in log)
+
+            if trial_max_step >= own_max_step:
+                surviving_trials += 1
+
+        # If at this point less than min_count are surviving, do not prune.
+        if surviving_trials < min_count:
+            return False
+
+        # If this trial is currently better than the specified quantile, do not prune.
+        if own_last_metric <= np.quantile(best_metrics_sofar, quantile):
+            return False
+
+        # TODO: patience
+
+        return True
+
 
 class BaseTrialCollection(collections.abc.Collection):
     class _Missing:
