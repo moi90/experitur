@@ -414,6 +414,15 @@ class Trial(collections.abc.MutableMapping):
         # yield final entry
         yield acc
 
+    def find_file(self, pattern, recursive=False):
+        pattern = os.path.join(glob.escape(self.wdir), pattern)
+        matches = glob.glob(pattern, recursive=recursive)
+        if not matches:
+            raise ValueError(f"No matches for {pattern}")
+        if len(matches) > 1:
+            raise ValueError(f"Too many matches for {pattern}: {matches}")
+
+        return matches[0]
 
 class BaseTrialCollection(collections.abc.Collection):
     class _Missing:

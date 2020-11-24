@@ -1,4 +1,5 @@
 import functools
+import os.path
 import re
 
 import pytest
@@ -246,3 +247,21 @@ def test_trial_logging(tmp_path):
     assert log_entries == [
         {"i": i, "i10": i * 10, "ni": 1 / (i + 1)} for i in range(10)
     ]
+
+
+def test_trial_find_file(tmp_path):
+    config = {"catch_exceptions": False}
+
+    with Context(str(tmp_path), config, writable=True) as ctx:
+
+        @Experiment()
+        def experiment(trial: Trial):  # pylint: disable=unused-variable
+            with open(os.path.join(trial.wdir, "file.txt"), "w") as f:
+                f.write("test")
+
+    ctx.run()
+
+    trial = ctx.trials.one()
+
+    filename = trial.find_file("*.txt")
+    assert filename == os.path.join(trial.wdir, "file.txt")
