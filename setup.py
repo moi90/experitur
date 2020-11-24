@@ -17,7 +17,7 @@ setup(
     url="https://github.com/moi90/experitur",
     packages=find_packages(),
     include_package_data=True,
-    install_requires=["Click", "regex", "tqdm", "pyyaml"],
+    install_requires=["Click", "regex", "tqdm", "pyyaml", "filelock", "cachetools"],
     python_requires=">=3.6",
     extras_require={
         "tests": ["pytest", "pytest-cov"],
