@@ -159,7 +159,6 @@ class Trial(collections.abc.MutableMapping):
     def is_successful(self):
         return self._data.get("success", False)
 
-
     def remove(self):
         """Remove this trial from the store."""
         self._root.remove(self)
@@ -396,41 +395,6 @@ class Trial(collections.abc.MutableMapping):
         """
         values = {**values, **kwargs}
         self._logger.log(values)
-
-
-class TrialCollection(collections.abc.MutableSequence):
-    _missing = object()
-
-    def __init__(self, trials: Iterable[Trial]):
-        self.trials = list(trials)
-
-    def __init__(self, trials: Optional[Iterable[Trial]] = None):
-        if trials is None:
-            trials = []
-        else:
-            trials = list(trials)
-        self.trials = trials
-
-    def __len__(self):
-        return len(self.trials)
-
-    def __getitem__(self, index):
-        if isinstance(index, slice):
-            return TrialCollection(self.trials[index])
-
-        return self.trials[index]
-
-    def __iter__(self):
-        yield from self.trials
-
-    def __contains__(self, trial: Trial):
-        return trial in self.trials
-
-    def __add__(self, other):
-        return TrialCollection(self.trials + other.trials)
-
-    def __delitem__(self, index):
-        del self.trials[index]
 
 
 class BaseTrialCollection(collections.abc.Collection):
