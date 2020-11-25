@@ -27,9 +27,8 @@ def test_Random(tmp_path):
             (("a", 1), ("b", 3), ("c", 0)),
         }
 
-        # Assert correct behavior of `parameters` and `invariant_parameters`
-        assert sampler.varying_parameters == {"a": [1, 2], "b": [3, 4]}
-        assert sampler.invariant_parameters == {"c": [0]}
+        # Assert correct behavior of independent_parameters
+        assert sampler.independent_parameters == {"a": [1, 2], "b": [3, 4], "c": [0]}
 
 
 def test_RandomRepeat(tmp_path):

@@ -1,17 +1,20 @@
+import collections.abc
+import functools
+import operator
 import random
 from abc import ABC, abstractmethod, abstractproperty
+from collections import defaultdict
 from itertools import product
 from typing import (
     TYPE_CHECKING,
     Any,
-    Dict,
     Generator,
     Iterable,
     List,
     Mapping,
     Optional,
-    Set,
     Type,
+    Union,
 )
 
 from experitur.core import trial as _trial
@@ -19,6 +22,21 @@ from experitur.helpers.merge_dicts import merge_dicts
 
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.experiment import Experiment
+
+
+class DynamicValues:
+    def __init__(self, n_total=None):
+        self.n_total = n_total
+
+    def __repr__(self):
+        return f"<DynamicValues n_total={self.n_total}>"
+
+
+def count_values(values):
+    if isinstance(values, DynamicValues):
+        return values.n_total
+
+    return len(values)
 
 
 class ParameterGeneratorIter(ABC):
@@ -31,7 +49,8 @@ class ParameterGeneratorIter(ABC):
         self.parameter_generator = parameter_generator
         self.experiment: "Experiment" = experiment
         self.parent = parent
-        self.ignored_parameter_names: Set[str] = set()
+
+        self.child: "Optional[ParameterGenerator]" = None
 
     @abstractmethod
     def __iter__(self) -> Generator[_trial.Trial, None, None]:  # pragma: no cover
@@ -39,9 +58,12 @@ class ParameterGeneratorIter(ABC):
             while False:
                 yield merge_dicts(parent_configuration, parameters={...: ...})
 
-    def ignoreParameters(self, parameter_names):
-        self.parent.ignoreParameters(parameter_names)
-        self.ignored_parameter_names.update(parameter_names)
+    @property
+    def ignored_parameter_names(self):
+        if self.child is None:
+            return set()
+
+        return set(self.child.independent_parameters.keys())
 
 
 class _NullIter(ParameterGeneratorIter):
@@ -52,9 +74,6 @@ class _NullIter(ParameterGeneratorIter):
 
     def __iter__(self):
         yield {}
-
-    def ignoreParameters(self, parameter_names):
-        pass
 
 
 class ParameterGenerator(ABC):
@@ -91,19 +110,15 @@ class ParameterGenerator(ABC):
         if parent is None:
             parent = _NullIter()
 
-        parent.ignoreParameters(
-            set(self.varying_parameters.keys()) | set(self.invariant_parameters.keys())
-        )
+        parent.child = self
+
         return self._iterator(self, experiment, parent)
 
     @abstractproperty
-    def varying_parameters(self) -> Mapping:  # pragma: no cover
-        """Parameters in this sampler. Does not include parameters that do not vary."""
-
-    @property
-    def invariant_parameters(self) -> Mapping:
-        """Invariant parameters in this sampler."""
-        return {}
+    def independent_parameters(
+        self,
+    ) -> Mapping[str, Union[List, DynamicValues]]:  # pragma: no cover
+        """Independent parameters in this sampler."""
 
     def __str__(self):
         return "<{name} {parameters}>".format(
@@ -114,6 +129,66 @@ class ParameterGenerator(ABC):
     def __call__(self, experiment: "Experiment"):
         experiment.add_parameter_generator(self, prepend=True)
         return experiment
+
+    def __add__(self, other):
+        return SequentialParameterGenerator([self, other])
+
+
+class _SequentialParameterGeneratorIter(ParameterGeneratorIter):
+    def __iter__(self):
+        for sub_generator in self.parameter_generator.sub_generators:
+            sub_generator: ParameterGenerator
+            yield from sub_generator.generate(self.experiment, parent=self.parent)
+
+
+def _collate_values(values: List[Union[List, DynamicValues]]):
+    list_values = []
+    dynamic_values = []
+
+    for v in values:
+        if isinstance(v, list):
+            list_values.append(v)
+        elif isinstance(v, DynamicValues):
+            dynamic_values.append(v)
+        else:
+            raise ValueError(f"unexpected value {v!r}. Expected list or DynamicValues")
+
+    list_values = functools.reduce(operator.add, list_values) if list_values else []
+    dynamic_values = (
+        functools.reduce(operator.add, dynamic_values) if dynamic_values else []
+    )
+
+    if not dynamic_values:
+        return list_values
+
+    return dynamic_values + list_values
+
+
+class SequentialParameterGenerator(ParameterGenerator):
+    """
+    Concatenate parameter generators.
+
+    The result is the concatenation of individual configurations.
+    """
+
+    _iterator = _SequentialParameterGeneratorIter
+    _str_attr = []
+
+    def __init__(self, sub_generators: Iterable[ParameterGenerator]):
+        self.sub_generators = sub_generators
+
+    @property
+    def independent_parameters(self) -> Mapping:
+        independent_parameters = defaultdict(list)
+        for g in self.sub_generators:
+            for p, v in g.independent_parameters.items():
+                independent_parameters[p].append(v)
+
+        independent_parameters = {
+            k: _collate_values(values) for k, values in independent_parameters.items()
+        }
+
+        return independent_parameters
 
 
 def parameter_product(p: Mapping[str, Iterable]):
@@ -176,12 +251,8 @@ class Const(ParameterGenerator):
             self.parameters = {**parameters, **kwargs}
 
     @property
-    def varying_parameters(self):
-        return {}
-
-    @property
-    def invariant_parameters(self):
-        return {k: v for k, v in self.parameters.items()}
+    def independent_parameters(self):
+        return {k: [v] for k, v in self.parameters.items()}
 
 
 class _GridIter(ParameterGeneratorIter):
@@ -239,15 +310,17 @@ class Grid(ParameterGenerator):
         self.shuffle = shuffle
 
     @property
-    def varying_parameters(self):
-        return {k: v for k, v in self.grid.items() if len(v) > 1}
-
-    @property
-    def invariant_parameters(self):
-        return {k: v for k, v in self.grid.items() if len(v) <= 1}
+    def independent_parameters(self):
+        return self.grid.copy()
 
 
-class Multi(ParameterGenerator):
+class Multi(collections.abc.Iterable, ParameterGenerator):
+    """
+    Nest parameter generators.
+
+    The result is the cross product of all configured values.
+    """
+
     _str_attr = ["generators"]
 
     def __init__(self, parameter_generators=None):
@@ -255,6 +328,9 @@ class Multi(ParameterGenerator):
 
         if parameter_generators is not None:
             self.addMulti(parameter_generators)
+
+    def __iter__(self):
+        return iter(self.generators)
 
     def add(self, parameter_generator):
         self.generators.append(parameter_generator)
@@ -274,28 +350,12 @@ class Multi(ParameterGenerator):
         return last_sampler_iter
 
     @property
-    def varying_parameters(self) -> Dict[str, Any]:
-        parameters: Dict[str, Any] = {}
+    def independent_parameters(self) -> Mapping[str, Union[List, DynamicValues]]:
+        independent_parameters = {}
         for gen in self.generators:
-            parameters.update(gen.varying_parameters)
+            independent_parameters.update(gen.independent_parameters)
 
-            # Delete invariant parameters
-            for ip in gen.invariant_parameters:
-                parameters.pop(ip, None)
-
-        return parameters
-
-    @property
-    def invariant_parameters(self) -> Dict[str, Any]:
-        invariant_parameters: Dict[str, Any] = {}
-        for gen in self.generators:
-            invariant_parameters.update(gen.invariant_parameters)
-
-            # Delete invariant parameters
-            for ip in gen.varying_parameters:
-                invariant_parameters.pop(ip, None)
-
-        return invariant_parameters
+        return independent_parameters
 
 
 def check_parameter_generators(parameters) -> List[ParameterGenerator]:

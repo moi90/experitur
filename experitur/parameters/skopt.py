@@ -2,7 +2,11 @@ import logging
 from collections import OrderedDict
 from typing import Any, Mapping
 
-from experitur.core.parameters import ParameterGenerator, ParameterGeneratorIter
+from experitur.core.parameters import (
+    ParameterGenerator,
+    ParameterGeneratorIter,
+    DynamicValues,
+)
 from experitur.core.trial import Trial
 from experitur.helpers.merge_dicts import merge_dicts
 from experitur.util import format_parameters
@@ -236,6 +240,6 @@ class SKOpt(ParameterGenerator):
         self.logger = logging.getLogger(__name__)
 
     @property
-    def varying_parameters(self) -> Mapping:
+    def independent_parameters(self) -> Mapping:
         """Parameters in this sampler. Does not include parameters that do not vary."""
-        return self.search_space
+        return {k: DynamicValues() for k in self.search_space.keys()}

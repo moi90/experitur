@@ -3,9 +3,10 @@ from experitur.core.parameters import (
     ParameterGeneratorIter,
     check_parameter_generators,
     Multi,
+    Const,
 )
 from experitur.helpers.merge_dicts import merge_dicts
-from typing import Mapping, Any
+from typing import Mapping, Any, Optional, List
 
 
 class _ConditionsSamplerIter(ParameterGeneratorIter):
@@ -64,39 +65,47 @@ class Conditions(ParameterGenerator):
     _iterator = _ConditionsSamplerIter
     _str_attr = ["n_iter"]
 
-    def __init__(self, name, sub_generators: Mapping):
+    def __init__(
+        self, name, sub_generators: Mapping, active: Optional[List[str]] = None
+    ):
         self.name = name
-        self.sub_generators = _check_sub_generators(sub_generators)
+
+        if isinstance(active, str):
+            active = [active]
+
+        self.active = active
+
+        sub_generators = _check_sub_generators(sub_generators)
+        if active is not None:
+            sub_generators = {k: sub_generators[k] for k in active}
+
+        self.sub_generators = sub_generators
+
         self._varying_parameters = None
         self._invariant_parameters = None
 
-    @property
-    def varying_parameters(self):
-        if self._varying_parameters is not None:
-            return self._varying_parameters
+    def merge(self, other_sub_generators):
+        sub_generators = self.sub_generators.copy()
 
-        varying_parameters = {self.name: list(self.sub_generators.keys())}
+        for k, v2 in other_sub_generators.items():
+            v1 = sub_generators.get(k)
+            if v1 is None:
+                sub_generators[k] = v2
+                continue
+
+            v1 = check_parameter_generators(v1)
+            v2 = check_parameter_generators(v2)
+
+            sub_generators[k] = Multi(v1 + v2)
+
+        return Conditions(self.name, sub_generators, self.active)
+
+    @property
+    def independent_parameters(self):
+        independent_parameters = {self.name: list(self.sub_generators.keys())}
 
         for sub in self.sub_generators.values():
-            for k, v in sub.varying_parameters.items():
-                varying_parameters.setdefault(k, list()).append(v)
+            for k, v in sub.independent_parameters.items():
+                independent_parameters[k] = independent_parameters.get(k, []) + v
 
-        self._varying_parameters = varying_parameters
-
-        return varying_parameters
-
-    @property
-    def invariant_parameters(self):
-        if self._invariant_parameters is not None:
-            return self._invariant_parameters
-
-        invariant_parameters = {}
-
-        for sub in self.sub_generators.values():
-            for k, v in sub.invariant_parameters.items():
-                if k not in self.varying_parameters:
-                    invariant_parameters.setdefault(k, list()).append(v)
-
-        self._invariant_parameters = invariant_parameters
-
-        return invariant_parameters
+        return independent_parameters

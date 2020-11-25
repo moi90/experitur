@@ -1,6 +1,12 @@
 from typing import Any, Dict, List, Union
 
-from experitur.core.parameters import ParameterGenerator, ParameterGeneratorIter
+from scipy.stats import distributions
+
+from experitur.core.parameters import (
+    DynamicValues,
+    ParameterGenerator,
+    ParameterGeneratorIter,
+)
 from experitur.helpers.merge_dicts import merge_dicts
 
 try:
@@ -25,7 +31,7 @@ class _RandomSamplerIter(ParameterGeneratorIter):
             # produce missing sub-configurations.
 
             # Retrieve all trials that match parent_configuration
-            existing_trials = self.experiment.ctx.get_trials(
+            existing_trials = self.experiment.ctx.trials.match(
                 func=self.experiment.func,
                 parameters=parent_configuration.get("parameters", {}),
             )
@@ -42,11 +48,12 @@ class _RandomSamplerIter(ParameterGeneratorIter):
                     )
                 )
 
-            # Yield existing configurations
-            for existing_params in existing_params_set:
-                yield merge_dicts(
-                    parent_configuration, parameters=dict(existing_params)
-                )
+            if self.child is not None:
+                # Yield existing configurations
+                for existing_params in existing_params_set:
+                    yield merge_dicts(
+                        parent_configuration, parameters=dict(existing_params)
+                    )
 
             # Calculate n_iter as n_iter - already existing iterations
             n_iter = self.parameter_generator.n_iter - len(existing_params_set)
@@ -59,6 +66,15 @@ class _RandomSamplerIter(ParameterGeneratorIter):
                 },
                 n_iter,
             ):
+                existing_trials = self.experiment.ctx.trials.match(
+                    func=self.experiment.func,
+                    parameters=parent_configuration.get("parameters", {}),
+                )
+
+                n_existing = len(existing_trials)
+                if n_existing >= self.parameter_generator.n_iter:
+                    print(f"{self.parameter_generator}: {n_existing} existing trials.")
+                    break
 
                 yield merge_dicts(parent_configuration, parameters=params)
 
@@ -94,7 +110,11 @@ class Random(ParameterGenerator):
     """
 
     _iterator = _RandomSamplerIter
-    _str_attr = ["n_iter"]
+    _str_attr = ["param_distributions", "n_iter"]
+
+    @staticmethod
+    def uniform(low, high):
+        return distributions.uniform(low, high - low)
 
     def __init__(self, param_distributions: Dict[str, Union[List, Any]], n_iter: int):
         if not _SKLEARN_AVAILABLE:
@@ -104,17 +124,8 @@ class Random(ParameterGenerator):
         self.n_iter = n_iter
 
     @property
-    def varying_parameters(self):
+    def independent_parameters(self):
         return {
-            k: v
+            k: v if isinstance(v, list) else DynamicValues()
             for k, v in self.param_distributions.items()
-            if not isinstance(v, list) or len(v) > 1
-        }
-
-    @property
-    def invariant_parameters(self):
-        return {
-            k: v
-            for k, v in self.param_distributions.items()
-            if isinstance(v, list) and len(v) <= 1
         }

@@ -102,8 +102,8 @@ def test_parameters(tmp_path):
 def test_parameter_generator_order(tmp_path):
     class ConcreteParameterGenerator(ParameterGenerator):
         @property
-        def varying_parameters(self):
-            return []
+        def independent_parameters(self):
+            return {}
 
     class PG1(ConcreteParameterGenerator):
         pass

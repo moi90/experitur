@@ -59,9 +59,5 @@ class Prune(ParameterGenerator):
         }
 
     @property
-    def varying_parameters(self):
-        return {}
-
-    @property
-    def invariant_parameters(self):
+    def independent_parameters(self):
         return {}

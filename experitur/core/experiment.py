@@ -17,6 +17,7 @@ from experitur.core.parameters import (
     Multi,
     ParameterGenerator,
     check_parameter_generators,
+    count_values,
 )
 from experitur.core.trial import Trial
 from experitur.errors import ExperiturError
@@ -249,18 +250,25 @@ class Experiment:
     @property
     def independent_parameters(self) -> List[str]:
         """Independent parameters. (Parameters that were actually configured.)"""
-
-        return sorted(self.varying_parameters + self.invariant_parameters)
+        return sorted(self.parameter_generator.independent_parameters.keys())
 
     @property
     def varying_parameters(self) -> List[str]:
         """Varying parameters of this experiment."""
-        return sorted(self.parameter_generator.varying_parameters.keys())
+        return sorted(
+            k
+            for k, v in self.parameter_generator.independent_parameters.items()
+            if count_values(v) != 1
+        )
 
     @property
     def invariant_parameters(self) -> List[str]:
         """Varying parameters of this experiment."""
-        return sorted(self.parameter_generator.invariant_parameters.keys())
+        return sorted(
+            k
+            for k, v in self.parameter_generator.independent_parameters.items()
+            if count_values(v) == 1
+        )
 
     def __str__(self):
         if self.name is not None:
@@ -289,14 +297,15 @@ class Experiment:
 
         print("Experiment", self)
 
-        parameter_generator = self.parameter_generator
-
-        print("Independent parameters:")
-        for k, v in parameter_generator.varying_parameters.items():
+        print("Varying parameters:")
+        for k, v in sorted(self.parameter_generator.independent_parameters.items()):
+            if count_values(v) == 1:
+                continue
             print("{}: {}".format(k, v))
+        print()
 
         # Generate trial configurations
-        trial_configurations = parameter_generator.generate(self)
+        trial_configurations = self.parameter_generator.generate(self)
 
         skip_cache = _SkipCache(self)
 
