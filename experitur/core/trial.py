@@ -416,6 +416,9 @@ class Trial(collections.abc.MutableMapping):
         # yield final entry
         yield acc
 
+    def aggregate_log(self, include):
+        return self._logger.aggregate(include)
+
     def find_file(self, pattern, recursive=False):
         pattern = os.path.join(glob.escape(self.wdir), pattern)
         matches = glob.glob(pattern, recursive=recursive)

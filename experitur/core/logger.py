@@ -58,7 +58,9 @@ class LoggerBase(ABC):
             result[f"max_{k}"] = max(metrics[k])
             result[f"min_{k}"] = min(metrics[k])
             result[f"final_{k}"] = metrics[k][-1]
-            result[f"mean_{k}"] = metrics[k][-1]
+            result[f"mean_{k}"] = sum(metrics[k]) / len(metrics[k])
+
+        return result
 
 
 class YAMLLogger(LoggerBase):
