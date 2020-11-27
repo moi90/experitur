@@ -43,6 +43,7 @@ def fixture_dox_py_fn(tmp_path):
     return fn
 
 
+@pytest.mark.xfail(strict=True)
 def test_dox_py(dox_py_fn):
     wdir = os.path.splitext(dox_py_fn)[0]
     os.makedirs(wdir, exist_ok=True)
