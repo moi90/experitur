@@ -10,10 +10,12 @@ def test_Conditions(tmp_path):
         def exp(trial):
             pass
 
-        sampler = Conditions("x", {1: Const(y=1), 2: Const(y=2)})
+        sampler = Conditions(
+            "x", {1: Const(y=1), 2: [Const(y=2), Grid({"z": [1, 2, 3]})]}
+        )
         assert sorted(sampler.independent_parameters.items()) == [
             ("x", [1, 2]),
-            ("y", [1, 2]),
+            ("z", [1, 2, 3]),
         ]
 
         samples = sorted(
@@ -23,7 +25,9 @@ def test_Conditions(tmp_path):
         # Assert exististence of all specified values
         assert samples == [
             (("x", 1), ("y", 1)),
-            (("x", 2), ("y", 2)),
+            (("x", 2), ("y", 2), ("z", 1)),
+            (("x", 2), ("y", 2), ("z", 2)),
+            (("x", 2), ("y", 2), ("z", 3)),
         ]
 
         sampler = Conditions("x", {1: Const(y=1), 2: Grid({"y": [2, 3]})})
@@ -47,7 +51,6 @@ def test_Conditions(tmp_path):
         sampler = Conditions("x", {1: {"y": [1]}})
         assert sorted(sampler.independent_parameters.items()) == [
             ("x", [1]),
-            ("y", [1]),
         ]
 
         samples = sorted(
@@ -64,8 +67,6 @@ def test_Conditions(tmp_path):
         print(str(sampler.sub_generators))
         assert sorted(sampler.independent_parameters.items()) == [
             ("x", [1]),
-            ("y", [1]),
-            ("z", [1]),
         ]
 
         samples = sorted(
@@ -82,7 +83,6 @@ def test_Conditions(tmp_path):
         print(str(sampler.sub_generators))
         assert sorted(sampler.independent_parameters.items()) == [
             ("x", [1]),
-            ("y", [1]),
             ("z", [1, 2]),
         ]
 

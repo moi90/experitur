@@ -1,12 +1,14 @@
+from typing import Any, List, Mapping, Optional, Union
+
 from experitur.core.parameters import (
+    DynamicValues,
+    Multi,
     ParameterGenerator,
     ParameterGeneratorIter,
     check_parameter_generators,
-    Multi,
-    Const,
+    count_values,
 )
 from experitur.helpers.merge_dicts import merge_dicts
-from typing import Mapping, Any, Optional, List
 
 
 class _ConditionsSamplerIter(ParameterGeneratorIter):
@@ -101,11 +103,21 @@ class Conditions(ParameterGenerator):
         return Conditions(self.name, sub_generators, self.active)
 
     @property
-    def independent_parameters(self):
+    def independent_parameters(self) -> Mapping[str, Union[List, DynamicValues]]:
         independent_parameters = {self.name: list(self.sub_generators.keys())}
 
+        include = set([self.name])
         for sub in self.sub_generators.values():
             for k, v in sub.independent_parameters.items():
-                independent_parameters[k] = independent_parameters.get(k, []) + v
+                # Include only those that vary independently of the condition
+                length = count_values(v)
+                if length is None or length > 1:
+                    include.add(k)
 
-        return independent_parameters
+                try:
+                    independent_parameters[k] = independent_parameters.get(k, []) + v
+                except:
+                    print(f"Error concatenating {sub}")
+                    raise
+
+        return {k: v for k, v in independent_parameters.items() if k in include}
