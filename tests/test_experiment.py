@@ -150,8 +150,17 @@ def test_failing_experiment(tmp_path):
         def experiment(_):  # pylint: disable=unused-variable
             raise Exception("Some error")
 
+        on_success_called = False
+
+        @experiment.on_success
+        def on_experiment_success(_):
+            nonlocal on_success_called
+            on_success_called = True
+
         with pytest.raises(Exception):
             ctx.run()
+
+        assert not on_success_called
 
         trial = ctx.trials.one()
         assert trial.error == "Exception: Some error"
@@ -166,7 +175,16 @@ def test_volatile_experiment(tmp_path):
         def experiment(_):  # pylint: disable=unused-variable
             pass
 
+        on_success_called = False
+
+        @experiment.on_success
+        def on_experiment_success(_):
+            nonlocal on_success_called
+            on_success_called = True
+
         ctx.run()
+
+        assert on_success_called
 
         assert len(ctx.store) == 0
 

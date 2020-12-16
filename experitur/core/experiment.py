@@ -196,6 +196,8 @@ class Experiment:
             [] if self.parent is None else self.parent._parameter_generators
         )
 
+        self._on_success = []
+
         self.ctx._register_experiment(self)
 
     @staticmethod
@@ -230,6 +232,23 @@ class Experiment:
         self.func = func
 
         return self
+
+    def on_success(self, func: Callable[[Trial], Any]):
+        """
+        Register a callback that is called after a trial finished successfully.
+
+        Example:
+            experiment = Experiment(...)
+            @experiment.on_success
+            def on_experiment_success(trial: Trial):
+                ...
+        """
+
+        self._on_success.append(func)
+
+    def _handle_success(self, trial: Trial):
+        for handler in self._on_success:
+            handler(trial)
 
     @property
     def _parameter_generators(self) -> List[ParameterGenerator]:
@@ -410,6 +429,8 @@ class Experiment:
             trial.time_end = datetime.datetime.now()
             trial.save()
             self.ctx._set_current_trial(None)
+
+        self._handle_success(trial)
 
         return trial.result
 
