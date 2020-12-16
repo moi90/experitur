@@ -1,4 +1,5 @@
 import collections
+import contextlib
 import os.path
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Mapping, Optional, Union
@@ -207,12 +208,17 @@ class Context:
     def get_trial(self, trial_id) -> Trial:
         return Trial(self.store[trial_id], self.store)
 
-    def _set_current_trial(self, trial: Optional[Trial] = None):
-        self._current_trial = trial
-
     @property
     def current_trial(self):
         return self._current_trial
+
+    @contextlib.contextmanager
+    def set_current_trial(self, trial: Trial):
+        try:
+            self._current_trial = trial
+            yield
+        finally:
+            self._current_trial = None
 
     def stop(self, stop=True):
         """Save/clear stop signal."""
