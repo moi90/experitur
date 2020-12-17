@@ -103,6 +103,18 @@ class _SkipCache:
         return False
 
 
+class _TempParameterGeneratorContext:
+    def __init__(self, experiment: "Experiment", parameter_generator):
+        self.experiment = experiment
+        self.parameter_generator = parameter_generator
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, *_, **__):
+        self.experiment.remove_parameter_generator(self.parameter_generator)
+
+
 class Experiment:
     """
     Define an experiment.
@@ -257,10 +269,20 @@ class Experiment:
     def add_parameter_generator(
         self, parameter_generator: ParameterGenerator, prepend=False
     ):
+        """
+        Add a ParameterGenerator to the Experiment.
+
+        When used as a context manager, the ParameterGenerator is removed when the context is exited.
+        """
         if prepend:
             self._own_parameter_generators.insert(0, parameter_generator)
         else:
             self._own_parameter_generators.append(parameter_generator)
+
+        return _TempParameterGeneratorContext(self, parameter_generator)
+
+    def remove_parameter_generator(self, parameter_generator: ParameterGenerator):
+        self._own_parameter_generators.remove(parameter_generator)
 
     @property
     def parameter_generator(self) -> ParameterGenerator:
