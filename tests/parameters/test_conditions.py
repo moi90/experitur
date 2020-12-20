@@ -47,6 +47,20 @@ def test_Conditions(tmp_path):
             (("x", 2), ("y", 3)),
         ]
 
+        # Condition name overwrites sub-config name
+        sampler = Conditions("x", {1: Const(x=2)})
+        assert sorted(sampler.independent_parameters.items()) == [
+            ("x", [1]),
+        ]
+
+        # Assert exististence of all specified values
+        samples = sorted(
+            tuple(sorted(d["parameters"].items())) for d in sampler.generate(exp)
+        )
+        assert samples == [
+            (("x", 1),),
+        ]
+
         # Test passing sub-configurations as simple dict (should get converted)
         sampler = Conditions("x", {1: {"y": [1]}})
         assert sorted(sampler.independent_parameters.items()) == [

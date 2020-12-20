@@ -16,12 +16,12 @@ class _ConditionsSamplerIter(ParameterGeneratorIter):
         for parent_configuration in self.parent:
             for value, sub_gen in self.parameter_generator.sub_generators.items():
                 sub_gen: ParameterGenerator
-                params = merge_dicts(
-                    parent_configuration,
-                    parameters={self.parameter_generator.name: value},
-                )
                 for sub_params in sub_gen.generate(self.experiment):
-                    yield merge_dicts(params, sub_params)
+                    yield merge_dicts(
+                        parent_configuration,
+                        sub_params,
+                        parameters={self.parameter_generator.name: value},
+                    )
 
 
 def _check_sub_generators(sub_generators) -> Mapping[Any, ParameterGenerator]:
@@ -109,6 +109,10 @@ class Conditions(ParameterGenerator):
         include = set([self.name])
         for sub in self.sub_generators.values():
             for k, v in sub.independent_parameters.items():
+                # Skip entries that are overwritten by the configuration name
+                if k == self.name:
+                    continue
+
                 # Include only those that vary independently of the condition
                 length = count_values(v)
                 if length is None or length > 1:
