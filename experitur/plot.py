@@ -1,7 +1,7 @@
 import itertools
 from abc import ABC, abstractmethod
 from inspect import signature
-from typing import TYPE_CHECKING, List, Mapping, Optional, Tuple, Union
+from typing import Any, Callable, TYPE_CHECKING, List, Mapping, Optional, Tuple, Union
 
 import matplotlib.cm
 import matplotlib.colors
@@ -15,6 +15,7 @@ from matplotlib.ticker import MaxNLocator
 from scipy.stats.distributions import rv_discrete, uniform
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.preprocessing import LabelBinarizer
+from matplotlib.ticker import Formatter, StrMethodFormatter
 
 from experitur.util import freeze
 
@@ -63,7 +64,7 @@ class Normalize(Transformer):
         self.is_int = is_int
 
     def transform(self, X):
-        X = np.asarray(X)
+        X: np.ndarray = np.asarray(X)
 
         if self.is_int:
             if np.any(np.round(X) > self.high):
@@ -73,6 +74,9 @@ class Normalize(Transformer):
                     f"All integer values should be greater than {self.low}"
                 )
         else:
+            if np.any(np.isnan(X)):
+                raise ValueError("X contains NaNs")
+
             if np.any(X > self.high + 1e-8):
                 raise ValueError(f"All values should be less than {self.high}")
             if np.any(X < self.low - 1e-8):
@@ -81,15 +85,8 @@ class Normalize(Transformer):
         return (X - self.low) / (self.high - self.low)
 
     def inverse_transform(self, Xt):
-        Xt = np.asarray(Xt)
-        if np.any(Xt > 1.0):
-            raise ValueError(
-                f"All values should be less than 1.0. Maximum was {Xt.max()}"
-            )
-        if np.any(Xt < 0.0):
-            raise ValueError(
-                f"All values should be greater than 0.0. Minimum was {Xt.min()}"
-            )
+        Xt: np.ndarray = np.asarray(Xt)
+
         X_orig = Xt * (self.high - self.low) + self.low
         if self.is_int:
             return np.round(X_orig).astype(np.int)
@@ -147,13 +144,14 @@ class CategoricalEncoder(Transformer):
         X : array-like, shape=(n_samples,)
             The original categories.
         """
-        Xt = np.asarray(Xt)
+        Xt: np.ndarray = np.asarray(Xt)
         return [self.inverse_mapping_[i] for i in self._lb.inverse_transform(Xt)]
 
 
 class Dimension(ABC):
-    name: str
-    transformer: "Any"
+    name: Optional[str]
+    transformer: Transformer
+    formatter: Optional[Formatter]
 
     @staticmethod
     def from_values(name, values, dimension=None):
@@ -176,17 +174,14 @@ class Dimension(ABC):
         """Evenly sample the original space."""
         pass
 
-    def prepare(self, X):
+    def prepare(self, X) -> pd.Series:
         """
         Prepare the values in X.
 
         E.g. fill NaNs, replace values, ...
         """
 
-        if not isinstance(X, pd.Series):
-            X = pd.Series(X)
-
-        return X
+        return pd.Series(X)
 
     def transform(self, X):
         """Transform samples form the original space to a warped space."""
@@ -219,14 +214,28 @@ def _uniform_inclusive(loc=0.0, scale=1.0):
 
 class Numeric(Dimension):
     def __init__(
-        self, low=None, high=None, prior="uniform", base=10, name=None, replace_na=None
+        self,
+        low=None,
+        high=None,
+        *,
+        scale="linear",
+        formatter=None,
+        name=None,
+        replace_na=None,
     ):
         self.low = low
         self.high = high
-        self.prior = prior
-        self.base = base
         self.name = name
         self.replace_na = replace_na
+
+        if scale in ("linear", None):
+            self.scale = None
+            self.formatter = formatter or None
+        elif scale == "log10":
+            self.scale = np.log10
+            self.formatter = formatter or StrMethodFormatter("1e{x}")
+        else:
+            raise ValueError(f"Unknown scale parameter: {scale!r}")
 
     @property
     def transformer(self):
@@ -270,10 +279,11 @@ class Numeric(Dimension):
         return np.linspace(self.low, self.high, n_samples)
 
     def transform(self, X):
-        """Transform samples form the original space to a warped space."""
-
-        # Replace NaNs
-        X = self.prepare(X)
+        """
+        Transform samples form the original space to a warped space.
+        
+        This does not include preparation.
+        """
 
         try:
             return self.transformer.transform(X)
@@ -289,7 +299,10 @@ class Numeric(Dimension):
         X = super().prepare(X)
 
         if self.replace_na is not None:
-            return X.fillna(self.replace_na)
+            X = X.fillna(self.replace_na)
+
+        if self.scale is not None:
+            X = self.scale(X)
 
         return X
 
@@ -314,11 +327,17 @@ class Categorical(Dimension):
     """
 
     def __init__(
-        self, categories=None, name=None, replace: Optional[Mapping[str, str]] = None
+        self,
+        categories=None,
+        *,
+        name=None,
+        replace: Optional[Mapping[str, str]] = None,
+        formatter=None,
     ):
         self.name = name
         self.categories = categories
         self.replace = replace
+        self.formatter = formatter
 
     def init(self, name, values):
         if self.name is None:
@@ -332,7 +351,7 @@ class Categorical(Dimension):
         return self
 
     def prepare(self, X):
-        X: pd.Series = super().prepare(X)
+        X = super().prepare(X)
 
         X = X.astype(str)
 
@@ -355,9 +374,11 @@ class Categorical(Dimension):
         return self._transformer
 
     def transform(self, X):
-        """Transform samples form the original space to a warped space."""
+        """
+        Transform samples from the original space to a warped space.
 
-        X = self.prepare(X)
+        Does not include data preparation.
+        """
 
         try:
             return self.transformer.transform(X)
@@ -389,13 +410,16 @@ class Categorical(Dimension):
             list(itertools.islice(itertools.cycle(self.categories), n_samples))
         )
 
-    def to_numeric(self, X):
+    def to_numeric(self, X, jitter=0):
         X = self.prepare(X)
 
         mapping = {x: i for i, x in enumerate(self.categories)}
         X = X.map(mapping)
 
         assert not X.isna().any()
+
+        if jitter:
+            X = X + np.random.randn(len(X)) * jitter
 
         return X
 
@@ -440,20 +464,24 @@ def partial_dependence(
         xi = dim_i.linspace(n_points)
         xi_t = dim_i.transform(xi)
         yi = []
+        errors = []
         for x_ in xi_t:
             # Copy
             sample_points_ = np.array(sample_points)
 
             # Partial dependence according to Friedman (2001)
             sample_points_[:, dim_locs[i] : dim_locs[i + 1]] = x_
-            yi.append(np.mean(model.predict(sample_points_)))
+            predictions = model.predict(sample_points_)
+            yi.append(np.mean(predictions))
+            errors.append(np.std(predictions))
 
         if isinstance(dim_i, Categorical):
             dim_i: Categorical
             xi = xi[: len(dim_i.categories)]
             yi = yi[: len(dim_i.categories)]
+            errors = errors[: len(dim_i.categories)]
 
-        return xi, yi
+        return xi, np.array(yi), np.array(errors)
 
     # Two-dimensional case
     xi = space.dimensions[j].linspace(n_points)
@@ -490,6 +518,7 @@ def _plot_partial_dependence_nd(
     samples,
     cmap,
     idx_opt,
+    jitter,
 ):
     n_parameters = len(varying_parameters)
 
@@ -553,19 +582,26 @@ def _plot_partial_dependence_nd(
         results_i = results[varying_parameters[i_dim]]
 
         # Show partial dependence of dim_row on objective
-        xi, yit = partial_dependence(
+        xi, yit, errors = partial_dependence(
             space, model, i_dim, n_points=n_points, sample_points=samples
         )
 
         yi = objective_dim.inverse_transform(yit)
+        upper = objective_dim.inverse_transform(yit + errors)
+        lower = objective_dim.inverse_transform(yit - errors)
 
-        if isinstance(i_dim, Categorical):
-            i_dim: Categorical
-            xi = i_dim.to_numeric(xi)
-            results_i = i_dim.to_numeric(results_i)
-            axes_i[i].set_yticks(list(range(len(i_dim.categories))))
-            axes_i[i].set_yticklabels(i_dim.categories)
+        if isinstance(dim_row, Categorical):
+            xi = dim_row.to_numeric(xi)
+            results_i = dim_row.to_numeric(results_i, jitter)
+            axes_i[i].set_yticks(list(range(len(dim_row.categories))))
+            axes_i[i].set_yticklabels(dim_row.categories)
 
+        print(f"dim_row[{dim_row.name}].formatter:", dim_row.formatter)
+
+        if dim_row.formatter is not None:
+            axes_i[i].get_yaxis().set_major_formatter(dim_row.formatter)
+
+        axes_i[i].fill_betweenx(xi, upper, lower, alpha=0.5)
         axes_i[i].plot(yi, xi)
         axes_i[i].scatter(
             results[objective],
@@ -586,11 +622,15 @@ def _plot_partial_dependence_nd(
 
             results_j = results[varying_parameters[j_dim]]
 
-            if isinstance(j_dim, Categorical):
-                j_dim: Categorical
-                results_j = j_dim.to_numeric(results_j)
-                axes_j[j].set_xticks(list(range(len(i_dim.categories))))
-                axes_j[j].set_xticklabels(i_dim.categories)
+            if isinstance(dim_col, Categorical):
+                results_j = dim_col.to_numeric(results_j, jitter)
+                axes_j[j].set_xticks(list(range(len(dim_col.categories))))
+                axes_j[j].set_xticklabels(dim_col.categories)
+
+            print(f"dim_col[{dim_col.name}].formatter:", dim_col.formatter)
+
+            if dim_col.formatter is not None:
+                axes_j[j].get_xaxis().set_major_formatter(dim_col.formatter)
 
             if i == n_parameters - 2:
                 # Show partial dependence of dim_col on objective
@@ -599,19 +639,18 @@ def _plot_partial_dependence_nd(
                 if isinstance(dim_col, Integer):
                     axes_j[j].get_xaxis().set_major_locator(MaxNLocator(integer=True))
 
-                xi, yit = partial_dependence(
+                xi, yit, errors = partial_dependence(
                     space, model, j_dim, n_points=n_points, sample_points=samples
                 )
 
                 yi = objective_dim.inverse_transform(yit)
+                upper = objective_dim.inverse_transform(yit + errors)
+                lower = objective_dim.inverse_transform(yit - errors)
 
-                if isinstance(i_dim, Categorical):
-                    i_dim: Categorical
-                    xi = i_dim.to_numeric(xi)
+                if isinstance(dim_col, Categorical):
+                    xi = dim_col.to_numeric(xi)
 
-                if isinstance(j_dim, Categorical):
-                    j_dim: Categorical
-                    yi = j_dim.to_numeric(yi)
+                axes_j[j].fill_between(xi, upper, lower, alpha=0.5)
 
                 axes_j[j].plot(xi, yi)
 
@@ -631,8 +670,8 @@ def _plot_partial_dependence_nd(
                 )
 
             # Show partial dependence of dim_col/dim_col on objective
-            axes_ij[i, j].set_xlabel(dim_col)
-            axes_ij[i, j].set_ylabel(dim_row)
+            # axes_ij[i, j].set_xlabel(dim_col)
+            # axes_ij[i, j].set_ylabel(dim_row)
 
             # Hide tick labels for inner subplots
             plt.setp(axes_ij[i, j].get_xticklabels(), visible=False)
@@ -644,13 +683,11 @@ def _plot_partial_dependence_nd(
 
             zi = objective_dim.inverse_transform(zit)
 
-            if isinstance(i_dim, Categorical):
-                i_dim: Categorical
-                yi = i_dim.to_numeric(yi)
+            if isinstance(dim_row, Categorical):
+                yi = dim_row.to_numeric(yi)
 
-            if isinstance(j_dim, Categorical):
-                j_dim: Categorical
-                xi = j_dim.to_numeric(xi)
+            if isinstance(dim_col, Categorical):
+                xi = dim_col.to_numeric(xi)
 
             levels = 50
 
@@ -701,6 +738,7 @@ def _plot_partial_dependence_1d(
     samples,
     cmap,
     idx_opt,
+    jitter,
 ):
     fig = plt.figure(constrained_layout=True, figsize=(12, 12),)
     ax = fig.add_subplot(111)
@@ -715,11 +753,22 @@ def _plot_partial_dependence_1d(
     ax.set_ylabel(objective_dim.name)
 
     # Show partial dependence of dimension on objective
-    xi, yit = partial_dependence(
+    xi, yit, errors = partial_dependence(
         space, model, 0, n_points=n_points, sample_points=samples
     )
 
     yi = objective_dim.inverse_transform(yit)
+    upper = objective_dim.inverse_transform(yit + errors)
+    lower = objective_dim.inverse_transform(yit - errors)
+
+    if isinstance(space.dimensions[0], Categorical):
+        xi = space.dimensions[0].to_numeric(xi)
+        results_i = space.dimensions[0].to_numeric(results_i, jitter)
+        ax.set_yticks(list(range(len(space.dimensions[0].categories))))
+        ax.set_yticklabels(space.dimensions[0].categories)
+
+    if space.dimensions[0].formatter is not None:
+        ax.get_xaxis().set_major_formatter(space.dimensions[0].formatter)
 
     ax.plot(xi, yi)
     ax.scatter(
@@ -749,16 +798,25 @@ def plot_partial_dependence(
     cmap=None,
     maximize=False,
     runtime_unit="s",
+    jitter=0.025,
+    ignore=None,
 ):
     if dimensions is None:
         dimensions = {}
+
+    if ignore is None:
+        ignore = []
+
+    ignore = set(ignore)
 
     if cmap is None:
         cmap = "viridis" if maximize else "viridis"
 
     runtime_divisor = _RUNTIME_DIVISORS[runtime_unit]
 
-    varying_parameters = sorted(trials.varying_parameters.keys())
+    varying_parameters = sorted(
+        p for p in trials.varying_parameters.keys() if p not in ignore
+    )
 
     results = pd.DataFrame(
         (
@@ -825,8 +883,6 @@ def plot_partial_dependence(
 
     Xt = space.transform(*(results[p] for p in varying_parameters))
 
-    print(Xt)
-
     if model is None:
         n_neighbors = min(5, len(Xt))
         model = KNeighborsRegressor(weights="distance", n_neighbors=n_neighbors)
@@ -845,6 +901,7 @@ def plot_partial_dependence(
             samples,
             cmap,
             idx_opt,
+            jitter,
         )
     else:
         _plot_partial_dependence_1d(
@@ -858,5 +915,6 @@ def plot_partial_dependence(
             samples,
             cmap,
             idx_opt,
+            jitter,
         )
 
