@@ -66,21 +66,13 @@ class Normalize(Transformer):
     def transform(self, X):
         X: np.ndarray = np.asarray(X)
 
-        if self.is_int:
-            if np.any(np.round(X) > self.high):
-                raise ValueError(f"All values should be less than {self.high}")
-            if np.any(np.round(X) < self.low):
-                raise ValueError(
-                    f"All integer values should be greater than {self.low}"
-                )
-        else:
-            if np.any(np.isnan(X)):
-                raise ValueError("X contains NaNs")
+        if np.any(np.isnan(X)):
+            raise ValueError("X contains NaNs")
 
-            if np.any(X > self.high + 1e-8):
-                raise ValueError(f"All values should be less than {self.high}")
-            if np.any(X < self.low - 1e-8):
-                raise ValueError(f"All values should be greater than {self.low}")
+        if np.any(X > self.high + 1e-8):
+            raise ValueError(f"All values should be less than {self.high}")
+        if np.any(X < self.low - 1e-8):
+            raise ValueError(f"All values should be greater than {self.low}")
 
         return (X - self.low) / (self.high - self.low)
 
@@ -227,13 +219,15 @@ class Numeric(Dimension):
         self.high = high
         self.name = name
         self.replace_na = replace_na
+        self.formatter = formatter
 
         if scale in ("linear", None):
             self.scale = None
-            self.formatter = formatter or None
         elif scale == "log10":
             self.scale = np.log10
             self.formatter = formatter or StrMethodFormatter("1e{x}")
+        elif callable(scale):
+            self.scale = scale
         else:
             raise ValueError(f"Unknown scale parameter: {scale!r}")
 
@@ -245,7 +239,9 @@ class Numeric(Dimension):
             pass
 
         self._transformer = Normalize(
-            self.low, self.high, is_int=isinstance(self, Integer),
+            self.low,
+            self.high,
+            is_int=isinstance(self, Integer),
         )
 
         return self._transformer
@@ -281,7 +277,7 @@ class Numeric(Dimension):
     def transform(self, X):
         """
         Transform samples form the original space to a warped space.
-        
+
         This does not include preparation.
         """
 
@@ -453,7 +449,12 @@ class Space:
 
 
 def partial_dependence(
-    space, model, i, j=None, sample_points=None, n_points=40,
+    space,
+    model,
+    i,
+    j=None,
+    sample_points=None,
+    n_points=40,
 ) -> Union[Tuple[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray, np.ndarray]]:
 
     dim_locs = np.cumsum([0] + [d.transformed_size for d in space.dimensions])
@@ -522,7 +523,10 @@ def _plot_partial_dependence_nd(
 ):
     n_parameters = len(varying_parameters)
 
-    fig = plt.figure(constrained_layout=True, figsize=(12, 12),)
+    fig = plt.figure(
+        constrained_layout=True,
+        figsize=(12, 12),
+    )
 
     ratios = [4] * (n_parameters - 1)
     gs = GridSpec(
@@ -596,8 +600,6 @@ def _plot_partial_dependence_nd(
             axes_i[i].set_yticks(list(range(len(dim_row.categories))))
             axes_i[i].set_yticklabels(dim_row.categories)
 
-        print(f"dim_row[{dim_row.name}].formatter:", dim_row.formatter)
-
         if dim_row.formatter is not None:
             axes_i[i].get_yaxis().set_major_formatter(dim_row.formatter)
 
@@ -614,7 +616,9 @@ def _plot_partial_dependence_nd(
 
         # Show optimum
         axes_i[i].axhline(
-            results_i.loc[idx_opt], c="r", ls="--",
+            results_i.loc[idx_opt],
+            c="r",
+            ls="--",
         )
 
         for j, j_dim in enumerate(reversed(range(i_dim + 1, n_parameters))):
@@ -626,8 +630,6 @@ def _plot_partial_dependence_nd(
                 results_j = dim_col.to_numeric(results_j, jitter)
                 axes_j[j].set_xticks(list(range(len(dim_col.categories))))
                 axes_j[j].set_xticklabels(dim_col.categories)
-
-            print(f"dim_col[{dim_col.name}].formatter:", dim_col.formatter)
 
             if dim_col.formatter is not None:
                 axes_j[j].get_xaxis().set_major_formatter(dim_col.formatter)
@@ -666,7 +668,9 @@ def _plot_partial_dependence_nd(
 
                 # Show optimum
                 axes_j[j].axvline(
-                    results_j.loc[idx_opt], c="r", ls="--",
+                    results_j.loc[idx_opt],
+                    c="r",
+                    ls="--",
                 )
 
             # Show partial dependence of dim_col/dim_col on objective
@@ -712,7 +716,10 @@ def _plot_partial_dependence_nd(
             # Plot optimum
             # TODO:
             axes_ij[i, j].scatter(
-                results_j.loc[idx_opt], results_i.loc[idx_opt], fc="none", ec="r",
+                results_j.loc[idx_opt],
+                results_i.loc[idx_opt],
+                fc="none",
+                ec="r",
             )
 
     # ax[-2, 0].set_xlabel(objective_dim)
@@ -723,7 +730,8 @@ def _plot_partial_dependence_nd(
 
     cax = fig.add_subplot(gs[:-1, -1])
     fig.colorbar(
-        matplotlib.cm.ScalarMappable(norm=color_norm, cmap=cmap), cax=cax,
+        matplotlib.cm.ScalarMappable(norm=color_norm, cmap=cmap),
+        cax=cax,
     )
 
 
@@ -740,7 +748,10 @@ def _plot_partial_dependence_1d(
     idx_opt,
     jitter,
 ):
-    fig = plt.figure(constrained_layout=True, figsize=(12, 12),)
+    fig = plt.figure(
+        constrained_layout=True,
+        figsize=(12, 12),
+    )
     ax = fig.add_subplot(111)
 
     fig.suptitle(objective_dim.name)
@@ -782,7 +793,9 @@ def _plot_partial_dependence_1d(
 
     # Show optimum
     ax.axvline(
-        results.loc[idx_opt, parameter], c="r", ls="--",
+        results.loc[idx_opt, parameter],
+        c="r",
+        ls="--",
     )
 
 
@@ -810,7 +823,7 @@ def plot_partial_dependence(
     ignore = set(ignore)
 
     if cmap is None:
-        cmap = "viridis" if maximize else "viridis"
+        cmap = "viridis" if maximize else "viridis_r"
 
     runtime_divisor = _RUNTIME_DIVISORS[runtime_unit]
 
@@ -917,4 +930,3 @@ def plot_partial_dependence(
             idx_opt,
             jitter,
         )
-
