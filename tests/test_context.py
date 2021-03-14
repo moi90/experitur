@@ -1,6 +1,11 @@
 import pytest
 
-from experitur.core.context import Context, DependencyError, get_current_context
+from experitur.core.context import (
+    Context,
+    ContextError,
+    DependencyError,
+    get_current_context,
+)
 from experitur.core.experiment import Experiment
 from experitur.parameters import Grid
 
@@ -15,21 +20,21 @@ def test_Context_enter():
 
 
 def test__order_experiments_fail(tmp_path):
-    with Context(str(tmp_path)) as ctx:
+    with Context(str(tmp_path), writable=True) as ctx:
         # Create a dependency circle
         a = Experiment("a")
-        b = Experiment("b", parent=a)
-        a.parent = b
+        b = Experiment("b", depends_on=a)
+        a.add_dependency(b)
 
         with pytest.raises(DependencyError):
             ctx.run()
 
 
 def test_dependencies(tmp_path):
-    with Context(str(tmp_path)) as ctx:
+    with Context(str(tmp_path), writable=True) as ctx:
 
         @Experiment("a")
-        def a(trial):
+        def a(_):
             pass
 
         b = Experiment("b", parent=a)
@@ -38,10 +43,10 @@ def test_dependencies(tmp_path):
 
 
 def test_get_experiment(tmp_path):
-    with Context(str(tmp_path)) as ctx:
+    with Context(str(tmp_path), writable=True) as ctx:
 
         @Experiment("a")
-        def a(trial):
+        def a(_):  # pylint: disable=unused-variable
             pass
 
     ctx.get_experiment("a")
@@ -52,7 +57,9 @@ def test_get_experiment(tmp_path):
 
 def test_merge_config(tmp_path):
     config = {
-        k: not v for k, v in Context._default_config.items() if isinstance(v, bool)
+        k: not v
+        for k, v in Context._default_config.items()  # pylint: disable=protected-access
+        if isinstance(v, bool)
     }
 
     config["a"] = 1
@@ -64,11 +71,11 @@ def test_merge_config(tmp_path):
 
 
 def test_collect(tmp_path):
-    with Context(str(tmp_path)) as ctx:
+    with Context(str(tmp_path), writable=True) as ctx:
 
         @Grid({"a": [1, 2, 3], "b": [1, 2, 3]})
         @Experiment()
-        def experiment(parameters):
+        def experiment(parameters):  # pylint: disable=unused-variable
             return dict(parameters)
 
     ctx.run()
@@ -91,6 +98,9 @@ def test_collect(tmp_path):
         "experiment.meta",
         "experiment.parent",
         "experiment.independent_parameters",
+        "experiment.varying_parameters",
+        "experiment.minimize",
+        "experiment.maximize",
         "resolved_parameters.b",
         "result.a",
         "parameters.b",
@@ -102,3 +112,28 @@ def test_collect(tmp_path):
         "success",
         "error",
     }
+
+
+def test_readonly(tmp_path):
+    with Context(str(tmp_path), writable=False) as ctx:
+
+        @Experiment()
+        def experiment(parameters):  # pylint: disable=unused-variable
+            return dict(parameters)
+
+    with pytest.raises(ContextError):
+        ctx.run()
+
+
+def test_stop(tmp_path):
+    with Context(str(tmp_path), writable=True) as ctx:
+
+        @Grid({"a": [1, 2, 3]})
+        @Experiment()
+        def experiment(trial):  # pylint: disable=unused-variable
+            ctx.stop()
+            return dict(trial)
+
+        ctx.run()
+
+        assert len(ctx.trials.match(experiment=experiment)) == 1

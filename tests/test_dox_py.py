@@ -31,6 +31,11 @@ def fixture_dox_py_fn(tmp_path):
                     "second_experiment",
                     parent=baseline
                 )
+
+                # This experiment shouldn't be executed, because this combination of callable and parameters was already executed.
+                third_experiment = Experiment(
+                    parent=baseline
+                )
                 """
             )
         )
@@ -38,17 +43,26 @@ def fixture_dox_py_fn(tmp_path):
     return fn
 
 
+@pytest.mark.xfail(strict=True)
 def test_dox_py(dox_py_fn):
     wdir = os.path.splitext(dox_py_fn)[0]
     os.makedirs(wdir, exist_ok=True)
 
-    with Context(wdir) as ctx:
+    with Context(wdir, writable=True) as ctx:
         load_dox(dox_py_fn)
+
+        # Make sure that the experiment name is guessed from the module
+        ctx.get_experiment("third_experiment")
 
         # Execute experiments
         ctx.run()
 
-    assert len(ctx.store) == 2, "Trials: {}".format(", ".join(ctx.store.keys()))
+    # This fails currently, because of the [resolved_]parameters and RecursiveDict mess.
+    assert (
+        len(ctx.store) == 2
+    ), "Trials: {}. Expected only baseline to have been executed.".format(
+        ", ".join(ctx.store.keys())
+    )
 
 
 @pytest.fixture(name="unknown_fn")

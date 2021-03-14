@@ -1,14 +1,22 @@
 import logging
 from collections import OrderedDict
-from typing import Any, Dict, List, Mapping, Union
+from typing import Any, Mapping
 
-from experitur.core.parameters import ParameterGenerator, ParameterGeneratorIter
-from experitur.core.trial import TrialData
+from experitur.core.parameters import (
+    ParameterGenerator,
+    ParameterGeneratorIter,
+    DynamicValues,
+)
+from experitur.core.trial import Trial
 from experitur.helpers.merge_dicts import merge_dicts
+from experitur.util import format_parameters
 
 try:
     import skopt
-    from skopt.utils import dimensions_aslist, point_asdict, point_aslist
+    from skopt.utils import (
+        dimensions_aslist,
+        point_aslist,
+    )
     import skopt.space
 
     _SKOPT_AVAILABLE = True
@@ -16,33 +24,60 @@ except ImportError:  # pragma: no cover
     _SKOPT_AVAILABLE = False
 
 
+def convert_objective(value, maximize):
+    if maximize:
+        return -value
+    return value
+
+
 def convert_trial(
-    trial_data: TrialData, search_space: Mapping, objective, include_duration=False
+    trial: Trial,
+    search_space: Mapping,
+    objective: str,
+    include_duration=False,
+    maximize=False,
 ):
     """Convert a trial to a tuple (parameters, (result, time)) or None."""
-    result = trial_data.data.get("result", {}).get(objective, None)
-    parameters = trial_data.data.get("parameters", None)
-    time_start = trial_data.data.get("time_start", None)
-    time_end = trial_data.data.get("time_end", None)
+
+    result = getattr(trial, "result", {}).get(objective, None)
+    parameters = getattr(trial, "resolved_parameters", None)
+    time_start = getattr(trial, "time_start", None)
+    time_end = getattr(trial, "time_end", None)
 
     if None in (result, parameters, time_start, time_end):
         return None
 
+    result = convert_objective(result, maximize)
+
     if include_duration:
         result = (result, (time_end - time_start).total_seconds())
 
-    return (
-        point_aslist(
-            search_space, {k: v for k, v in parameters.items() if k in search_space},
-        ),
-        result,
+    point = point_aslist(
+        search_space, {k: v for k, v in parameters.items() if k in search_space},
     )
+
+    return (point, result)
+
+
+def _filter_results(optimizer: skopt.Optimizer, results):
+    return [r for r in results if r is not None and r[0] in optimizer.space]
 
 
 class _SKOptIter(ParameterGeneratorIter):
     def __iter__(self):
         if not _SKOPT_AVAILABLE:
             raise RuntimeError("scikit-optimize is not available.")  # pragma: no cover
+
+        objective = self.parameter_generator.objective
+
+        if objective in self.experiment.maximize:
+            maximize = True
+        elif objective in self.experiment.minimize:
+            maximize = False
+        else:
+            raise ValueError(
+                f"Could not determine if {objective} should be minimized or maximized. Specify minimize or maximize in Experiment."
+            )
 
         # Parameter names that are relevant in this context
         parameter_names = set(
@@ -53,7 +88,7 @@ class _SKOptIter(ParameterGeneratorIter):
 
         for parent_configuration in self.parent:
             # Retrieve all trials that match parent_configuration
-            existing_trials = self.experiment.ctx.store.match(
+            existing_trials = self.experiment.ctx.get_trials(
                 func=self.experiment.func,
                 parameters=parent_configuration.get("parameters", {}),
             )
@@ -63,7 +98,7 @@ class _SKOptIter(ParameterGeneratorIter):
                 tuple(
                     sorted(
                         (k, v)
-                        for k, v in trial.data["parameters"].items()
+                        for k, v in trial.parameters.items()
                         if k in parameter_names
                     )
                 )
@@ -81,27 +116,29 @@ class _SKOptIter(ParameterGeneratorIter):
             for _ in range(n_iter):
                 optimizer = skopt.Optimizer(
                     dimensions_aslist(self.parameter_generator.search_space),
+                    n_initial_points=self.parameter_generator.n_initial_points,
                     **self.parameter_generator.kwargs,
                 )
 
                 # Train model
-                existing_trials = self.experiment.ctx.store.match(
+                existing_trials = self.experiment.ctx.get_trials(
                     func=self.experiment.func,
                     parameters=parent_configuration.get("parameters", {}),
                 )
 
-                # TODO: Record timing for time based `acq_func`s
-                # TODO: Provide test
-                results = [
-                    convert_trial(
-                        trial,
-                        self.parameter_generator.search_space,
-                        self.parameter_generator.objective,
-                        "ps" in optimizer.acq_func,
-                    )
-                    for trial in existing_trials
-                    if trial.data.get("result", None)
-                ]
+                results = _filter_results(
+                    optimizer,
+                    (
+                        convert_trial(
+                            trial,
+                            self.parameter_generator.search_space,
+                            self.parameter_generator.objective,
+                            "ps" in optimizer.acq_func,
+                            maximize,
+                        )
+                        for trial in existing_trials
+                    ),
+                )
 
                 self.parameter_generator.logger.info(
                     f"Training on {len(results):d} previous trials."
@@ -109,7 +146,7 @@ class _SKOptIter(ParameterGeneratorIter):
 
                 if results:
                     X, Y = zip(*results)
-                    print(f"Current minimum: {min(Y)}")
+                    print(f"Current optimum: {convert_objective(min(Y), maximize)}")
 
                     optimizer.tell(X, Y)
 
@@ -124,7 +161,9 @@ class _SKOptIter(ParameterGeneratorIter):
                     self.parameter_generator.search_space, optimizer.ask()
                 )
 
-                self.parameter_generator.logger.info(f"Suggestion: {parameters}")
+                self.parameter_generator.logger.info(
+                    f"Suggestion: {format_parameters(parameters)}"
+                )
 
                 yield merge_dicts(parent_configuration, parameters=parameters)
 
@@ -152,8 +191,9 @@ class SKOpt(ParameterGenerator):
             - a `(lower_bound, upper_bound, prior)` tuple (for :py:class:`~skopt.space.space.Real` dimensions),
             - as a list of categories (for :py:class:`~skopt.space.space.Categorical` dimensions), or
             - an instance of a :py:class:`~skopt.space.space.Dimension` object (:py:class:`~skopt.space.space.Real`, :py:class:`~skopt.space.space.Integer` or :py:class:`~skopt.space.space.Categorical`).
-        objective (str): Name of the result that will be optimized.
+        objective (str): Name of the result that will be minimized. If starts with "-", the following name will be maximized instead.
         n_iter (int): Number of evaluations to find the optimum.
+        n_initial_points (int): Number of points sampled at random before actual optimization.
         **kwargs: Additional arguments for :py:class:`skopt.Optimizer`.
 
 
@@ -182,18 +222,24 @@ class SKOpt(ParameterGenerator):
     _str_attr = ["search_space", "objective", "n_iter"]
 
     def __init__(
-        self, search_space: Mapping[str, Any], objective: str, n_iter: int, **kwargs
+        self,
+        search_space: Mapping[str, Any],
+        objective: str,
+        n_iter: int,
+        n_initial_points: int = 10,
+        **kwargs,
     ):
         self.search_space = search_space = {
             k: skopt.space.check_dimension(v) for k, v in search_space.items()
         }
         self.n_iter = n_iter
+        self.n_initial_points = n_initial_points
         self.objective = objective
         self.kwargs = kwargs
 
         self.logger = logging.getLogger(__name__)
 
     @property
-    def varying_parameters(self) -> Mapping:
+    def independent_parameters(self) -> Mapping:
         """Parameters in this sampler. Does not include parameters that do not vary."""
-        return self.search_space
+        return {k: DynamicValues() for k in self.search_space.keys()}

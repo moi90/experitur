@@ -32,10 +32,8 @@ def test_Const(tmp_path):
             (("a", 1), ("b", 2), ("c", 3)),
         }
 
-        # Assert correct behavior of "parameters"
-        assert sampler.varying_parameters == {}
-
-        assert sampler.invariant_parameters == {"a": 1, "b": 2, "c": 3}
+        # Assert correct behavior of "independent_parameters"
+        assert sampler.independent_parameters == {"a": [1], "b": [2], "c": [3]}
 
 
 @pytest.mark.parametrize("shuffle", [True, False])
@@ -63,10 +61,8 @@ def test_Grid(tmp_path, shuffle):
             (("a", 1), ("b", 3), ("c", 0)),
         }
 
-        # Assert correct behavior of "parameters"
-        assert sampler.varying_parameters == {"a": [1, 2], "b": [3, 4]}
-
-        assert sampler.invariant_parameters == {"c": [0]}
+        # Assert correct behavior of "independent_parameters"
+        assert sampler.independent_parameters == {"a": [1, 2], "b": [3, 4], "c": [0]}
 
 
 def test_Multi(tmp_path):
@@ -102,4 +98,49 @@ def test_Multi(tmp_path):
         ]
 
         # Assert correct behavior of "parameters"
-        assert sampler.varying_parameters == {"a": [4, 5], "b": [3, 4]}
+        assert sampler.independent_parameters == {"a": [4, 5], "b": [3, 4], "c": [0]}
+
+
+def test_Sequential(tmp_path):
+    with Context(str(tmp_path)):
+        generator = Grid({"a": [1, 2], "b": [3, 4], "c": [10, 11]}) + Grid(
+            {"a": [4, 5], "c": [0]}
+        )
+
+        # Test __str__
+        str(generator)
+
+        @Experiment(parameters=generator)
+        def exp(trial):
+            pass
+
+        sample_iter = generator.generate(exp)
+        samples = sorted(
+            tuple(sorted(configuration["parameters"].items()))
+            for configuration in sample_iter
+        )
+
+        assert len(samples) == 10
+
+        # Assert exististence of all grid cells
+        assert samples == [
+            # First Grid
+            (("a", 1), ("b", 3), ("c", 10)),
+            (("a", 1), ("b", 3), ("c", 11)),
+            (("a", 1), ("b", 4), ("c", 10)),
+            (("a", 1), ("b", 4), ("c", 11)),
+            (("a", 2), ("b", 3), ("c", 10)),
+            (("a", 2), ("b", 3), ("c", 11)),
+            (("a", 2), ("b", 4), ("c", 10)),
+            (("a", 2), ("b", 4), ("c", 11)),
+            # Second Grid
+            (("a", 4), ("c", 0)),
+            (("a", 5), ("c", 0)),
+        ]
+
+        # Assert correct behavior of "independent_parameters"
+        assert generator.independent_parameters == {
+            "a": [1, 2, 4, 5],
+            "b": [3, 4],
+            "c": [10, 11, 0],
+        }

@@ -1,41 +1,41 @@
-import collections
 import copy
+import datetime
 import functools
+import inspect
 import os
-import pprint
-import random
-import sys
+import socket
 import textwrap
 import traceback
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Dict,
-    Iterable,
-    List,
-    Mapping,
-    Optional,
-    Union,
-)
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, Union
 
 import click
 import tqdm
 
+import experitur
 from experitur.core.context import get_current_context
 from experitur.core.parameters import (
-    Grid,
     Multi,
     ParameterGenerator,
     check_parameter_generators,
+    count_values,
 )
+from experitur.core.trial import Trial
 from experitur.errors import ExperiturError
 from experitur.helpers import tqdm_redirect
 from experitur.helpers.merge_dicts import merge_dicts
 from experitur.recursive_formatter import RecursiveDict
+from experitur.util import callable_to_name, ensure_dict, ensure_list
 
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.context import Context
+    from experitur.core.trial import TrialCollection
+
+
+def try_str(obj):
+    try:
+        return str(obj)
+    except:  # pylint: disable=bare-except # noqa: E722
+        return "<error>"
 
 
 class ExperimentError(ExperiturError):
@@ -58,7 +58,7 @@ def format_trial_parameters(func=None, parameters=None, experiment=None):
     if func is not None:
         try:
             func = func.__name__
-        except Exception:
+        except AttributeError:
             func = str(func)
     else:
         func = "_"
@@ -78,6 +78,43 @@ def format_trial_parameters(func=None, parameters=None, experiment=None):
     return func + parameters
 
 
+class _SkipCache:
+    def __init__(self, experiment: "Experiment"):
+        self.experiment = experiment
+
+        self._trial_collection: Optional[TrialCollection] = None
+
+    def __contains__(self, parameters):
+        if self._trial_collection is not None:
+            existing = self._trial_collection.match(resolved_parameters=parameters)
+            if existing:
+                return True
+
+        # If configuration was not yet found, update cache...
+        self._trial_collection = self.experiment.ctx.get_trials(
+            func=self.experiment.func
+        )
+
+        # ... and retry
+        existing = self._trial_collection.match(resolved_parameters=parameters)
+        if existing:
+            return True
+
+        return False
+
+
+class _TempParameterGeneratorContext:
+    def __init__(self, experiment: "Experiment", parameter_generator):
+        self.experiment = experiment
+        self.parameter_generator = parameter_generator
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, *_, **__):
+        self.experiment.remove_parameter_generator(self.parameter_generator)
+
+
 class Experiment:
     """
     Define an experiment.
@@ -90,6 +127,8 @@ class Experiment:
         active (:py:class:`bool`, optional): Is the experiment active? (Default: True).
             When False, the experiment will not be executed.
         volatile (:py:class:`bool`, optional): If True, the results of a successful run will not be saved (Default: False).
+        minimize (str or list of str, optional): Metric or list of metrics to minimize.
+        maximize (str or list of str, optional): Metric or list of metrics to maximize.
 
     This can be used as a constructor or a decorator:
 
@@ -121,6 +160,9 @@ class Experiment:
         meta: Optional[Mapping] = None,
         active: bool = True,
         volatile: bool = False,
+        minimize: Union[str, List[str], None] = None,
+        maximize: Union[str, List[str], None] = None,
+        depends_on: Optional[List["Experiment"]] = None,
     ):
         if not (isinstance(name, str) or name is None):
             raise ValueError(f"'name' has to be a string or None, got {name!r}")
@@ -128,9 +170,24 @@ class Experiment:
         self.ctx = get_current_context()
         self.name = name
         self.parent = parent
-        self.meta = meta
+        self.meta = merge_dicts(
+            {
+                "hostname": socket.gethostname(),
+                "pid": os.getpid(),
+                "experitur_version": experitur.__version__,
+            },
+            meta,
+        )
         self.active = active
         self.volatile = volatile
+
+        self.minimize, self.maximize = self._validate_minimize_maximize(
+            minimize, maximize
+        )
+
+        self.depends_on: List["Experiment"] = [depends_on] if isinstance(
+            depends_on, Experiment
+        ) else [] if depends_on is None else depends_on
 
         self._own_parameter_generators: List[ParameterGenerator]
         self._own_parameter_generators = check_parameter_generators(parameters)
@@ -151,7 +208,24 @@ class Experiment:
             [] if self.parent is None else self.parent._parameter_generators
         )
 
+        self._on_success = []
+
         self.ctx._register_experiment(self)
+
+    @staticmethod
+    def _validate_minimize_maximize(minimize, maximize):
+        minimize, maximize = ensure_list(minimize), ensure_list(maximize)
+
+        common = set(minimize) & set(maximize)
+
+        if common:
+            common = ", ".join(sorted(common))
+            raise ValueError(f"minimize and maximize share common metrics: {common}")
+
+        return minimize, maximize
+
+    def add_dependency(self, dependency: "Experiment"):
+        self.depends_on.append(dependency)
 
     def __call__(self, func: Callable) -> "Experiment":
         """
@@ -171,6 +245,23 @@ class Experiment:
 
         return self
 
+    def on_success(self, func: Callable[[Trial], Any]):
+        """
+        Register a callback that is called after a trial finished successfully.
+
+        Example:
+            experiment = Experiment(...)
+            @experiment.on_success
+            def on_experiment_success(trial: Trial):
+                ...
+        """
+
+        self._on_success.append(func)
+
+    def _handle_success(self, trial: Trial):
+        for handler in self._on_success:
+            handler(trial)
+
     @property
     def _parameter_generators(self) -> List[ParameterGenerator]:
         return self._base_parameter_generators + self._own_parameter_generators
@@ -178,10 +269,20 @@ class Experiment:
     def add_parameter_generator(
         self, parameter_generator: ParameterGenerator, prepend=False
     ):
+        """
+        Add a ParameterGenerator to the Experiment.
+
+        When used as a context manager, the ParameterGenerator is removed when the context is exited.
+        """
         if prepend:
             self._own_parameter_generators.insert(0, parameter_generator)
         else:
             self._own_parameter_generators.append(parameter_generator)
+
+        return _TempParameterGeneratorContext(self, parameter_generator)
+
+    def remove_parameter_generator(self, parameter_generator: ParameterGenerator):
+        self._own_parameter_generators.remove(parameter_generator)
 
     @property
     def parameter_generator(self) -> ParameterGenerator:
@@ -190,18 +291,25 @@ class Experiment:
     @property
     def independent_parameters(self) -> List[str]:
         """Independent parameters. (Parameters that were actually configured.)"""
-
-        return sorted(self.varying_parameters + self.invariant_parameters)
+        return sorted(self.parameter_generator.independent_parameters.keys())
 
     @property
     def varying_parameters(self) -> List[str]:
         """Varying parameters of this experiment."""
-        return sorted(self.parameter_generator.varying_parameters.keys())
+        return sorted(
+            k
+            for k, v in self.parameter_generator.independent_parameters.items()
+            if count_values(v) != 1
+        )
 
     @property
     def invariant_parameters(self) -> List[str]:
         """Varying parameters of this experiment."""
-        return sorted(self.parameter_generator.invariant_parameters.keys())
+        return sorted(
+            k
+            for k, v in self.parameter_generator.independent_parameters.items()
+            if count_values(v) == 1
+        )
 
     def __str__(self):
         if self.name is not None:
@@ -230,40 +338,52 @@ class Experiment:
 
         print("Experiment", self)
 
-        parameter_generator = self.parameter_generator
-
-        print("Independent parameters:")
-        for k, v in parameter_generator.varying_parameters.items():
+        print("Varying parameters:")
+        for k, v in sorted(self.parameter_generator.independent_parameters.items()):
+            if count_values(v) == 1:
+                continue
             print("{}: {}".format(k, v))
+        print()
 
         # Generate trial configurations
-        trial_configurations = parameter_generator.generate(self)
+        trial_configurations = self.parameter_generator.generate(self)
+
+        skip_cache = _SkipCache(self)
 
         pbar = tqdm.tqdm(trial_configurations, unit="")
         for trial_configuration in pbar:
+            # Inject experiment data into trial_configuration
+            trial_configuration = self._setup_trial_configuration(trial_configuration)
+
             # Run the pre-trial hook to allow the user to interact
             # with the parameters before the trial is created and run.
             if self._pre_trial is not None:
                 self._pre_trial(self.ctx, trial_configuration)
 
-            if self.ctx.config["skip_existing"]:
-                # Check, if a trial with this parameter set already exists
-                existing = self.ctx.store.match(
-                    func=self.func,
-                    parameters=trial_configuration.get("parameters", {}),
-                )
-                if len(existing):
-                    pbar.write(
-                        "Skip existing configuration: {}".format(
-                            format_trial_parameters(
-                                func=self.func, parameters=trial_configuration
-                            )
-                        )
-                    )
-                    pbar.set_description("[Skipped]")
-                    continue
+            parameters = trial_configuration.get("parameters", {})
 
-            trial = self.ctx.store.create(trial_configuration, self)
+            if self.ctx.config["skip_existing"] and parameters in skip_cache:
+                pbar.write(
+                    "Skip existing configuration: {}".format(
+                        format_trial_parameters(func=self.func, parameters=parameters)
+                    )
+                )
+                pbar.write("")
+                pbar.set_description("[Skipped]")
+                continue
+
+            trial_configuration = merge_dicts(
+                trial_configuration,
+                resolved_parameters=RecursiveDict(
+                    trial_configuration["parameters"], allow_missing=True
+                ).as_dict(),
+            )
+
+            trial = self.ctx.trials.create(trial_configuration)
+            os.makedirs(trial.wdir, exist_ok=True)
+            trial._record_used_parameters = (
+                True  # pylint: disable=record_used_parameters
+            )
 
             pbar.write("Trial {}".format(trial.id))
             pbar.set_description("Running trial {}...".format(trial.id))
@@ -271,10 +391,11 @@ class Experiment:
             # Run the trial
             try:
                 with tqdm_redirect.redirect_stdout():
-                    trial.run()
-            except Exception:
+                    result = self.run_trial(trial)
+                result = self._validate_trial_result(result)
+            except Exception:  # pylint: disable=broad-except
                 msg = textwrap.indent(traceback.format_exc(-1), "    ")
-                pbar.write("{} failed!".format(trial.data["id"]))
+                pbar.write("{} failed!".format(trial.id))
                 pbar.write(msg)
                 if not self.ctx.config["catch_exceptions"]:
                     raise
@@ -283,6 +404,91 @@ class Experiment:
                     trial.remove()
 
             pbar.set_description("Running trial {}... Done.".format(trial.id))
+
+            if self.ctx.should_stop():
+                return
+
+    def run_trial(self, trial: Trial):
+        """Run the current trial and save the results."""
+
+        # Record intital state
+        trial.success = False
+        trial.time_start = datetime.datetime.now()
+        trial.result = None
+        trial.error = None
+
+        trial.save()
+
+        try:
+            with self.ctx.set_current_trial(trial):
+                result = self.func(trial)
+        except (Exception, KeyboardInterrupt) as exc:
+            # TODO: Store.log_error()
+            # Log complete exc to file
+            error_fn = os.path.join(trial.wdir, "error.txt")
+            with open(error_fn, "w") as f:
+                f.write(str(exc))
+                f.write(traceback.format_exc())
+                f.write("\n")
+                for k, v in inspect.trace()[-1][0].f_locals.items():
+                    f.write(f"{k}: {try_str(v)}\n")
+
+            trial.error = ": ".join(filter(None, (exc.__class__.__name__, str(exc))))
+
+            print("\n", flush=True)
+            print(
+                f"Error running {trial.id}.\n"
+                f"See {error_fn} for the complete traceback.",
+                flush=True,
+            )
+
+            raise exc
+
+        else:
+            trial.result = result
+            trial.success = True
+        finally:
+            trial.time_end = datetime.datetime.now()
+            trial.save()
+
+        self._handle_success(trial)
+
+        return trial.result
+
+    def _setup_trial_configuration(self, trial_configuration):
+        trial_configuration.setdefault("parameters", {})
+        return merge_dicts(
+            trial_configuration,
+            experiment={
+                "name": self.name,
+                "parent": self.parent.name if self.parent is not None else None,
+                "func": callable_to_name(self.func),
+                "meta": self.meta,
+                # Parameters that where actually configured.
+                "independent_parameters": self.independent_parameters,
+                "varying_parameters": self.varying_parameters,
+                "minimize": self.minimize,
+                "maximize": self.maximize,
+            },
+        )
+
+    def _validate_trial_result(self, trial_result: Optional[dict]):
+        if trial_result is None:
+            trial_result = {}
+
+        if not isinstance(trial_result, dict):
+            raise ExperimentError(
+                f"Experiments are expected to return a dict, got {trial_result!r}"
+            )
+        missing_metrics = (
+            set(self.maximize) | set(self.maximize)
+        ) - trial_result.keys()
+
+        if missing_metrics:
+            missing_metrics = ", ".join(sorted(missing_metrics))
+            raise ExperimentError(f"Missing metrics in result: {missing_metrics}")
+
+        return trial_result
 
     def _merge(self, other):
         """
@@ -372,10 +578,8 @@ class Experiment:
             except KeyError as exc:
                 raise TrialNotFoundError(target_name) from exc
 
-            from experitur.core.trial import Trial
-
-            # Inject the TrialProxy
-            cmd_wrapped = functools.partial(cmd, Trial(trial))
+            # Inject the Trial
+            cmd_wrapped = functools.partial(cmd, Trial(trial, self.ctx.store))
             # Copy over __click_params__ if they exist
             try:
                 cmd_wrapped.__click_params__ = cmd.__click_params__
@@ -398,3 +602,7 @@ class Experiment:
         else:
             msg = "target={} is not implemented.".format(target)
             raise NotImplementedError(msg)
+
+    @property
+    def trials(self):
+        return self.ctx.get_trials(experiment=self)

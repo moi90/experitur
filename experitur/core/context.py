@@ -1,12 +1,15 @@
 import collections
+import contextlib
+import os.path
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Union
+from typing import TYPE_CHECKING, List, Mapping, Optional, Union
 
+from experitur.core.root_trial_collection import RootTrialCollection
+from experitur.core.trial import Trial, TrialCollection
 from experitur.errors import ExperiturError
 
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.experiment import Experiment
-    from experitur.core.trial import TrialCollection
 
 
 class ContextError(ExperiturError):
@@ -17,10 +20,10 @@ class DependencyError(ContextError):
     pass
 
 
-def _format_dependencies(experiments):
+def _format_dependencies(experiments: List["Experiment"]):
     msg = []
     for exp in experiments:
-        msg.append("{} -> {}".format(exp, exp.parent))
+        msg.append("{} -> {}".format(exp, ", ".join(str(d) for d in exp.depends_on)))
     return "\n".join(msg)
 
 
@@ -31,20 +34,23 @@ def _order_experiments(experiments) -> List["Experiment"]:
     stack = collections.deque(experiments)
 
     while stack:
-        exp = stack.pop()
+        exp: "Experiment" = stack.pop()
 
-        parent = exp.parent
-        if parent is not None:
-            if parent not in experiments:
-                experiments.add(parent)
-                stack.append(parent)
+        for dependency in exp.depends_on:
+            if dependency not in experiments:
+                experiments.add(dependency)
+                stack.append(dependency)
 
     done = set()
     experiments_ordered = []
 
     while experiments:
         # Get all without dependencies
-        ready = {exp for exp in experiments if exp.parent is None or exp.parent in done}
+        ready = {
+            exp
+            for exp in experiments
+            if not exp.depends_on or all(d in done for d in exp.depends_on)
+        }
 
         if not ready:
             raise DependencyError(
@@ -61,13 +67,24 @@ def _order_experiments(experiments) -> List["Experiment"]:
 
 
 class Context:
+    """
+    experitur context.
+
+    Args:
+        wdir (str): Working directory.
+        config (dict, optional): Configuration dict.
+        writable (bool, default False): Set this context writable.
+    """
+
     # Default configuration values
     _default_config = {
         "skip_existing": True,
         "catch_exceptions": False,
     }
 
-    def __init__(self, wdir=None, config=None):
+    def __init__(
+        self, wdir: str = None, config: Optional[Mapping] = None, writable: bool = False
+    ):
         self.registered_experiments = []
 
         if wdir is None:
@@ -76,15 +93,20 @@ class Context:
             self.wdir = wdir
 
         # Import here to break dependency cycle
-        from experitur.core.trial import FileTrialStore
+        from experitur.core.trial_store import FileTrialStore
 
         self.store = FileTrialStore(self)
+        self.trials = RootTrialCollection(self)
 
         # Configuration
         if config is None:
             self.config = self._default_config.copy()
         else:
             self.config = dict(self._default_config, **config)
+
+        self.writable = writable
+
+        self._current_trial = None
 
     def _register_experiment(self, experiment):
         self.registered_experiments.append(experiment)
@@ -93,6 +115,9 @@ class Context:
         """
         Run the specified experiments or all.
         """
+
+        if not self.writable:
+            raise ContextError("No experiments can be run in a read-only context.")
 
         if experiments is None:
             experiments = self.registered_experiments
@@ -103,8 +128,18 @@ class Context:
         print(
             "Running experiments:", ", ".join(exp.name for exp in ordered_experiments)
         )
-        for exp in ordered_experiments:
-            exp.run()
+
+        try:
+            for exp in ordered_experiments:
+                exp.run()
+        finally:
+            # If no more trials are running (also in other processes) clear the stop signal
+            running_trials = self.trials.filter(
+                lambda trial: not trial.is_failed and not trial.is_successful
+            )
+            if not running_trials:
+                # Clear stop
+                self.stop(False)
 
     def collect(self, results_fn: Union[str, Path], failed=False):
         """
@@ -118,25 +153,7 @@ class Context:
         if isinstance(results_fn, Path):
             results_fn = str(results_fn)
 
-        try:
-            import pandas as pd
-        except ImportError:  # pragma: no cover
-            raise RuntimeError("pandas is not available.")
-
-        try:
-            from pandas import json_normalize
-        except ImportError:
-            from pandas.io.json import json_normalize
-
-        data = []
-        for trial_id, trial in self.store.items():
-            if not failed and not trial.data.get("success", False):
-                # Skip failed trials if failed=False
-                continue
-
-            data.append(trial.data)
-
-        data = json_normalize(data, max_level=1).set_index("id")
+        data = self.trials.to_pandas()
 
         data.to_csv(results_fn)
 
@@ -159,8 +176,12 @@ class Context:
             print(self.registered_experiments)
             raise KeyError(name) from None
 
-    def get_trials(self, parameters=None, experiment=None) -> "TrialCollection":
-        return self.store.match(resolved_parameters=parameters, experiment=experiment)
+    def get_trials(
+        self, func=None, parameters=None, experiment=None
+    ) -> TrialCollection:
+        return self.trials.match(
+            func=func, resolved_parameters=parameters, experiment=experiment
+        )
 
     def do(self, target, cmd, cmd_args):
         experiment_name = target.split("/")[0]
@@ -180,6 +201,43 @@ class Context:
         item = _context_stack.pop()
 
         assert item is self
+
+    def get_trial_wdir(self, trial_id):
+        return os.path.normpath(os.path.join(self.wdir, os.path.normpath(trial_id)))
+
+    def get_trial(self, trial_id) -> Trial:
+        return Trial(self.store[trial_id], self.store)
+
+    @property
+    def current_trial(self):
+        return self._current_trial
+
+    @contextlib.contextmanager
+    def set_current_trial(self, trial: Trial):
+        try:
+            self._current_trial = trial
+            yield
+        finally:
+            self._current_trial = None
+
+    def stop(self, stop=True):
+        """Save/clear stop signal."""
+
+        flag_fn = os.path.join(self.wdir, "stop")
+
+        if stop:
+            with open(flag_fn, "w"):
+                pass
+        else:
+            try:
+                os.unlink(flag_fn)
+            except Exception:  # pylint: disable=broad-except
+                pass
+
+    def should_stop(self):
+        flag_fn = os.path.join(self.wdir, "stop")
+
+        return os.path.isfile(flag_fn)
 
 
 _context_stack: List[Context] = []
