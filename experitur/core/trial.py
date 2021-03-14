@@ -5,29 +5,27 @@ import glob
 import inspect
 import itertools
 import os.path
+import pickle
 import shutil
 import traceback
-import warnings
-from abc import abstractmethod
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict, defaultdict, namedtuple
 from collections.abc import Collection
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Dict,
     Iterable,
     List,
     Mapping,
     Tuple,
     TypeVar,
     Union,
-    overload,
 )
 
+import atomicwrites
 import yaml
 
-from experitur.core.logger import LoggerBase, YAMLLogger
+from experitur.core.logger import YAMLLogger
 from experitur.helpers.dumper import ExperiturDumper
 from experitur.helpers.merge_dicts import merge_dicts
 from experitur.recursive_formatter import RecursiveDict
@@ -95,6 +93,12 @@ class CallException(Exception):
 
     def __str__(self):
         return f"Error calling {self.func} (args={self.args}, kwargs={self.kwargs}) with {self.trial}"
+
+
+Snapshot = namedtuple(
+    "Snapshot",
+    ["name", "resume_fn", "args", "kwargs"],
+)
 
 
 class Trial(collections.abc.MutableMapping):
@@ -379,7 +383,10 @@ class Trial(collections.abc.MutableMapping):
         return self
 
     def choice(
-        self, parameter_name: str, choices: Union[Mapping, Iterable], default=None,
+        self,
+        parameter_name: str,
+        choices: Union[Mapping, Iterable],
+        default=None,
     ):
         """
         Chose a value from an iterable whose name matches the value stored in parameter_name.
@@ -425,6 +432,38 @@ class Trial(collections.abc.MutableMapping):
         """
         values = {**values, **kwargs}
         self._trial.logger.log(values)
+
+    def save_snapshot(
+        self,
+        name: str,
+        resume_fn: Callable,
+        *args,
+        **kwargs,
+    ):
+        """
+        Save a snapshot.
+
+        All arguments must be picklable.
+
+        Args:
+            name (str, optional): Name of the snapshot.
+            resume_fn (callable): Callable to resume from a saved state.
+            args: Positional arguments provided to restore_fn.
+            kwargs: Keyword arguments provided to restore_fn.
+
+        Raises:
+            TypeError: If the passed arguments do not match the signature of resume_fn.
+        """
+
+        # Check that supplied arguments are compatible with resume_fn to avoid unpleasent surprises
+        signature = inspect.signature(resume_fn)
+        # Raises a TypeError if the passed arguments do not match the signature of resume_fn
+        signature.bind(*args, **kwargs)
+
+        with atomicwrites.atomic_write(
+            os.path.join(self.wdir, "snapshot"), mode="wb"
+        ) as f:
+            pickle.dump(Snapshot(name, resume_fn, args, kwargs), f)
 
 
 def try_str(obj):
