@@ -4,7 +4,7 @@ from typing import Mapping, Iterable, Tuple, Any, Union
 
 
 def merge_dicts(
-    a: Mapping, b: Union[Mapping, Iterable[Tuple[Any, Any]], None] = None, **kwargs,
+    a: Mapping, b: Union[Mapping, Iterable[Tuple[Any, Any]], None] = None, **kwargs
 ):
     """
     Recursively merge b into a copy of a, overwriting existing values.

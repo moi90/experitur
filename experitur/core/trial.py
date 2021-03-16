@@ -57,7 +57,7 @@ class Trial(collections.abc.MutableMapping):
         store: TrialStore
         data (optional): Trial data dictionary.
         func (optional): Experiment function.
-    
+
     This is automatically instanciated by experitur and provided to the experiment function:
 
     .. code-block:: python
@@ -338,7 +338,10 @@ class Trial(collections.abc.MutableMapping):
         return self
 
     def choice(
-        self, parameter_name: str, choices: Union[Mapping, Iterable], default=None,
+        self,
+        parameter_name: str,
+        choices: Union[Mapping, Iterable],
+        default=None,
     ):
         """
         Chose a value from an iterable whose name matches the value stored in parameter_name.

@@ -4,6 +4,10 @@ from experitur import Experiment, Trial
 from experitur.core.context import Context
 from experitur.parameters import Random, SKOpt
 
+from unavailable_object import UnavailableObject
+
+pytestmark = pytest.mark.skipif(not SKOpt.AVAILABLE, reason="SKOpt not available")
+
 
 def test_SKOpt(tmp_path):
     config = {"skip_existing": True}

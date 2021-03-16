@@ -45,7 +45,7 @@ def test_trial_store(tmp_path, TrialStoreImplementation: Type[TrialStore]):
             return {"result": (2, 4)}
 
         trial_data = trial_store.create(
-            {"experiment": {"name": "test2", "varying_parameters": []},}
+            {"experiment": {"name": "test2", "varying_parameters": []}}
         )
         assert "id" in trial_data
         assert trial_data["id"] == "test2/_"
@@ -174,7 +174,12 @@ def test_trial_store(tmp_path, TrialStoreImplementation: Type[TrialStore]):
 
         assert set(
             trial["id"] for trial in trial_store.match(parameters={"a": 1, "b": 2})
-        ) == {"func_test1/_", "func_test2/_", "func_test3/_", "test3/a-1_b-2",}
+        ) == {
+            "func_test1/_",
+            "func_test2/_",
+            "func_test3/_",
+            "test3/a-1_b-2",
+        }
 
         # Set context read-only
         ctx.writable = False

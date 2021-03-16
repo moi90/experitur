@@ -92,7 +92,7 @@ def run(dox_fn, skip_existing, catch, clean_failed, yes, reload):
         break
 
 
-@cli.command(context_settings=dict(ignore_unknown_options=True,))
+@cli.command(context_settings=dict(ignore_unknown_options=True))
 @click.argument("dox_fn")
 @click.argument("cmd")
 @click.argument("target")
