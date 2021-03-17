@@ -38,17 +38,6 @@ def _get_object_name(obj):
     raise ValueError(f"Unable to determine the name of {obj}")
 
 
-class CallException(Exception):
-    def __init__(self, func, args, kwargs, trial: "Trial"):
-        super().__init__(
-            f"Error calling {func} (args={args}, kwargs={kwargs}) with {trial}"
-        )
-        self.func = func
-        self.args = args
-        self.kwargs = kwargs
-        self.trial = trial
-
-
 class Trial(collections.abc.MutableMapping):
     """
     Data related to a trial.
@@ -233,7 +222,10 @@ class Trial(collections.abc.MutableMapping):
         As all default values are recorded, make sure that these have simple
         YAML-serializable types.
 
-        Use :py:class:`functools.partial` to pass keyword parameters that should not be recorded.
+        If the called function throws an exception, an exception of the same type
+        is thrown with additional information about the parameters.
+
+        Use :py:class:`functools.partial` to pass hidden keyword parameters that should not be recorded.
         """
 
         # Record default parameters
@@ -293,7 +285,9 @@ class Trial(collections.abc.MutableMapping):
         try:
             return func(*args, **parameters)
         except Exception as exc:
-            raise CallException(func, args, parameters, self) from exc
+            raise type(exc)(
+                f"Error calling {func} (args={args}, kwargs={kwargs}) with {self}"
+            ) from exc
 
     def prefixed(self, prefix: str) -> "Trial":
         """
@@ -446,7 +440,7 @@ class TrialCollection(Collection):
         Return a filtered version of this trial collection.
 
         Args:
-            fn (callable): A function that receives a TrialData instance and returns True if the trial should be kept.
+            fn (callable): A function that receives a Trial instance and returns True if the trial should be kept.
 
         Returns:
             A new trial collection.

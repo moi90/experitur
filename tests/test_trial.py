@@ -179,6 +179,19 @@ def test_trial_parameters(tmp_path):
 
             trial.prefixed("__empty1b_").call(fun)
 
+            class SpecialException(Exception):
+                pass
+
+            # Exception inside called function
+            def raising_fun(*_, **__):
+                raise SpecialException()
+
+            with pytest.raises(
+                SpecialException,
+                match=re.escape("Error calling"),
+            ):
+                trial.prefixed("__empty1c_").call(raising_fun)
+
             ### parameters.choice
             class A:
                 pass
@@ -228,6 +241,9 @@ def test_trial_parameters(tmp_path):
 
             with pytest.raises(ValueError):
                 trial.prefixed("__empty3_").choice("parameter_name", A, "A")  # type: ignore
+
+            # get_result
+            assert trial.get_result("__unknown_result") is None
 
         ctx.run()
 
