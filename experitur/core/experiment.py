@@ -1,41 +1,36 @@
-import collections
 import copy
+import datetime
 import functools
+import inspect
 import os
-import pprint
-import random
-import sys
 import textwrap
 import traceback
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Dict,
-    Iterable,
-    List,
-    Mapping,
-    Optional,
-    Union,
-)
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, Union
 
 import click
 import tqdm
 
 from experitur.core.context import get_current_context
 from experitur.core.parameters import (
-    Grid,
     Multi,
     ParameterGenerator,
     check_parameter_generators,
 )
+from experitur.core.trial import Trial
 from experitur.errors import ExperiturError
 from experitur.helpers import tqdm_redirect
 from experitur.helpers.merge_dicts import merge_dicts
-from experitur.recursive_formatter import RecursiveDict
+from experitur.util import callable_to_name, ensure_list
 
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.context import Context
+
+
+def try_str(obj):
+    try:
+        return str(obj)
+    except:  # pylint: disable=bare-except # noqa: E722
+        return "<error>"
 
 
 class ExperimentError(ExperiturError):
@@ -58,7 +53,7 @@ def format_trial_parameters(func=None, parameters=None, experiment=None):
     if func is not None:
         try:
             func = func.__name__
-        except Exception:
+        except AttributeError:
             func = str(func)
     else:
         func = "_"
@@ -85,11 +80,13 @@ class Experiment:
     Args:
         name (:py:class:`str`, optional): Name of the experiment (Default: None).
         parameter_grid (:py:class:`dict`, optional): Parameter grid (Default: None).
-        parent (:py:class:`~experitur.core.experiment.Experiment`, optional): Parent experiment (Default: None).
+        parent (:py:class:`~experitur.Experiment`, optional): Parent experiment (Default: None).
         meta (:py:class:`dict`, optional): Dict with experiment metadata that should be recorded.
         active (:py:class:`bool`, optional): Is the experiment active? (Default: True).
             When False, the experiment will not be executed.
         volatile (:py:class:`bool`, optional): If True, the results of a successful run will not be saved (Default: False).
+        minimize (:py:class:`str` or list of str, optional): Metric or list of metrics to minimize.
+        maximize (:py:class:`str` or list of str, optional): Metric or list of metrics to maximize.
 
     This can be used as a constructor or a decorator:
 
@@ -103,14 +100,14 @@ class Experiment:
         # Here, the name must be supplied.
         exp2 = Experiment("exp2", parent=exp1)
 
-    When the experiment is run, `trial` will be a :py:class:`~experitur.core.trial.Trial` instance.
+    When the experiment is run, `trial` will be a :py:class:`~experitur.Trial` instance.
     As such, it has the following characteristics:
 
     - :obj:`dict`-like interface (`trial[<name>]`): Get the value of the parameter named `name`.
     - Attribute interface (`trial.<attr>`): Get meta-data for this trial.
-    - :py:meth:`~experitur.core.trial.apply`: Run a function and automatically assign parameters.
+    - :py:meth:`~experitur.Trial.call`: Run a function and automatically assign parameters.
 
-    See :py:class:`~experitur.core.trial.Trial` for more details.
+    See :py:class:`~experitur.Trial` for more details.
     """
 
     def __init__(
@@ -121,6 +118,8 @@ class Experiment:
         meta: Optional[Mapping] = None,
         active: bool = True,
         volatile: bool = False,
+        minimize: Union[str, List[str], None] = None,
+        maximize: Union[str, List[str], None] = None,
     ):
         if not (isinstance(name, str) or name is None):
             raise ValueError(f"'name' has to be a string or None, got {name!r}")
@@ -131,6 +130,9 @@ class Experiment:
         self.meta = meta
         self.active = active
         self.volatile = volatile
+        self.minimize, self.maximize = self._validate_minimize_maximize(
+            minimize, maximize
+        )
 
         self._own_parameter_generators: List[ParameterGenerator]
         self._own_parameter_generators = check_parameter_generators(parameters)
@@ -152,6 +154,18 @@ class Experiment:
         )
 
         self.ctx._register_experiment(self)
+
+    @staticmethod
+    def _validate_minimize_maximize(minimize, maximize):
+        minimize, maximize = ensure_list(minimize), ensure_list(maximize)
+
+        common = set(minimize) & set(maximize)
+
+        if common:
+            common = ", ".join(sorted(common))
+            raise ValueError(f"minimize and maximize share common metrics: {common}")
+
+        return minimize, maximize
 
     def __call__(self, func: Callable) -> "Experiment":
         """
@@ -241,6 +255,9 @@ class Experiment:
 
         pbar = tqdm.tqdm(trial_configurations, unit="")
         for trial_configuration in pbar:
+            # Inject experiment data into trial_configuration
+            trial_configuration = self._setup_trial_configuration(trial_configuration)
+
             # Run the pre-trial hook to allow the user to interact
             # with the parameters before the trial is created and run.
             if self._pre_trial is not None:
@@ -263,7 +280,13 @@ class Experiment:
                     pbar.set_description("[Skipped]")
                     continue
 
-            trial = self.ctx.store.create(trial_configuration, self)
+            trial_configuration = self.ctx.store.create(trial_configuration)
+
+            wdir = self.ctx.get_trial_wdir(trial_configuration["id"])
+
+            os.makedirs(wdir, exist_ok=True)
+
+            trial = Trial(merge_dicts(trial_configuration, wdir=wdir), self.ctx.store)
 
             pbar.write("Trial {}".format(trial.id))
             pbar.set_description("Running trial {}...".format(trial.id))
@@ -271,10 +294,11 @@ class Experiment:
             # Run the trial
             try:
                 with tqdm_redirect.redirect_stdout():
-                    trial.run()
-            except Exception:
+                    result = self.run_trial(trial)
+                result = self._validate_trial_result(result)
+            except Exception:  # pylint: disable=broad-except
                 msg = textwrap.indent(traceback.format_exc(-1), "    ")
-                pbar.write("{} failed!".format(trial.data["id"]))
+                pbar.write("{} failed!".format(trial.id))
                 pbar.write(msg)
                 if not self.ctx.config["catch_exceptions"]:
                     raise
@@ -283,6 +307,85 @@ class Experiment:
                     trial.remove()
 
             pbar.set_description("Running trial {}... Done.".format(trial.id))
+
+    def run_trial(self, trial: Trial):
+        """Run the current trial and save the results."""
+
+        # Record intital state
+        trial.success = False
+        trial.time_start = datetime.datetime.now()
+        trial.result = None
+        trial.error = None
+
+        trial.save()
+
+        try:
+            result = self.func(trial)
+        except (Exception, KeyboardInterrupt) as exc:
+            # TODO: Store.log_error()
+            # Log complete exc to file
+            error_fn = os.path.join(trial.wdir, "error.txt")
+            with open(error_fn, "w") as f:
+                f.write(str(exc))
+                f.write(traceback.format_exc())
+                f.write("\n")
+                for k, v in inspect.trace()[-1][0].f_locals.items():
+                    f.write(f"{k}: {try_str(v)}\n")
+
+            trial.error = ": ".join(filter(None, (exc.__class__.__name__, str(exc))))
+
+            print("\n", flush=True)
+            print(
+                f"Error running {trial.id}.\n"
+                f"See {error_fn} for the complete traceback.",
+                flush=True,
+            )
+
+            raise exc
+
+        else:
+            trial.result = result
+            trial.success = True
+        finally:
+            trial.time_end = datetime.datetime.now()
+            trial.save()
+
+        return trial.result
+
+    def _setup_trial_configuration(self, trial_configuration):
+        trial_configuration.setdefault("parameters", {})
+        return merge_dicts(
+            trial_configuration,
+            experiment={
+                "name": self.name,
+                "parent": self.parent.name if self.parent is not None else None,
+                "func": callable_to_name(self.func),
+                "meta": self.meta,
+                # Parameters that where actually configured.
+                "independent_parameters": self.independent_parameters,
+                "varying_parameters": self.varying_parameters,
+                "minimize": self.minimize,
+                "maximize": self.maximize,
+            },
+        )
+
+    def _validate_trial_result(self, trial_result: Optional[dict]):
+        if trial_result is None:
+            trial_result = {}
+
+        if not isinstance(trial_result, dict):
+            raise ExperimentError(
+                f"Experiments are expected to return a dict, got {trial_result!r}"
+            )
+        missing_metrics = (
+            set(self.maximize) | set(self.maximize)
+        ) - trial_result.keys()
+
+        if missing_metrics:
+            missing_metrics = ", ".join(sorted(missing_metrics))
+            raise ExperimentError(f"Missing metrics in result: {missing_metrics}")
+
+        return trial_result
 
     def _merge(self, other):
         """
@@ -372,10 +475,8 @@ class Experiment:
             except KeyError as exc:
                 raise TrialNotFoundError(target_name) from exc
 
-            from experitur.core.trial import Trial
-
-            # Inject the TrialProxy
-            cmd_wrapped = functools.partial(cmd, Trial(trial))
+            # Inject the Trial
+            cmd_wrapped = functools.partial(cmd, Trial(trial, self.ctx.store))
             # Copy over __click_params__ if they exist
             try:
                 cmd_wrapped.__click_params__ = cmd.__click_params__

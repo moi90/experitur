@@ -7,7 +7,7 @@ from experitur.core.parameters import Grid, ParameterGenerator
 
 def test_trial_collection(tmp_path):
     config = {"skip_existing": False}
-    with Context(str(tmp_path), config) as ctx:
+    with Context(str(tmp_path), config, writable=True) as ctx:
 
         @Experiment(parameters=Grid({"a": [1, 2], "b": [3, 4], "c": [5]}))
         def a(trial):

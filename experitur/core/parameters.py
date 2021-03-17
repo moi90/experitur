@@ -1,6 +1,5 @@
 import random
 from abc import ABC, abstractmethod, abstractproperty
-from collections.abc import MutableMapping
 from itertools import product
 from typing import (
     TYPE_CHECKING,
@@ -35,7 +34,7 @@ class ParameterGeneratorIter(ABC):
         self.ignored_parameter_names: Set[str] = set()
 
     @abstractmethod
-    def __iter__(self) -> Generator[_trial.TrialData, None, None]:  # pragma: no cover
+    def __iter__(self) -> Generator[_trial.Trial, None, None]:  # pragma: no cover
         for parent_configuration in self.parent:
             while False:
                 yield merge_dicts(parent_configuration, parameters={...: ...})
@@ -48,7 +47,7 @@ class ParameterGeneratorIter(ABC):
 class _NullIter(ParameterGeneratorIter):
     """Sampler iterator that yields one empty parameter configuration."""
 
-    def __init__(self):
+    def __init__(self):  # pylint: disable=super-init-not-called
         pass
 
     def __iter__(self):
@@ -63,7 +62,7 @@ class ParameterGenerator(ABC):
     _str_attr: List[str] = []
 
     def generate(
-        self, experiment: "Experiment", parent: Optional[ParameterGeneratorIter] = None,
+        self, experiment: "Experiment", parent: Optional[ParameterGeneratorIter] = None
     ):
         """
         Return a SamplerIter to sample parameter configurations.
@@ -100,7 +99,6 @@ class ParameterGenerator(ABC):
     @abstractproperty
     def varying_parameters(self) -> Mapping:  # pragma: no cover
         """Parameters in this sampler. Does not include parameters that do not vary."""
-        pass
 
     @property
     def invariant_parameters(self) -> Mapping:

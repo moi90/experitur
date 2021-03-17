@@ -30,7 +30,7 @@ containing the following data:
 :code:`id`                    Trial ID (:code:`<experiment name>/<trial id>`)
 :code:`parameters`            Parameters as defined by the :py:class:`~experitur.parameters.ParameterGenerator`.
 :code:`resolved_parameters`   Parameters after parameter substitution and filled in with values derived from
-                              :py:meth:`~experitur.TrialParameters.call` and :py:meth:`~experitur.TrialParameters.record_defaults`.
+                              :py:meth:`~experitur.Trial.call` and :py:meth:`~experitur.Trial.record_defaults`.
 :code:`result`                Result returned by the experiment function.
 :code:`success`               TODO
 :code:`time_start`            Time when the trial was started.
@@ -58,13 +58,13 @@ The example uses the following concepts:
 
     ~experitur.parameters.Grid
     ~experitur.Experiment
-    ~experitur.TrialParameters
+    ~experitur.Trial
 
-The following methods of :py:class:`~experitur.TrialParameters` were used:
+The following methods of :py:class:`~experitur.Trial` were used:
 
 .. autosummary::
-    ~experitur.TrialParameters.prefixed
-    ~experitur.TrialParameters.call
+    ~experitur.Trial.prefixed
+    ~experitur.Trial.call
 
 
 Further reading

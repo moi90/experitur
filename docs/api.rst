@@ -7,9 +7,6 @@ Experiment
 .. autoclass:: experitur.Experiment
     :members:
 
-    .. automethod:: experitur.Experiment.__call__
-
-
 .. _parameter-generators:
 
 Parameter generators
@@ -39,7 +36,7 @@ Multiple parameter generators can be stacked.
     @Grid({"a": [1,2,3]}
     @Random({"b": expon()}, 4)
     @Experiment()
-    def example(parameters: TrialParameters):
+    def example(parameters: Trial):
         print(parameters["a"], parameters["b"])
 
 For every value of :code:`a`, four values will be drawn for :code:`b`.
@@ -77,13 +74,13 @@ Combining :py:class:`~experitur.parameters.SKOpt` with other generators allows a
 For every combination of :code:`a` and :code:`b`, ten value combinations for :code:`x` and :code:`y` are produced in order to minimize :code:`z`,
 but :code:`z` is averaged across three runs.
 
-Trial Parameters
-----------------
+Trial
+-----
 
-.. autoclass:: experitur.TrialParameters
+.. autoclass:: experitur.Trial
     :members:
 
-    .. automethod:: experitur.TrialParameters.__getitem__
-    .. automethod:: experitur.TrialParameters.__getattr__
+    .. automethod:: experitur.Trial.__getitem__
+    .. automethod:: experitur.Trial.__getattr__
 
 

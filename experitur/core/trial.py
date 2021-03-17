@@ -1,80 +1,28 @@
 import collections.abc
-import copy
-import datetime
-import glob
 import inspect
 import itertools
-import os.path
-import shutil
-import traceback
-import warnings
-from abc import abstractmethod
 from collections import OrderedDict, defaultdict
 from collections.abc import Collection
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Dict,
     Iterable,
     List,
     Mapping,
     Tuple,
     TypeVar,
     Union,
-    overload,
 )
 
-import yaml
 
-from experitur.core.logger import LoggerBase, YAMLLogger
-from experitur.helpers.dumper import ExperiturDumper
-from experitur.helpers.merge_dicts import merge_dicts
-from experitur.recursive_formatter import RecursiveDict
+from experitur.core.logger import YAMLLogger
 
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.experiment import Experiment
+    from experitur.core.trial_store import TrialStore
 
 T = TypeVar("T")
-
-
-def _callable_to_name(obj):
-    if callable(obj):
-        return "{}.{}".format(obj.__module__, obj.__name__)
-
-    if isinstance(obj, list):
-        return [_callable_to_name(x) for x in obj]
-
-    if isinstance(obj, dict):
-        return {_callable_to_name(k): _callable_to_name(v) for k, v in obj.items()}
-
-    if isinstance(obj, tuple):
-        return tuple(_callable_to_name(x) for x in obj)
-
-    return obj
-
-
-def _match_parameters(parameters_1, parameters_2):
-    """Decide whether parameters_1 are a subset of parameters_2."""
-
-    if set(parameters_1.keys()) <= set(parameters_2.keys()):
-        return all(v == parameters_2[k] for k, v in parameters_1.items())
-
-    return False
-
-
-def _format_independent_parameters(
-    trial_parameters: Mapping, independent_parameters: List[str]
-):
-    if len(independent_parameters) > 0:
-        trial_id = "_".join(
-            "{}-{!s}".format(k, trial_parameters[k]) for k in independent_parameters
-        )
-        trial_id = trial_id.replace("/", "_")
-    else:
-        trial_id = "_"
-
-    return trial_id
 
 
 def _get_object_name(obj):
@@ -83,57 +31,67 @@ def _get_object_name(obj):
     except AttributeError:
         pass
 
+    try:
+        return obj.__class__.__name__
+    except AttributeError:
+        pass
+
     raise ValueError(f"Unable to determine the name of {obj}")
-
-
-class CallException(Exception):
-    def __init__(self, func, args, kwargs, trial: "Trial"):
-        self.func = func
-        self.args = args
-        self.kwargs = kwargs
-        self.trial = trial
-
-    def __str__(self):
-        return f"Error calling {self.func} (args={self.args}, kwargs={self.kwargs}) with {self.trial}"
 
 
 class Trial(collections.abc.MutableMapping):
     """
-    Parameter configuration of the current trial.
+    Data related to a trial.
+
+    Args:
+        store: TrialStore
+        data (optional): Trial data dictionary.
+        func (optional): Experiment function.
 
     This is automatically instanciated by experitur and provided to the experiment function:
 
     .. code-block:: python
 
         @Experiment(parameters={"a": [1,2,3], "prefix_a": [10]})
-        def exp1(parameters):
+        def exp1(trial: Trial):
             # Access current value of parameter `a` (item access)
-            parameters["a"]
+            trial["a"]
 
             # Access extra data (attribute access)
-            parameters.id # Trial ID
-            parameters.wdir # Trial working directory
+            trial.id # Trial ID
+            trial.wdir # Trial working directory
 
             def func(a=1, b=2):
                 ...
 
-            # Record default parameters of `func`
-            parameters.record_defaults(func)
+            # Record default trial of `func`
+            trial.record_defaults(func)
 
             # Call `func` with current value of parameter `a` and `b`=5
-            parameters.call(func, b=5)
+            trial.call(func, b=5)
 
-            # Access only parameters starting with a certain prefix
-            parameters_prefix = parameters.prefix("prefix_")
+            # Access only trial starting with a certain prefix
+            trial_prefix = trial.prefix("prefix_")
 
             # All the above works as expected:
-            # parameters_prefix.<attr>, parameters_prefix[<key>], parameters_prefix.record_defaults, parameters_prefix.call, ...
-            # In our case, parameters_prefix["a"] == 10.
+            # trial_prefix.<attr>, trial_prefix[<key>], trial_prefix.record_defaults, trial_prefix.call, ...
+            # In our case, trial_prefix["a"] == 10.
     """
 
-    def __init__(self, trial: "Trial", prefix: str = ""):
-        self._trial = trial
+    def __init__(self, data: Mapping, store: "TrialStore", prefix: str = ""):
+        self._store = store
+        self._data = data
         self._prefix = prefix
+
+        self._validate_data()
+
+        self._logger = YAMLLogger(self)
+
+    def _validate_data(self):
+        if "wdir" not in self._data:
+            raise ValueError("data has to contain 'wdir'")
+        if "id" not in self._data:
+            raise ValueError("data has to contain 'id'")
 
     # MutableMapping provides concrete generic implementations of all
     # methods except for __getitem__, __setitem__, __delitem__,
@@ -141,74 +99,70 @@ class Trial(collections.abc.MutableMapping):
 
     def __getitem__(self, name):
         """Get the value of a parameter."""
-        return self._trial.data["resolved_parameters"][f"{self._prefix}{name}"]
+        return self._data["resolved_parameters"][f"{self._prefix}{name}"]
 
     def __setitem__(self, name, value):
         """Set the value of a parameter."""
-        self._trial.data["resolved_parameters"][f"{self._prefix}{name}"] = value
+        self._data["resolved_parameters"][f"{self._prefix}{name}"] = value
 
     def __delitem__(self, name):
         """Delete a parameter."""
-        del self._trial.data["resolved_parameters"][f"{self._prefix}{name}"]
+        del self._data["resolved_parameters"][f"{self._prefix}{name}"]
 
     def __iter__(self):
         start = len(self._prefix)
         return (
             k[start:]
-            for k in self._trial.data["resolved_parameters"]
+            for k in self._data["resolved_parameters"]
             if k.startswith(self._prefix)
         )
 
     def __len__(self):
         return sum(1 for k in self)
 
-    # Overwrite get to save supplied default value
-    def get(self, key, default=None):
-        return self.setdefault(key, default)
-
-    def __getattr__(self, name):
-        """
-        Magic attributes.
-
-        `name` can be one of the following:
-
-        - A trial property:
-
-            - :code:`trial.id`: Trial ID
-            - :code:`trial.wdir`: Trial working directory
-
-        - An experiment (:code:`trial.<experiment_name>`):
-
-            This way you can access data of the trial of a
-            different experiment with its parameters matching the parameters
-            of the current trial.
-        """
-
-        # Name could be a data item (e.g. wdir, id, ...)
-        try:
-            return self._trial.data[name]
-        except KeyError:
-            pass
-
-        # Name could be a referenced experiment with matching parameters
-        trials_data = self._trial.store.match(
-            experiment=name, resolved_parameters=dict(self)
-        )
-
-        if len(trials_data) == 1:
-            trial_data = trials_data.pop()
-            return Trial(trial_data)
-        elif len(trials_data) > 1:
-            msg = "Multiple matching parent experiments: " + ", ".join(
-                trials_data.keys()
-            )
-            raise ValueError(msg)
-
-        msg = "Trial has no attribute: {}".format(name)
-        raise AttributeError(msg)
-
     def __repr__(self):
         return f"<Trial({dict(self)})>"
+
+    def get(self, key, default=None):
+        """Get a parameter value.
+
+        If key is not present, it is initialized with the provided default, just like :py:meth:`Trial.setdefault`.
+        """
+        return self.setdefault(key, default)
+
+    def save(self):
+        self._store[self.id] = self._data
+
+    @property
+    def is_failed(self):
+        return self._data.get("error", None) is not None
+
+    def remove(self):
+        """Remove this trial from the store."""
+        del self._store[self.id]
+
+    def get_result(self, name):
+        result = self._data["result"]
+        if result is None:
+            return None
+
+        return result.get(name, None)
+
+    def __getattr__(self, name: str):
+        """Access extra attributes."""
+
+        __tracebackhide__ = True  # pylint: disable=unused-variable
+
+        try:
+            return self._data[name]
+        except KeyError:
+            raise AttributeError(name) from None
+
+    def __setattr__(self, name: str, value):
+        if name.startswith("_"):
+            object.__setattr__(self, name, value)
+        else:
+            self._data[name] = value
 
     def record_defaults(self, func: Callable, **defaults):
         """
@@ -221,7 +175,7 @@ class Trial(collections.abc.MutableMapping):
         Use :py:class:`functools.partial` to pass keyword parameters to `func` that should not be recorded.
         """
 
-        __tracebackhide__ = True
+        __tracebackhide__ = True  # pylint: disable=unused-variable
 
         if not callable(func):
             raise ValueError("Only callables may be passed as first argument.")
@@ -274,7 +228,10 @@ class Trial(collections.abc.MutableMapping):
         As all default values are recorded, make sure that these have simple
         YAML-serializable types.
 
-        Use :py:class:`functools.partial` to pass keyword parameters that should not be recorded.
+        If the called function throws an exception, an exception of the same type
+        is thrown with additional information about the parameters.
+
+        Use :py:class:`functools.partial` to pass hidden keyword parameters that should not be recorded.
         """
 
         # Record default parameters
@@ -334,21 +291,32 @@ class Trial(collections.abc.MutableMapping):
         try:
             return func(*args, **parameters)
         except Exception as exc:
-            raise CallException(func, args, parameters, self) from exc
+            raise type(exc)(
+                f"Error calling {func} (args={args}, kwargs={kwargs}) with {self}"
+            ) from exc
 
     def prefixed(self, prefix: str) -> "Trial":
         """
         Return new :py:class:`Trial` instance with prefix applied.
 
         Prefixes allow you to organize parameters and save keystrokes.
+
+        Example:
+
+            .. code-block:: python
+
+                trial_prefix = trial.prefix("prefix_")
+                trial_prefix["a"] == trial["prefix_a"] # True
         """
-        return Trial(self._trial, f"{self._prefix}{prefix}")
+        return Trial(self._data, self._store, f"{self._prefix}{prefix}")
 
     def setdefaults(
-        self, defaults: Union[Mapping, Iterable[Tuple[str, Any]], None] = None, **kwargs
+        self,
+        defaults: Union["Trial", Mapping, Iterable[Tuple[str, Any]], None] = None,
+        **kwargs,
     ):
         """
-        Insert value in `defaults` into self it does not yet exist.
+        Set multiple default values for parameters that do not yet exist.
 
         Existing keys are not overwritten.
         If keyword arguments are given, the keyword arguments and their values are added.
@@ -379,7 +347,10 @@ class Trial(collections.abc.MutableMapping):
         return self
 
     def choice(
-        self, parameter_name: str, choices: Union[Mapping, Iterable], default=None,
+        self,
+        parameter_name: str,
+        choices: Union[Mapping, Iterable],
+        default=None,
     ):
         """
         Chose a value from an iterable whose name matches the value stored in parameter_name.
@@ -412,120 +383,22 @@ class Trial(collections.abc.MutableMapping):
 
         return mapping[entry_name]
 
-    def flush(self):
-        """Flush trial data to disk."""
-        self._trial.save()
-
     def log(self, values, **kwargs):
         """
         Record metrics.
 
         Args:
             values (Mapping): Values to log.
+            **kwargs: Further values.
         """
         values = {**values, **kwargs}
-        self._trial.logger.log(values)
-
-
-def try_str(obj):
-    try:
-        return str(obj)
-    except:  # pylint: disable=bare-except # noqa: E722
-        return "<error>"
-
-
-class TrialData:
-    """
-    Store data related to a trial.
-
-    Arguments
-        store: TrialStore
-        data (optional): Trial data dictionary.
-        func (optional): Experiment function.
-    """
-
-    def __init__(self, store: "TrialStore", data: Mapping, func=None):
-        self.store = store
-        self.data = data
-        self.func = func
-
-        self._validate_data()
-
-        self.logger = YAMLLogger(self)
-
-    def _validate_data(self):
-        if "wdir" not in self.data:
-            raise ValueError("data has to contain 'wdir'")
-        if "id" not in self.data:
-            raise ValueError("data has to contain 'id'")
-
-    def run(self):
-        """Run the current trial and save the results."""
-
-        # Record intital state
-        self.data["success"] = False
-        self.data["time_start"] = datetime.datetime.now()
-        self.data["result"] = None
-        self.data["error"] = None
-
-        try:
-            result = self.func(Trial(self))
-        except (Exception, KeyboardInterrupt) as exc:
-            # Log complete exc to file
-            error_fn = os.path.join(self.wdir, "error.txt")
-            with open(error_fn, "w") as f:
-                f.write(str(exc))
-                f.write(traceback.format_exc())
-                f.write("\n")
-                for k, v in inspect.trace()[-1][0].f_locals.items():
-                    f.write(f"{k}: {try_str(v)}\n")
-
-            self.data["error"] = ": ".join(
-                filter(None, (exc.__class__.__name__, str(exc)))
-            )
-
-            print("\n", flush=True)
-            print(
-                f"Error running {self.id}.\n"
-                f"See {error_fn} for the complete traceback.",
-                flush=True,
-            )
-
-            raise exc
-
-        else:
-            self.data["result"] = result
-            self.data["success"] = True
-        finally:
-            self.data["time_end"] = datetime.datetime.now()
-            self.save()
-
-        return self.data["result"]
-
-    def save(self):
-        self.store[self.data["id"]] = self
-
-    @property
-    def id(self):
-        return self.data["id"]
-
-    @property
-    def wdir(self):
-        return self.data["wdir"]
-
-    @property
-    def is_failed(self):
-        return self.data.get("error", None) is not None
-
-    def remove(self):
-        """Remove this trial from the store."""
-        del self.store[self.id]
+        self._logger.log(values)
 
 
 class TrialCollection(Collection):
     _missing = object()
 
-    def __init__(self, trials: List[TrialData]):
+    def __init__(self, trials: List[Trial]):
         self.trials = trials
 
     def __len__(self):
@@ -534,7 +407,7 @@ class TrialCollection(Collection):
     def __iter__(self):
         yield from self.trials
 
-    def __contains__(self, trial: TrialData):
+    def __contains__(self, trial: Trial):
         return trial in self.trials
 
     def pop(self, index=-1):
@@ -545,7 +418,7 @@ class TrialCollection(Collection):
         independent_parameters = set()
         for t in self.trials:
             independent_parameters.update(
-                t.data.get("experiment", {}).get("independent_parameters", [])
+                getattr(t, "experiment", {}).get("independent_parameters", [])
             )
         return independent_parameters
 
@@ -557,7 +430,7 @@ class TrialCollection(Collection):
         for t in self.trials:
             for p in independent_parameters:
                 try:
-                    v = t.data["parameters"][p]
+                    v = t[p]
                 except KeyError:
                     parameter_values[p].add(self._missing)
                 else:
@@ -578,212 +451,15 @@ class TrialCollection(Collection):
 
         return self.trials[0]
 
-    def filter(self, fn: Callable[[TrialData], bool]) -> "TrialCollection":
+    def filter(self, fn: Callable[[Trial], bool]) -> "TrialCollection":
         """
         Return a filtered version of this trial collection.
 
         Args:
-            fn (callable): A function that receives a TrialData instance and returns True if the trial should be kept.
+            fn (callable): A function that receives a Trial instance and returns True if the trial should be kept.
 
         Returns:
             A new trial collection.
         """
 
         return TrialCollection(list(filter(fn, self.trials)))
-
-
-class TrialStore(collections.abc.MutableMapping):
-    def __init__(self, ctx):
-        self.ctx = ctx
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, type, value, traceback):
-        pass
-
-    def match(
-        self, func=None, parameters=None, experiment=None, resolved_parameters=None
-    ) -> TrialCollection:
-        func = _callable_to_name(func)
-
-        from experitur.core.experiment import Experiment
-
-        if isinstance(experiment, Experiment):
-            experiment = experiment.name
-
-        trials = []
-        for trial in self.values():
-            experiment_ = trial.data.get("experiment", {})
-            if func is not None and _callable_to_name(experiment_.get("func")) != func:
-                continue
-
-            if parameters is not None and not _match_parameters(
-                parameters, trial.data.get("parameters", {})
-            ):
-                continue
-
-            if resolved_parameters is not None and not _match_parameters(
-                resolved_parameters, trial.data.get("resolved_parameters", {})
-            ):
-                continue
-
-            if experiment is not None and experiment_.get("name") != str(experiment):
-                continue
-
-            trials.append(trial)
-
-        return TrialCollection(trials)
-
-    def _make_unique_trial_id(
-        self,
-        experiment_name: str,
-        trial_parameters: Mapping,
-        varying_parameters: List[str],
-    ):
-        trial_id = _format_independent_parameters(trial_parameters, varying_parameters)
-
-        trial_id = "{}/{}".format(experiment_name, trial_id)
-
-        try:
-            existing_trial = self[trial_id]
-        except KeyError:
-            # If there is no existing trial with this id, it is unique
-            return trial_id
-
-        # Otherwise, we have to incorporate more independent parameters
-        new_independent_parameters = []
-
-        existing_trial.data.setdefault("parameters", {})
-
-        # Look for parameters in existing_trial that have differing values
-        for name, value in existing_trial.data["parameters"].items():
-            if name in trial_parameters and trial_parameters[name] != value:
-                new_independent_parameters.append(name)
-
-        # Look for parameters that did not exist previously
-        for name in trial_parameters.keys():
-            if name not in existing_trial.data["parameters"]:
-                new_independent_parameters.append(name)
-
-        if new_independent_parameters:
-            # If we found parameters where this trial is different from the existing one, append these to independent
-            varying_parameters.extend(new_independent_parameters)
-            return self._make_unique_trial_id(
-                experiment_name, trial_parameters, varying_parameters
-            )
-
-        # Otherwise, we just append a version number
-        for i in itertools.count(1):
-            test_trial_id = "{}.{}".format(trial_id, i)
-
-            try:
-                existing_trial = self[test_trial_id]
-            except KeyError:
-                # If there is no existing trial with this id, it is unique
-                return test_trial_id
-
-    def _make_wdir(self, trial_id):
-        wdir = os.path.join(self.ctx.wdir, os.path.normpath(trial_id))
-        os.makedirs(wdir, exist_ok=True)
-        return wdir
-
-    def create(self, trial_configuration, experiment: "Experiment"):
-        """Create a :py:class:`TrialData` instance."""
-        trial_configuration.setdefault("parameters", {})
-
-        # Calculate trial_id
-        trial_id = self._make_unique_trial_id(
-            experiment.name,
-            trial_configuration["parameters"],
-            experiment.varying_parameters,
-        )
-
-        wdir = self._make_wdir(trial_id)
-
-        # TODO: Structured experiment meta-data
-        trial_configuration = merge_dicts(
-            trial_configuration,
-            id=trial_id,
-            resolved_parameters=RecursiveDict(
-                trial_configuration["parameters"], allow_missing=True
-            ).as_dict(),
-            experiment={
-                "name": experiment.name,
-                "parent": experiment.parent.name
-                if experiment.parent is not None
-                else None,
-                "func": _callable_to_name(experiment.func),
-                "meta": experiment.meta,
-                # Parameters that where actually configured.
-                "independent_parameters": experiment.independent_parameters,
-            },
-            result=None,
-            wdir=wdir,
-        )
-
-        trial = TrialData(self, func=experiment.func, data=trial_configuration)
-
-        self[trial_id] = trial
-
-        return trial
-
-    def delete_all(self, keys):
-        for k in keys:
-            del self[k]
-
-
-class FileTrialStore(TrialStore):
-    PATTERN = os.path.join("{}", "trial.yaml")
-    DUMPER = ExperiturDumper
-
-    def __len__(self):
-        return sum(1 for _ in self)
-
-    def __getitem__(self, key):
-        path = os.path.join(self.ctx.wdir, self.PATTERN.format(key))
-        path = os.path.normpath(path)
-
-        try:
-            with open(path) as fp:
-                return TrialData(self, data=yaml.load(fp, Loader=yaml.Loader))
-        except FileNotFoundError as exc:
-            raise KeyError from exc
-
-    def __iter__(self):
-        path = os.path.join(self.ctx.wdir, self.PATTERN.format("**"))
-        path = os.path.normpath(path)
-
-        left, right = path.split("**", 1)
-
-        for entry_fn in glob.iglob(path, recursive=True):
-            if os.path.isdir(entry_fn):
-                continue
-
-            # Convert entry_fn back to key
-            k = entry_fn[len(left) : -len(right)]
-
-            # Keys use forward slashes
-            k = k.replace("\\", "/")
-
-            yield k
-
-    def __setitem__(self, key, value):
-        path = os.path.join(self.ctx.wdir, self.PATTERN.format(key))
-        path = os.path.normpath(path)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-
-        with open(path, "w") as fp:
-            yaml.dump(value.data, fp, Dumper=self.DUMPER)
-
-        # raise KeyError
-
-    def __delitem__(self, key):
-        path = os.path.join(self.ctx.wdir, self.PATTERN.format(key))
-
-        try:
-            os.remove(path)
-        except FileNotFoundError:
-            raise KeyError
-
-        shutil.rmtree(os.path.dirname(path))

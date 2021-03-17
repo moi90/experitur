@@ -9,7 +9,7 @@ def rosenbrock_parametric(a, b, x, y):
 @Grid({"a": [1, 2], "b": [100, 101]})
 @SKOpt({"x": (-10.0, 10.0), "y": (-10.0, 10.0)}, "z", 10)
 @Grid({"repetition": [1, 2, 3]})
-@Experiment(active=False,)
+@Experiment(active=False)
 def exp(trial: Trial):
     z = trial.apply("", rosenbrock_parametric)
 

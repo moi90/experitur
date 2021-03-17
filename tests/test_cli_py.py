@@ -5,10 +5,16 @@ from click.testing import CliRunner
 
 from experitur.cli import clean, collect, do, run, show
 
+try:
+    import pandas
+except ImportError:
+    PANDAS_AVAILABLE = False
+else:
+    PANDAS_AVAILABLE = True
+
 example_py = inspect.cleandoc(
     r"""
     from experitur import Experiment
-    import numpy as np
     import inspect
 
     @Experiment(
@@ -72,13 +78,14 @@ def test_run():
         assert "Continue? [y/N]: y\n" in result.output
         assert result.exit_code == 0
 
-        result = runner.invoke(collect, ["example.py"], catch_exceptions=False)
-        assert result.exit_code == 0
+        if PANDAS_AVAILABLE:
+            result = runner.invoke(collect, ["example.py"], catch_exceptions=False)
+            assert result.exit_code == 0
 
-        assert os.path.isfile("example.csv")
+            assert os.path.isfile("example.csv")
 
-        with open("example.csv") as f:
-            print(f.read())
+            with open("example.csv") as f:
+                print(f.read())
 
         result = runner.invoke(clean, ["example.py"], catch_exceptions=False)
         assert result.exit_code == 0
