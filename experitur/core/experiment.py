@@ -122,13 +122,13 @@ class Experiment:
     Args:
         name (:py:class:`str`, optional): Name of the experiment (Default: None).
         parameter_grid (:py:class:`dict`, optional): Parameter grid (Default: None).
-        parent (:py:class:`~experitur.core.experiment.Experiment`, optional): Parent experiment (Default: None).
+        parent (:py:class:`~experitur.Experiment`, optional): Parent experiment (Default: None).
         meta (:py:class:`dict`, optional): Dict with experiment metadata that should be recorded.
         active (:py:class:`bool`, optional): Is the experiment active? (Default: True).
             When False, the experiment will not be executed.
         volatile (:py:class:`bool`, optional): If True, the results of a successful run will not be saved (Default: False).
-        minimize (str or list of str, optional): Metric or list of metrics to minimize.
-        maximize (str or list of str, optional): Metric or list of metrics to maximize.
+        minimize (:py:class:`str` or list of str, optional): Metric or list of metrics to minimize.
+        maximize (:py:class:`str` or list of str, optional): Metric or list of metrics to maximize.
 
     This can be used as a constructor or a decorator:
 
@@ -142,14 +142,14 @@ class Experiment:
         # Here, the name must be supplied.
         exp2 = Experiment("exp2", parent=exp1)
 
-    When the experiment is run, `trial` will be a :py:class:`~experitur.core.trial.Trial` instance.
+    When the experiment is run, `trial` will be a :py:class:`~experitur.Trial` instance.
     As such, it has the following characteristics:
 
     - :obj:`dict`-like interface (`trial[<name>]`): Get the value of the parameter named `name`.
     - Attribute interface (`trial.<attr>`): Get meta-data for this trial.
-    - :py:meth:`~experitur.core.trial.apply`: Run a function and automatically assign parameters.
+    - :py:meth:`~experitur.Trial.call`: Run a function and automatically assign parameters.
 
-    See :py:class:`~experitur.core.trial.Trial` for more details.
+    See :py:class:`~experitur.Trial` for more details.
     """
 
     def __init__(

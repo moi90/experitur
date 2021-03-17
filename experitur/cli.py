@@ -108,7 +108,7 @@ def stop(dox_fn, clear):
             print("Stop signal set.")
 
 
-@cli.command(context_settings=dict(ignore_unknown_options=True,))
+@cli.command(context_settings=dict(ignore_unknown_options=True))
 @click.argument("dox_fn")
 @click.argument("cmd")
 @click.argument("target")

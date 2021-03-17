@@ -135,7 +135,7 @@ class FileTrialStore(TrialStore):
         try:
             with open(path) as f:
                 trial_data = yaml.load(f, Loader=yaml.Loader)
-        except FileNotFoundError as exc:
+        except (FileNotFoundError, IsADirectoryError) as exc:
             raise KeyError(trial_id) from exc
         except:
             print(f"Error reading {path}")
@@ -217,7 +217,7 @@ class FileTrialStore(TrialStore):
     def _open_atomic(fn, mode):
         """
         Open a file atomically.
-        
+
         The context manager returns a temporary file handle
         and uses os.replace to replace the actual file with it after it has been written.
         """
@@ -225,7 +225,11 @@ class FileTrialStore(TrialStore):
         path = os.path.dirname(fn)
 
         # Create temporary file
-        temp_fh = tempfile.NamedTemporaryFile(mode=mode, dir=path, delete=False,)
+        temp_fh = tempfile.NamedTemporaryFile(
+            mode=mode,
+            dir=path,
+            delete=False,
+        )
 
         yield temp_fh
 
@@ -265,4 +269,3 @@ class FileTrialStore(TrialStore):
                 i += 1
 
             os.renames(old_path, new_path)
-

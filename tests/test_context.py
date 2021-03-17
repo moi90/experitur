@@ -9,6 +9,11 @@ from experitur.core.context import (
 from experitur.core.experiment import Experiment
 from experitur.parameters import Grid
 
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
 
 def test_Context_enter():
     """Make sure that the Context context manager works in the expected way."""
@@ -70,6 +75,7 @@ def test_merge_config(tmp_path):
         assert all(v == ctx.config[k] for k, v in config.items())
 
 
+@pytest.mark.skipif(pd is None, reason="pandas not available")
 def test_collect(tmp_path):
     with Context(str(tmp_path), writable=True) as ctx:
 

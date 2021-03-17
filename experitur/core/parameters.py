@@ -81,7 +81,7 @@ class ParameterGenerator(ABC):
     _str_attr: List[str] = []
 
     def generate(
-        self, experiment: "Experiment", parent: Optional[ParameterGeneratorIter] = None,
+        self, experiment: "Experiment", parent: Optional[ParameterGeneratorIter] = None
     ):
         """
         Return a ParameterGeneratorIter to sample parameter configurations.

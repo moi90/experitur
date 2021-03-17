@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, TYPE_CHECKING, Union
 
 from scipy.stats import distributions
 
@@ -8,13 +8,14 @@ from experitur.core.parameters import (
     ParameterGeneratorIter,
 )
 from experitur.helpers.merge_dicts import merge_dicts
+from unavailable_object import UnavailableObject, check_available
+
 
 try:
-    from sklearn.model_selection import ParameterSampler
-
-    _SKLEARN_AVAILABLE = True
-except ImportError:  # pragma: no cover
-    _SKLEARN_AVAILABLE = False
+    import sklearn.model_selection as sklearn_model_selection
+except ImportError:
+    if not TYPE_CHECKING:
+        sklearn_model_selection = UnavailableObject("sklearn.model_selection")
 
 
 class _RandomSamplerIter(ParameterGeneratorIter):
@@ -58,7 +59,7 @@ class _RandomSamplerIter(ParameterGeneratorIter):
             # Calculate n_iter as n_iter - already existing iterations
             n_iter = self.parameter_generator.n_iter - len(existing_params_set)
 
-            for params in ParameterSampler(
+            for params in sklearn_model_selection.ParameterSampler(
                 {
                     k: v
                     for k, v in self.parameter_generator.param_distributions.items()
@@ -109,6 +110,8 @@ class Random(ParameterGenerator):
 
     """
 
+    AVAILABLE = not isinstance(sklearn_model_selection, UnavailableObject)
+
     _iterator = _RandomSamplerIter
     _str_attr = ["param_distributions", "n_iter"]
 
@@ -117,8 +120,7 @@ class Random(ParameterGenerator):
         return distributions.uniform(low, high - low)
 
     def __init__(self, param_distributions: Dict[str, Union[List, Any]], n_iter: int):
-        if not _SKLEARN_AVAILABLE:
-            raise RuntimeError("scikit-learn is not available.")  # pragma: no cover
+        check_available(sklearn_model_selection)
 
         self.param_distributions = param_distributions
         self.n_iter = n_iter

@@ -93,7 +93,12 @@ def test_trial_parameters(tmp_path):
             assert trial.prefixed("prefix__").call(identity) == (1, 2, 3, 5)
 
             # test call: keyword parameter
-            assert trial.prefixed("prefix1__").call(identity, c=6, d=7) == (1, 2, 3, 7,)
+            assert trial.prefixed("prefix1__").call(identity, c=6, d=7) == (
+                1,
+                2,
+                3,
+                7,
+            )
             assert trial["prefix1__d"] == 7
 
             # test record_defaults
@@ -104,7 +109,12 @@ def test_trial_parameters(tmp_path):
 
             # Positional arguments will not be recorded and can't be overwritten
             identity_a8 = functools.partial(identity, 8)
-            assert trial.prefixed("prefix3__").call(identity_a8, b=2) == (8, 2, 4, 5,)
+            assert trial.prefixed("prefix3__").call(identity_a8, b=2) == (
+                8,
+                2,
+                4,
+                5,
+            )
             assert "prefix3__a" not in trial
 
             with pytest.raises(TypeError):
@@ -172,6 +182,19 @@ def test_trial_parameters(tmp_path):
 
             trial.prefixed("__empty1b_").call(fun)
 
+            class SpecialException(Exception):
+                pass
+
+            # Exception inside called function
+            def raising_fun(*_, **__):
+                raise SpecialException()
+
+            with pytest.raises(
+                SpecialException,
+                match=re.escape("Error calling"),
+            ):
+                trial.prefixed("__empty1c_").call(raising_fun)
+
             ### parameters.choice
             class A:
                 pass
@@ -221,6 +244,9 @@ def test_trial_parameters(tmp_path):
 
             with pytest.raises(ValueError):
                 trial.prefixed("__empty3_").choice("parameter_name", A, "A")  # type: ignore
+
+            # get_result
+            assert trial.get_result("__unknown_result") is None
 
         ctx.run()
 

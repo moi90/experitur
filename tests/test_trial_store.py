@@ -38,6 +38,27 @@ def test_trial_store(tmp_path, TrialStoreImplementation: Type[TrialStore]):
         def test2(_):  # pylint: disable=unused-variable
             return {"result": (2, 4)}
 
+        trial_data = trial_store.create(
+            "test2/_", {"experiment": {"name": "test2", "varying_parameters": []}}
+        )
+        assert "id" in trial_data
+        assert trial_data["id"] == "test2/_"
+
+        assert trial_store["test2/_"] == {
+            "id": "test2/_",
+            "experiment": {"name": "test2", "varying_parameters": []},
+        }
+
+        trial_store["test2/_"] = merge_dicts(
+            trial_store["test2/_"], foo="bar", bar="baz"
+        )
+        assert trial_store["test2/_"] == {
+            "id": "test2/_",
+            "foo": "bar",
+            "bar": "baz",
+            "experiment": {"name": "test2", "varying_parameters": []},
+        }
+
         # Check that storing an unknown trial_id raises a KeyError
         with pytest.raises(KeyError):
             trial_store["foo"] = {}
@@ -68,10 +89,10 @@ def test_trial_store(tmp_path, TrialStoreImplementation: Type[TrialStore]):
         assert trial_store["test3/a-1_b-2"] == trial_data
         assert "test3/a-1_b-2" in trial_store
 
-        # Check that a fake folder does not change the count of trials
+        # Check that a fake folder does not disturb the store
         fake_folder = os.path.join(ctx.wdir, "fake", trial_store.TRIAL_FN)
         os.makedirs(fake_folder, exist_ok=True)
-        assert len(trial_store) == 1
+        assert "fake" not in trial_store
 
         # Check that match(func) works
         trial_data = trial_store.create(
@@ -121,9 +142,13 @@ def test_trial_store(tmp_path, TrialStoreImplementation: Type[TrialStore]):
 
         # parameters
         assert set(
-            trial_data["id"]
-            for trial_data in trial_store.match(parameters={"a": 1, "b": 2})
-        ) == {"func_test1/_", "func_test2/_", "func_test3/_", "test3/a-1_b-2",}
+            trial["id"] for trial in trial_store.match(parameters={"a": 1, "b": 2})
+        ) == {
+            "func_test1/_",
+            "func_test2/_",
+            "func_test3/_",
+            "test3/a-1_b-2",
+        }
 
         # experiment
         assert set(

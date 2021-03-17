@@ -1,11 +1,13 @@
 import logging
 from collections import OrderedDict
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping
+
+from unavailable_object import UnavailableObject, check_available
 
 from experitur.core.parameters import (
+    DynamicValues,
     ParameterGenerator,
     ParameterGeneratorIter,
-    DynamicValues,
 )
 from experitur.core.trial import Trial
 from experitur.helpers.merge_dicts import merge_dicts
@@ -13,15 +15,13 @@ from experitur.util import format_parameters
 
 try:
     import skopt
-    from skopt.utils import (
-        dimensions_aslist,
-        point_aslist,
-    )
-    import skopt.space
-
-    _SKOPT_AVAILABLE = True
-except ImportError:  # pragma: no cover
-    _SKOPT_AVAILABLE = False
+    import skopt.space as skopt_space
+    import skopt.utils as skopt_utils
+except ImportError:
+    if not TYPE_CHECKING:
+        skopt = UnavailableObject("skopt")
+        skopt_utils = UnavailableObject("skopt.utils")
+        skopt_space = UnavailableObject("skopt.space", none_child=True)
 
 
 def convert_objective(value, maximize):
@@ -52,22 +52,20 @@ def convert_trial(
     if include_duration:
         result = (result, (time_end - time_start).total_seconds())
 
-    point = point_aslist(
-        search_space, {k: v for k, v in parameters.items() if k in search_space},
+    point = skopt_utils.point_aslist(
+        search_space,
+        {k: v for k, v in parameters.items() if k in search_space},
     )
 
     return (point, result)
 
 
-def _filter_results(optimizer: skopt.Optimizer, results):
+def _filter_results(optimizer: "skopt.Optimizer", results):
     return [r for r in results if r is not None and r[0] in optimizer.space]
 
 
 class _SKOptIter(ParameterGeneratorIter):
     def __iter__(self):
-        if not _SKOPT_AVAILABLE:
-            raise RuntimeError("scikit-optimize is not available.")  # pragma: no cover
-
         objective = self.parameter_generator.objective
 
         if objective in self.experiment.maximize:
@@ -115,7 +113,9 @@ class _SKOptIter(ParameterGeneratorIter):
 
             for _ in range(n_iter):
                 optimizer = skopt.Optimizer(
-                    dimensions_aslist(self.parameter_generator.search_space),
+                    skopt_utils.dimensions_aslist(
+                        self.parameter_generator.search_space
+                    ),
                     n_initial_points=self.parameter_generator.n_initial_points,
                     **self.parameter_generator.kwargs,
                 )
@@ -171,9 +171,9 @@ class _SKOptIter(ParameterGeneratorIter):
 def point_as_native_dict(search_space, point_as_list):
     params_dict = OrderedDict()
     for k, v in zip(sorted(search_space.keys()), point_as_list):
-        if isinstance(search_space[k], skopt.space.Integer):
+        if isinstance(search_space[k], skopt_space.Integer):
             v = int(v)
-        elif isinstance(search_space[k], skopt.space.Real):
+        elif isinstance(search_space[k], skopt_space.Real):
             v = float(v)
         params_dict[k] = v
     return params_dict
@@ -214,9 +214,11 @@ class SKOpt(ParameterGenerator):
         In this example, SKOpt will try to minimize :code:`y = a * b` using four evaluations.
     """
 
-    Real = skopt.space.space.Real
-    Integer = skopt.space.space.Integer
-    Categorical = skopt.space.space.Categorical
+    AVAILABLE = not isinstance(skopt, UnavailableObject)
+
+    Real = skopt_space.Real
+    Integer = skopt_space.Integer
+    Categorical = skopt_space.Categorical
 
     _iterator = _SKOptIter
     _str_attr = ["search_space", "objective", "n_iter"]
@@ -229,8 +231,11 @@ class SKOpt(ParameterGenerator):
         n_initial_points: int = 10,
         **kwargs,
     ):
+        # Make sure that skopt is available
+        check_available(skopt)
+
         self.search_space = search_space = {
-            k: skopt.space.check_dimension(v) for k, v in search_space.items()
+            k: skopt_space.check_dimension(v) for k, v in search_space.items()
         }
         self.n_iter = n_iter
         self.n_initial_points = n_initial_points

@@ -29,6 +29,7 @@ from experitur.util import callable_to_name, freeze
 
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.experiment import Experiment
+    from experitur.core.trial_store import TrialStore
 
 T = TypeVar("T")
 
@@ -47,26 +48,15 @@ def _get_object_name(obj):
     raise ValueError(f"Unable to determine the name of {obj}")
 
 
-class CallException(Exception):
-    def __init__(self, func, args, kwargs, trial: "Trial"):
-        super().__init__(
-            f"Error calling {func} (args={args}, kwargs={kwargs}) with {trial}"
-        )
-        self.func = func
-        self.args = args
-        self.kwargs = kwargs
-        self.trial = trial
-
-
 class Trial(collections.abc.MutableMapping):
     """
     Data related to a trial.
 
-    Arguments
+    Args:
         store: TrialStore
         data (optional): Trial data dictionary.
         func (optional): Experiment function.
-    
+
     This is automatically instanciated by experitur and provided to the experiment function:
 
     .. code-block:: python
@@ -98,7 +88,10 @@ class Trial(collections.abc.MutableMapping):
     """
 
     def __init__(
-        self, data: MutableMapping, root: "RootTrialCollection", prefix: str = "",
+        self,
+        data: MutableMapping,
+        root: "RootTrialCollection",
+        prefix: str = "",
     ):
         self._root = root
         self._data = data
@@ -144,8 +137,11 @@ class Trial(collections.abc.MutableMapping):
     def __repr__(self):
         return f"<Trial({dict(self)})>"
 
-    # Overwrite get to save supplied default value
     def get(self, key, default=None):
+        """Get a parameter value.
+
+        If key is not present, it is initialized with the provided default, just like :py:meth:`Trial.setdefault`.
+        """
         return self.setdefault(key, default)
 
     def save(self):
@@ -173,6 +169,8 @@ class Trial(collections.abc.MutableMapping):
         return result.get(name, None)
 
     def __getattr__(self, name: str):
+        """Access extra attributes."""
+
         __tracebackhide__ = True  # pylint: disable=unused-variable
 
         try:
@@ -250,7 +248,10 @@ class Trial(collections.abc.MutableMapping):
         As all default values are recorded, make sure that these have simple
         YAML-serializable types.
 
-        Use :py:class:`functools.partial` to pass keyword parameters that should not be recorded.
+        If the called function throws an exception, an exception of the same type
+        is thrown with additional information about the parameters.
+
+        Use :py:class:`functools.partial` to pass hidden keyword parameters that should not be recorded.
         """
 
         # Record default parameters
@@ -310,21 +311,32 @@ class Trial(collections.abc.MutableMapping):
         try:
             return func(*args, **parameters)
         except Exception as exc:
-            raise CallException(func, args, parameters, self) from exc
+            raise type(exc)(
+                f"Error calling {func} (args={args}, kwargs={kwargs}) with {self}"
+            ) from exc
 
     def prefixed(self, prefix: str) -> "Trial":
         """
         Return new :py:class:`Trial` instance with prefix applied.
 
         Prefixes allow you to organize parameters and save keystrokes.
+
+        Example:
+
+            .. code-block:: python
+
+                trial_prefix = trial.prefix("prefix_")
+                trial_prefix["a"] == trial["prefix_a"] # True
         """
         return Trial(self._data, self._root, f"{self._prefix}{prefix}")
 
     def setdefaults(
-        self, defaults: Union[Mapping, Iterable[Tuple[str, Any]], None] = None, **kwargs
+        self,
+        defaults: Union["Trial", Mapping, Iterable[Tuple[str, Any]], None] = None,
+        **kwargs,
     ):
         """
-        Insert value in `defaults` into self it does not yet exist.
+        Set multiple default values for parameters that do not yet exist.
 
         Existing keys are not overwritten.
         If keyword arguments are given, the keyword arguments and their values are added.
@@ -355,7 +367,10 @@ class Trial(collections.abc.MutableMapping):
         return self
 
     def choice(
-        self, parameter_name: str, choices: Union[Mapping, Iterable], default=None,
+        self,
+        parameter_name: str,
+        choices: Union[Mapping, Iterable],
+        default=None,
     ):
         """
         Chose a value from an iterable whose name matches the value stored in parameter_name.
@@ -394,6 +409,7 @@ class Trial(collections.abc.MutableMapping):
 
         Args:
             values (Mapping, optional): Values to log.
+            **kwargs: Further values.
         """
         if values is not None:
             values = {**values, **kwargs}
@@ -590,7 +606,9 @@ class BaseTrialCollection(collections.abc.Collection):
         return result
 
     def groupby(
-        self, parameters=None, experiment=False,
+        self,
+        parameters=None,
+        experiment=False,
     ) -> Generator[Tuple[dict, "TrialCollection"], None, None]:
         if isinstance(parameters, str):
             parameters = [parameters]
@@ -786,4 +804,3 @@ class TrialCollectionGroupby(collections.abc.Sized, collections.abc.Iterable):
             trials.extend(group)
 
         return TrialCollection(trials)
-

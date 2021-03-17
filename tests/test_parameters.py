@@ -5,6 +5,7 @@ from experitur.core.context import Context
 from experitur.parameters import Random
 
 
+@pytest.mark.skipif(not Random.AVAILABLE, reason="Random not available")
 def test_Random(tmp_path):
     with Context(str(tmp_path)):
         sampler = Random({"a": [1, 2], "b": [3, 4], "c": [0]}, 4)
@@ -31,6 +32,7 @@ def test_Random(tmp_path):
         assert sampler.independent_parameters == {"a": [1, 2], "b": [3, 4], "c": [0]}
 
 
+@pytest.mark.skipif(not Random.AVAILABLE, reason="Random not available")
 def test_RandomRepeat(tmp_path):
     config = {"skip_existing": True}
     with Context(str(tmp_path), config, writable=True) as ctx:
