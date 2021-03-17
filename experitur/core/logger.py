@@ -20,7 +20,7 @@ LogValues = Mapping[str, Any]
 
 
 class LoggerBase:
-    def __init__(self, trial: "TrialData"):
+    def __init__(self, trial: "Trial"):
         self.trial = weakref.proxy(trial)  # Avoid cycles
 
     @abstractmethod
@@ -39,7 +39,7 @@ class LoggerBase:
 
 
 class YAMLLogger(LoggerBase):
-    def __init__(self, trial: "TrialData"):
+    def __init__(self, trial: "Trial"):
         super().__init__(trial)
 
         self.log_fn = os.path.join(self.trial.wdir, "log.yaml")

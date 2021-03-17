@@ -20,6 +20,7 @@ from experitur.core.logger import YAMLLogger
 
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.experiment import Experiment
+    from experitur.core.trial_store import TrialStore
 
 T = TypeVar("T")
 
@@ -42,7 +43,7 @@ class Trial(collections.abc.MutableMapping):
     """
     Data related to a trial.
 
-    Arguments
+    Args:
         store: TrialStore
         data (optional): Trial data dictionary.
         func (optional): Experiment function.
@@ -122,8 +123,11 @@ class Trial(collections.abc.MutableMapping):
     def __repr__(self):
         return f"<Trial({dict(self)})>"
 
-    # Overwrite get to save supplied default value
     def get(self, key, default=None):
+        """Get a parameter value.
+
+        If key is not present, it is initialized with the provided default, just like :py:meth:`Trial.setdefault`.
+        """
         return self.setdefault(key, default)
 
     def save(self):
@@ -145,6 +149,8 @@ class Trial(collections.abc.MutableMapping):
         return result.get(name, None)
 
     def __getattr__(self, name: str):
+        """Access extra attributes."""
+
         __tracebackhide__ = True  # pylint: disable=unused-variable
 
         try:
@@ -294,14 +300,23 @@ class Trial(collections.abc.MutableMapping):
         Return new :py:class:`Trial` instance with prefix applied.
 
         Prefixes allow you to organize parameters and save keystrokes.
+
+        Example:
+
+            .. code-block:: python
+
+                trial_prefix = trial.prefix("prefix_")
+                trial_prefix["a"] == trial["prefix_a"] # True
         """
         return Trial(self._data, self._store, f"{self._prefix}{prefix}")
 
     def setdefaults(
-        self, defaults: Union[Mapping, Iterable[Tuple[str, Any]], None] = None, **kwargs
+        self,
+        defaults: Union["Trial", Mapping, Iterable[Tuple[str, Any]], None] = None,
+        **kwargs,
     ):
         """
-        Insert value in `defaults` into self it does not yet exist.
+        Set multiple default values for parameters that do not yet exist.
 
         Existing keys are not overwritten.
         If keyword arguments are given, the keyword arguments and their values are added.
@@ -374,6 +389,7 @@ class Trial(collections.abc.MutableMapping):
 
         Args:
             values (Mapping): Values to log.
+            **kwargs: Further values.
         """
         values = {**values, **kwargs}
         self._logger.log(values)

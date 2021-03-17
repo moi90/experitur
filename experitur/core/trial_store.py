@@ -96,7 +96,7 @@ class TrialStore(collections.abc.MutableMapping):
         """
 
     def create(self, trial_configuration):
-        """Create a :py:class:`TrialData` instance."""
+        """Create a :py:class:`Trial` instance."""
 
         trial_configuration.setdefault("parameters", {})
 
