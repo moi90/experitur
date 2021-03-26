@@ -4,6 +4,8 @@ import glob
 import os.path
 import tempfile
 import typing
+import uuid
+import warnings
 from abc import abstractmethod
 from typing import Dict, Iterator, List, Optional
 
@@ -28,6 +30,10 @@ def _match_parameters(parameters_1, parameters_2):
 
 
 class KeyExistsError(Exception):
+    pass
+
+
+class ModifiedError(Exception):
     pass
 
 
@@ -157,24 +163,27 @@ class FileTrialStore(TrialStore):
 
         left, right = path.split(pattern, 1)
 
-        with self._lock:
-            for entry_fn in glob.iglob(path, recursive=True):
-                if os.path.isdir(entry_fn):
-                    continue
+        for entry_fn in glob.iglob(path, recursive=True):
+            if os.path.isdir(entry_fn):
+                continue
 
-                if ".trash" in entry_fn.split(os.path.sep):
-                    continue
+            relpath = os.path.relpath(entry_fn, self.ctx.wdir)
+            if ".trash" in relpath.split(os.path.sep):
+                continue
 
-                # Convert entry_fn back to key
-                k = entry_fn[len(left) : -len(right)]
+            # Convert entry_fn back to key
+            k = entry_fn[len(left) : -len(right)]
 
-                # Keys use forward slashes
-                k = k.replace("\\", "/")
+            # Keys use forward slashes
+            k = k.replace("\\", "/")
 
-                yield k
+            yield k
 
     def _create(self, trial_data: dict):
         trial_id = trial_data["id"]
+
+        # Set revision
+        trial_data["revision"] = uuid.uuid4().hex
 
         if not isinstance(trial_data, dict):
             raise ValueError(f"trial_data has to be dict, got {trial_data!r}")
@@ -208,6 +217,21 @@ class FileTrialStore(TrialStore):
             if not os.path.isfile(path):
                 raise KeyError(trial_id)
 
+            # Retrieve on-disk data
+            on_disk_data = self[trial_id]
+
+            if "revision" in trial_data:
+                # Assert that the revision stored in the current data matches the on-disk state
+                if trial_data["revision"] != on_disk_data["revision"]:
+                    raise ModifiedError(
+                        f"Trial {trial_id} has been altered by another process",
+                    )
+            else:
+                warnings.warn(f"Trial {trial_id} has no revision")
+
+            # Set new revision
+            trial_data["revision"] = uuid.uuid4().hex
+
             # Write new contents atomically
             with self._open_atomic(path, "w") as fp:
                 yaml.dump(trial_data, fp, Dumper=self.DUMPER)
@@ -225,11 +249,7 @@ class FileTrialStore(TrialStore):
         path = os.path.dirname(fn)
 
         # Create temporary file
-        temp_fh = tempfile.NamedTemporaryFile(
-            mode=mode,
-            dir=path,
-            delete=False,
-        )
+        temp_fh = tempfile.NamedTemporaryFile(mode=mode, dir=path, delete=False,)
 
         yield temp_fh
 

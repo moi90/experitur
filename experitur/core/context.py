@@ -206,7 +206,7 @@ class Context:
         return os.path.normpath(os.path.join(self.wdir, os.path.normpath(trial_id)))
 
     def get_trial(self, trial_id) -> Trial:
-        return Trial(self.store[trial_id], self.store)
+        return Trial(self.store[trial_id], self.trials)
 
     @property
     def current_trial(self):

@@ -44,7 +44,9 @@ def test_trial_store(tmp_path, TrialStoreImplementation: Type[TrialStore]):
         assert "id" in trial_data
         assert trial_data["id"] == "test2/_"
 
-        assert trial_store["test2/_"] == {
+        result = trial_store["test2/_"]
+        del result["revision"]
+        assert result == {
             "id": "test2/_",
             "experiment": {"name": "test2", "varying_parameters": []},
         }
@@ -52,7 +54,9 @@ def test_trial_store(tmp_path, TrialStoreImplementation: Type[TrialStore]):
         trial_store["test2/_"] = merge_dicts(
             trial_store["test2/_"], foo="bar", bar="baz"
         )
-        assert trial_store["test2/_"] == {
+        result = trial_store["test2/_"]
+        del result["revision"]
+        assert result == {
             "id": "test2/_",
             "foo": "bar",
             "bar": "baz",

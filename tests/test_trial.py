@@ -1,3 +1,4 @@
+from experitur.core.trial_store import ModifiedError
 import functools
 import os.path
 import re
@@ -93,12 +94,7 @@ def test_trial_parameters(tmp_path):
             assert trial.prefixed("prefix__").call(identity) == (1, 2, 3, 5)
 
             # test call: keyword parameter
-            assert trial.prefixed("prefix1__").call(identity, c=6, d=7) == (
-                1,
-                2,
-                3,
-                7,
-            )
+            assert trial.prefixed("prefix1__").call(identity, c=6, d=7) == (1, 2, 3, 7,)
             assert trial["prefix1__d"] == 7
 
             # test record_defaults
@@ -109,12 +105,7 @@ def test_trial_parameters(tmp_path):
 
             # Positional arguments will not be recorded and can't be overwritten
             identity_a8 = functools.partial(identity, 8)
-            assert trial.prefixed("prefix3__").call(identity_a8, b=2) == (
-                8,
-                2,
-                4,
-                5,
-            )
+            assert trial.prefixed("prefix3__").call(identity_a8, b=2) == (8, 2, 4, 5,)
             assert "prefix3__a" not in trial
 
             with pytest.raises(TypeError):
@@ -190,8 +181,7 @@ def test_trial_parameters(tmp_path):
                 raise SpecialException()
 
             with pytest.raises(
-                SpecialException,
-                match=re.escape("Error calling"),
+                SpecialException, match=re.escape("Error calling"),
             ):
                 trial.prefixed("__empty1c_").call(raising_fun)
 
@@ -291,3 +281,45 @@ def test_trial_find_file(tmp_path):
 
     filename = trial.find_file("*.txt")
     assert filename == os.path.join(trial.wdir, "file.txt")
+
+
+def test_trial_revisions(tmp_path):
+    config = {"catch_exceptions": False}
+
+    with Context(str(tmp_path), config, writable=True) as ctx:
+        trial = ctx.trials.create(
+            {"experiment": {"name": "test2", "varying_parameters": []},}
+        )
+
+        assert "revision" in trial._data
+
+        # Save trial three times and check that the revision changes everytime
+        revisions = []
+        for _ in range(3):
+            rev = trial.revision
+            assert rev not in revisions
+            revisions.append(rev)
+            trial.save()
+
+        trial2 = ctx.get_trial(trial.id)
+
+        assert trial2._root == trial._root
+
+        rev_before_save = trial.revision
+        trial.save()
+        rev_after_save = trial.revision
+
+        assert rev_before_save != rev_after_save
+
+        assert rev_before_save == trial2.revision
+
+        trial3 = ctx.get_trial(trial.id)
+
+        assert rev_after_save == trial3.revision
+
+        assert trial2.revision != trial3.revision
+
+        # revision of trial2 and 1/3 are now different
+
+        with pytest.raises(ModifiedError):
+            trial2.save()

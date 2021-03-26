@@ -28,6 +28,7 @@ def test_RootTrialCollection(tmp_path):
         trial_wdir = ctx.get_trial_wdir("test2/_.1")
 
         assert trial.id == "test2/_.1"
+        del trial._data["revision"]
         assert trial._data == {  # pytest: disable=protected-access
             "id": "test2/_.1",
             1: "foo",
