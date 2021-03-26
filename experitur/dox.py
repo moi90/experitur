@@ -35,6 +35,9 @@ def _load_py(dox_fn, dox_name):
     except Exception as exc:
         raise DOXError("Error loading {}!".format(dox_fn)) from exc
 
+    # Insert into sys.modules
+    sys.modules[module.__name__] = module
+
     # Guess experiment names from variable name in module
     for name in dir(module):
         experiment: Experiment = getattr(module, name)
