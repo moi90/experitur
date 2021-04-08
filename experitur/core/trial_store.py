@@ -9,10 +9,9 @@ import warnings
 from abc import abstractmethod
 from typing import Dict, Iterator, List, Optional
 
-import yaml
 from filelock import SoftFileLock
 
-from experitur.helpers.dumper import ExperiturDumper
+from experitur.helpers import yaml
 from experitur.helpers.merge_dicts import merge_dicts
 from experitur.util import callable_to_name
 
@@ -120,7 +119,6 @@ class TrialStore(collections.abc.MutableMapping):
 
 class FileTrialStore(TrialStore):
     TRIAL_FN = "trial.yaml"
-    DUMPER = ExperiturDumper
 
     def __init__(self, ctx: "Context"):
         super().__init__(ctx)
@@ -198,7 +196,7 @@ class FileTrialStore(TrialStore):
 
             path = self._get_trial_fn(trial_id)
             with open(path, "x") as fp:
-                yaml.dump(trial_data, fp, Dumper=self.DUMPER)
+                yaml.dump(trial_data, fp, Dumper=yaml.Dumper)
 
             return trial_data
 
@@ -234,7 +232,7 @@ class FileTrialStore(TrialStore):
 
             # Write new contents atomically
             with self._open_atomic(path, "w") as fp:
-                yaml.dump(trial_data, fp, Dumper=self.DUMPER)
+                yaml.dump(trial_data, fp, Dumper=yaml.Dumper)
 
     @staticmethod
     @contextlib.contextmanager

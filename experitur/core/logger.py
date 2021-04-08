@@ -6,9 +6,7 @@ from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Dict, List, Mapping
 
 import cachetools
-import yaml
-
-from experitur.helpers.dumper import ExperiturDumper
+from experitur.helpers import yaml
 
 if TYPE_CHECKING:
     from experitur.core.trial import Trial
@@ -77,7 +75,7 @@ class YAMLLogger(LoggerBase):
             raise ValueError(f"Expected mapping, got {values!r}")
 
         with open(self.log_fn, "a") as fp:
-            yaml.dump(values, fp, Dumper=ExperiturDumper, explicit_start=True)
+            yaml.dump(values, fp, Dumper=yaml.Dumper, explicit_start=True)
 
     def read(self):
         try:
