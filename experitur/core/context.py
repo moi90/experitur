@@ -131,7 +131,8 @@ class Context:
 
         try:
             for exp in ordered_experiments:
-                exp.run()
+                with self.set_current_experiment(exp):
+                    exp.run()
         finally:
             # If no more trials are running (also in other processes) clear the stop signal
             running_trials = self.trials.filter(
@@ -220,6 +221,21 @@ class Context:
         finally:
             self._current_trial = None
 
+    @contextlib.contextmanager
+    def set_current_experiment(self, experiment: "Experiment"):
+        try:
+            self._experiment_stack.append(experiment)
+            yield
+        finally:
+            popped = self._experiment_stack.pop()
+            assert popped is experiment
+
+    @property
+    def current_experiment(self):
+        try:
+            return self._experiment_stack[-1]
+        except IndexError:
+            raise ContextError("Experiment stack is empty") from None
     def stop(self, stop=True):
         """Save/clear stop signal."""
 
@@ -244,4 +260,9 @@ _context_stack: List[Context] = []
 
 
 def get_current_context() -> Context:
-    return _context_stack[-1]
+    try:
+        return _context_stack[-1]
+    except IndexError:
+        raise ContextError(
+            "Context stack is empty. Use the `experitur` command to run your file."
+        )
