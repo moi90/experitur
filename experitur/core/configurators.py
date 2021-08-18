@@ -1,21 +1,27 @@
-from abc import abstractmethod, abstractproperty
-import abc
-from experitur.helpers.merge_dicts import merge_dicts
+import collections.abc
+import itertools
+import random
+import warnings
+from abc import ABC, abstractmethod, abstractproperty
 from typing import (
     Any,
     Container,
+    Dict,
     Iterable,
     Iterator,
     Mapping,
     Optional,
     Set,
+    Tuple,
     Type,
 )
+
 from typing_extensions import final
-import itertools
+
+from experitur.helpers.merge_dicts import merge_dicts
 
 
-class BaseConfigurationSampler(abc.ABC):
+class BaseConfigurationSampler(ABC):
     """
     Base class for all configuration samplers.
     """
@@ -24,14 +30,16 @@ class BaseConfigurationSampler(abc.ABC):
         return self.sample()
 
     @abstractmethod
-    def sample(self, exclude: Optional[Set] = None) -> Iterator[Mapping]:
+    def sample(
+        self, exclude: Optional[Set] = None
+    ) -> Iterator[Mapping]:  # pragma: no cover
         """Sample trial configurations."""
         while False:
             yield {}
 
     def contains_subset_of(
         self, configuration: Mapping, exclude: Optional[Set] = None
-    ) -> bool:
+    ) -> bool:  # pragma: no cover
         """
         Return True if there exists a sample that is a subset of `configuration`.
 
@@ -41,7 +49,7 @@ class BaseConfigurationSampler(abc.ABC):
         """
         raise NotImplementedError(f"{type(self).__qualname__}.contains_subset_of")
 
-    def contains_superset_of(self, configuration: Mapping) -> bool:
+    def contains_superset_of(self, configuration: Mapping) -> bool:  # pragma: no cover
         """
         Return True if there exists a sample that is a superset of `configuration`.
 
@@ -88,22 +96,22 @@ class BaseConfigurator:
     @abstractmethod
     def build_sampler(
         self, parent: Optional["BaseConfigurationSampler"] = None
-    ) -> BaseConfigurationSampler:
+    ) -> BaseConfigurationSampler:  # pragma: no cover
         pass
 
     @abstractproperty
-    def parameter_values(self) -> Mapping[str, Container]:
+    def parameter_values(self) -> Mapping[str, Container]:  # pragma: no cover
         """Information about the values that every parameter configured here can assume."""
         return {}
 
     def __add__(self, other) -> "BaseConfigurator":
-        if not isinstance(other, BaseConfigurator):
+        if not isinstance(other, BaseConfigurator):  # pragma: no cover
             return NotImplemented
 
         return AdditiveConfiguratorChain(self, other)
 
     def __mul__(self, other) -> "BaseConfigurator":
-        if not isinstance(other, BaseConfigurator):
+        if not isinstance(other, BaseConfigurator):  # pragma: no cover
             return NotImplemented
 
         return MultiplicativeConfiguratorChain(self, other)
@@ -111,7 +119,9 @@ class BaseConfigurator:
 
 class ConfigurationSampler(BaseConfigurationSampler):
     """
-    Configuration sampler with a default implementation for __init__, contains_subset_of, contains_superset_of.
+    Configuration sampler base class.
+
+    Contains default implementations for __init__, contains_subset_of, and contains_superset_of.
     """
 
     @final
@@ -187,11 +197,47 @@ class ConfigurationSampler(BaseConfigurationSampler):
             dict(configuration, parameters=parent_params)
         )
 
+    @staticmethod
+    def prepare_values_exclude(values: Mapping, exclude: Optional[Set] = None):
+        """Select the entries from `values` that are not excluded and update `excluded`."""
+        if exclude is None:
+            exclude = set()
+
+        values = {k: v for k, v in values.items() if k not in exclude}
+
+        exclude = exclude.union(values.keys())
+
+        return values, exclude
+
 
 class Configurator(BaseConfigurator):
-    """Configurator with default implementation for build_sampler."""
+    """
+    Configurator base class with default implementation for build_sampler.
+
+    Derived classes are expected to define __str_attrs__ and to contain a nested _Sampler.
+
+    Example:
+
+        .. code-block:: python
+
+            class MyConfigurator(Configurator):
+                __str_attrs__ = ("foo",)
+
+                def __init__(self, foo):
+                    self.foo = foo
+
+                class _Sampler(ConfigurationSampler):
+                    def sample(self, exclude: Optional[Set] = None) -> Iterator[Mapping]:
+                        for parent_configuration in self.parent.sample(exclude=exclude):
+                            yield merge_dicts(
+                                parent_configuration,
+                                parameters={"foo": self.configurator.foo}
+                            )
+    """
 
     _Sampler: Type[ConfigurationSampler]
+
+    __str_attrs__: Tuple[str] = tuple()
 
     def build_sampler(
         self, parent: Optional["BaseConfigurationSampler"] = None
@@ -200,6 +246,20 @@ class Configurator(BaseConfigurator):
             parent = _RootSampler()
 
         return self._Sampler(self, parent)
+
+    def __str__(self):
+        return "<{name} {parameters}>".format(
+            name=self.__class__.__name__,
+            parameters=", ".join(f"{k}={getattr(self, k)}" for k in self.__str_attrs__),
+        )
+
+
+def replace_parameter_values(
+    left: Dict[str, Container], right: Mapping[str, Container]
+) -> None:
+    """Replace values in `left` with matching in `right`."""
+    for k, v in right.items():
+        left[k] = v
 
 
 class MultiplicativeConfiguratorChain(Configurator):
@@ -230,10 +290,31 @@ class MultiplicativeConfiguratorChain(Configurator):
         return parameter_values
 
     def __mul__(self, other) -> "BaseConfigurator":
-        if not isinstance(other, BaseConfigurator):
+        if not isinstance(other, BaseConfigurator):  # pragma: no cover
             return NotImplemented
 
         return MultiplicativeConfiguratorChain(*self.configurators, other)
+
+
+def extend_parameter_values(
+    left: Dict[str, Container], right: Mapping[str, Container]
+) -> None:
+    """Extend `left` with `right`."""
+
+    for k, v_right in right.items():
+        if k not in left:
+            left[k] = v_right
+            continue
+
+        v_left = left[k]
+
+        if isinstance(v_left, tuple) and isinstance(v_right, tuple):
+            left[k] = v_left + tuple(v for v in v_right if v not in v_left)
+            continue
+
+        raise NotImplementedError(
+            f"extend_parameter_values not implemented for {v_left!r} + {v_right!r}"
+        )  # pragma: no cover
 
 
 class AdditiveConfiguratorChain(Configurator):
@@ -263,7 +344,7 @@ class AdditiveConfiguratorChain(Configurator):
         return parameter_values
 
     def __add__(self, other) -> "BaseConfigurator":
-        if not isinstance(other, BaseConfigurator):
+        if not isinstance(other, BaseConfigurator):  # pragma: no cover
             return NotImplemented
 
         return AdditiveConfiguratorChain(*self.configurators, other)
@@ -304,14 +385,34 @@ def split_dict(mapping: Mapping, indicator):
 
 
 class Const(Configurator):
+    """
+    Constant parameter configurator.
+
+    Parameters may be passed as a mapping and/or as keyword arguments.
+
+    Parameters:
+        values (Mapping): The parameters, as a dictionary mapping parameter names to values.
+        **kwargs: Additional parameters.
+
+    Example:
+        .. code-block:: python
+
+            from experitur import Experiment, Trial
+            from experitur.configurators import Const
+
+            @Const({"a": 1, "b": 2}, c=3)
+            @Experiment()
+            def example1(parameters: Trial):
+                print(parameters["a"], parameters["b"], parameters["c"])
+
+        This example will produce "1 2 3".
+    """
+
     def __init__(self, values: Optional[Mapping[str, Any]] = None, **kwargs):
         if values is None:
             self.values = kwargs
         else:
             self.values = {**values, **kwargs}
-
-    def __repr__(self):
-        return f"<Const {self.values}>"
 
     @property
     def parameter_values(self) -> Mapping[str, Container]:
@@ -321,50 +422,105 @@ class Const(Configurator):
         configurator: "Const"
 
         def sample(self, exclude: Optional[Set] = None) -> Iterator[Mapping]:
-            if exclude is None:
-                exclude = set()
 
-            values = {
-                k: v for k, v in self.configurator.values.items() if k not in exclude
-            }
-
-            exclude = exclude.union(self.configurator.values.keys())
+            values, exclude = self.prepare_values_exclude(
+                self.configurator.values, exclude
+            )
 
             for parent_configuration in self.parent.sample(exclude=exclude):
                 # print(self.configurator, ":", values)
                 yield merge_dicts(parent_configuration, parameters=values)
 
 
-def all_subsets(configuration: Mapping):
-    """Generate all parameter subsets of a configuration to test Sampler.contains_superset_of."""
-    parameters = configuration.get("parameters", {})
+def parameter_product(p: Mapping[str, Iterable]):
+    """Iterate over the points in the grid."""
 
-    key_sets = itertools.chain.from_iterable(
-        itertools.combinations(parameters.keys(), l) for l in range(len(parameters) + 1)
-    )
+    items = sorted(p.items())
+    if not items:
+        yield {}
+    else:
+        keys, values = zip(*items)
+        for v in itertools.product(*values):
+            params = dict(zip(keys, v))
+            yield params
 
-    return [
-        dict(configuration, parameters={k: parameters[k] for k in keys})
-        for keys in key_sets
-    ]
+
+class Grid(Configurator):
+    """
+    Grid parameter generator that produces all parameter-value-combinations in the grid.
+
+    Parameters:
+        grid (Mapping): The parameter grid to explore, as a dictionary mapping parameter names to sequences of allowed values.
+        shuffle (bool): If False, the combinations will be generated in a deterministic manner.
+            *Deprecated!* Use RandomGrid instead.
+
+    Example:
+        .. code-block:: python
+
+            from experitur import Experiment, Trial
+            from experitur.parameters import Grid
+
+            @Grid({"a": [1,2], "b": [3,4]})
+            @Experiment()
+            def example1(parameters: Trial):
+                print(parameters["a"], parameters["b"])
+
+            @Experiment2(parameters={"a": [1,2], "b": [3,4]})
+            def example(parameters: Trial):
+                print(parameters["a"], parameters["b"])
+
+        Both examples are equivalent and will produce "1 3", "1 4", "2 3", and "2 4".
+    """
+
+    __str_attrs__ = ("grid", "shuffle")
+
+    shuffle = False
+
+    def __init__(self, grid: Mapping[str, Iterable], shuffle: bool = False):
+        if shuffle:
+            warnings.warn(
+                "shuffle is deprecated, use RandomGrid instead.", DeprecationWarning
+            )
+
+        self._validate_grid(grid)
+
+        self.grid = grid
+        self.shuffle = shuffle
+
+    def _validate_grid(self, grid: Mapping):
+        for k, v in grid.items():
+            if not isinstance(k, str):
+                raise ValueError(f"Key {k!r} is not str")
+            if not isinstance(v, collections.abc.Iterable):
+                raise ValueError(f"Value {v!r} for parameter {k} is not Iterable")
+
+    @property
+    def parameter_values(self) -> Mapping[str, Container]:
+        return {k: tuple(v) for k, v in self.grid.items()}
+
+    class _Sampler(ConfigurationSampler):
+        configurator: "Grid"
+
+        def sample(self, exclude: Optional[Set] = None) -> Iterator[Mapping]:
+
+            grid, exclude = self.prepare_values_exclude(self.configurator.grid, exclude)
+
+            grid_product = list(parameter_product(grid))
+
+            for parent_configuration in self.parent.sample(exclude=exclude):
+                if self.configurator.shuffle:
+                    random.shuffle(grid_product)
+
+                for values in grid_product:
+                    yield merge_dicts(parent_configuration, parameters=values)
 
 
-configurator = Const({"a": 1}) * (Const({"b": 2}) + Const({"b": 3}))
-sampler = configurator.build_sampler()
+class RandomGrid(Grid):
+    """
+    Grid parameter generator that produces all parameter-value-combinations in the grid in random order.
+    """
 
-for conf in sampler:
-    print(conf)
-    assert sampler.contains_subset_of(conf), f"No subset of {conf} in sampler"
+    def __init__(self, grid: Mapping[str, Iterable]):
+        super().__init__(grid, shuffle=True)
 
-    superset = merge_dicts(conf, parameters={"__foo": "bar"})
-    assert sampler.contains_subset_of(superset), f"No subset of {superset} in sampler"
-
-    for subset in all_subsets(conf):
-        assert sampler.contains_superset_of(
-            subset
-        ), f"No superset of {subset} in sampler"
-
-# A non-empty sampler does not contain a subset of {}
-assert not sampler.contains_subset_of({}), "Subset of {} in sampler"
-# Every sampler contains a superset of {}
-assert sampler.contains_superset_of({}), "No subset of {} in sampler"
+    shuffle = True
