@@ -1,7 +1,5 @@
 from typing import Any, Dict, List, TYPE_CHECKING, Union
 
-from scipy.stats import distributions
-
 from experitur.core.parameters import (
     DynamicValues,
     ParameterGenerator,
@@ -17,9 +15,18 @@ except ImportError:
     if not TYPE_CHECKING:
         sklearn_model_selection = UnavailableObject("sklearn.model_selection")
 
+try:
+    from scipy.stats import distributions
+except ImportError:
+    if not TYPE_CHECKING:
+        distributions = UnavailableObject("scipy.stats.distributions")
+
 
 class _RandomSamplerIter(ParameterGeneratorIter):
     def __iter__(self):
+        ctx = get_current_context()
+        experiment = ctx.current_experiment
+
         # Parameter names that are relevant in this context
         parameter_names = set(
             k
@@ -32,8 +39,8 @@ class _RandomSamplerIter(ParameterGeneratorIter):
             # produce missing sub-configurations.
 
             # Retrieve all trials that match parent_configuration
-            existing_trials = self.experiment.ctx.trials.match(
-                func=self.experiment.func,
+            existing_trials = ctx.trials.match(
+                func=experiment.func,
                 parameters=parent_configuration.get("parameters", {}),
             )
 
@@ -67,8 +74,8 @@ class _RandomSamplerIter(ParameterGeneratorIter):
                 },
                 n_iter,
             ):
-                existing_trials = self.experiment.ctx.trials.match(
-                    func=self.experiment.func,
+                existing_trials = ctx.trials.match(
+                    func=experiment.func,
                     parameters=parent_configuration.get("parameters", {}),
                 )
 

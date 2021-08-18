@@ -107,6 +107,7 @@ class Context:
         self.writable = writable
 
         self._current_trial = None
+        self._experiment_stack: List[Experiment] = []
 
     def _register_experiment(self, experiment):
         self.registered_experiments.append(experiment)
@@ -236,6 +237,7 @@ class Context:
             return self._experiment_stack[-1]
         except IndexError:
             raise ContextError("Experiment stack is empty") from None
+
     def stop(self, stop=True):
         """Save/clear stop signal."""
 

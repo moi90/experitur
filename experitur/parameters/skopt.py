@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any, Mapping
 
 from unavailable_object import UnavailableObject, check_available
 
+from experitur.core.context import get_current_context
 from experitur.core.parameters import (
     DynamicValues,
     ParameterGenerator,
@@ -68,9 +69,12 @@ class _SKOptIter(ParameterGeneratorIter):
     def __iter__(self):
         objective = self.parameter_generator.objective
 
-        if objective in self.experiment.maximize:
+        ctx = get_current_context()
+        experiment = ctx.current_experiment
+
+        if objective in experiment.maximize:
             maximize = True
-        elif objective in self.experiment.minimize:
+        elif objective in experiment.minimize:
             maximize = False
         else:
             raise ValueError(
@@ -86,8 +90,8 @@ class _SKOptIter(ParameterGeneratorIter):
 
         for parent_configuration in self.parent:
             # Retrieve all trials that match parent_configuration
-            existing_trials = self.experiment.ctx.get_trials(
-                func=self.experiment.func,
+            existing_trials = ctx.get_trials(
+                func=experiment.func,
                 parameters=parent_configuration.get("parameters", {}),
             )
 
@@ -121,8 +125,8 @@ class _SKOptIter(ParameterGeneratorIter):
                 )
 
                 # Train model
-                existing_trials = self.experiment.ctx.get_trials(
-                    func=self.experiment.func,
+                existing_trials = ctx.get_trials(
+                    func=experiment.func,
                     parameters=parent_configuration.get("parameters", {}),
                 )
 
