@@ -346,7 +346,7 @@ class Experiment:
         print()
 
         # Generate trial configurations
-        trial_configurations = self.parameter_generator.generate(self)
+        trial_configurations = self.parameter_generator.generate()
 
         skip_cache = _SkipCache(self)
 

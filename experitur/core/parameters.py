@@ -43,11 +43,10 @@ class ParameterGeneratorIter(ABC):
     def __init__(
         self,
         parameter_generator: "ParameterGenerator",
-        experiment: "Experiment",
+        *,
         parent: "ParameterGeneratorIter",
     ):
         self.parameter_generator = parameter_generator
-        self.experiment: "Experiment" = experiment
         self.parent = parent
 
         self.child: "Optional[ParameterGenerator]" = None
@@ -80,14 +79,11 @@ class ParameterGenerator(ABC):
     _iterator: Type[ParameterGeneratorIter]
     _str_attr: List[str] = []
 
-    def generate(
-        self, experiment: "Experiment", parent: Optional[ParameterGeneratorIter] = None
-    ):
+    def generate(self, *, parent: Optional[ParameterGeneratorIter] = None):
         """
         Return a ParameterGeneratorIter to sample parameter configurations.
 
         Parameters:
-                experiment (Experiment): Experiment instance.
                 parent (SamplerIter): Parent SamplerIter.
 
         Custom Samplers
@@ -112,7 +108,7 @@ class ParameterGenerator(ABC):
 
         parent.child = self
 
-        return self._iterator(self, experiment, parent)
+        return self._iterator(self, parent=parent)
 
     @abstractproperty
     def independent_parameters(
@@ -138,7 +134,7 @@ class _SequentialParameterGeneratorIter(ParameterGeneratorIter):
     def __iter__(self):
         for sub_generator in self.parameter_generator.sub_generators:
             sub_generator: ParameterGenerator
-            yield from sub_generator.generate(self.experiment, parent=self.parent)
+            yield from sub_generator.generate(parent=self.parent)
 
 
 def _collate_values(values: List[Union[List, DynamicValues]]):
@@ -339,13 +335,13 @@ class Multi(collections.abc.Iterable, ParameterGenerator):
         for s in samplers:
             self.add(s)
 
-    def generate(self, experiment, parent=None):
+    def generate(self, parent=None):
         if parent is None:
             parent = _NullIter()
 
         last_sampler_iter = parent
         for gen in self.generators:
-            last_sampler_iter = gen.generate(experiment, last_sampler_iter)
+            last_sampler_iter = gen.generate(parent=last_sampler_iter)
 
         return last_sampler_iter
 

@@ -22,7 +22,7 @@ def test_Const(tmp_path):
         def exp(trial):
             pass
 
-        sample_iter = sampler.generate(exp)
+        sample_iter = sampler.generate()
         samples = set(
             tuple(configuration["parameters"].items()) for configuration in sample_iter
         )
@@ -48,7 +48,7 @@ def test_Grid(tmp_path, shuffle):
         def exp(trial):
             pass
 
-        sample_iter = sampler.generate(exp)
+        sample_iter = sampler.generate()
         samples = set(
             tuple(configuration["parameters"].items()) for configuration in sample_iter
         )
@@ -81,7 +81,7 @@ def test_Multi(tmp_path):
         def exp(trial):
             pass
 
-        sample_iter = sampler.generate(exp)
+        sample_iter = sampler.generate()
         samples = sorted(
             tuple(sorted(configuration["parameters"].items()))
             for configuration in sample_iter
@@ -114,7 +114,7 @@ def test_Sequential(tmp_path):
         def exp(trial):
             pass
 
-        sample_iter = generator.generate(exp)
+        sample_iter = generator.generate()
         samples = sorted(
             tuple(sorted(configuration["parameters"].items()))
             for configuration in sample_iter

@@ -19,7 +19,7 @@ def test_Conditions(tmp_path):
         ]
 
         samples = sorted(
-            tuple(sorted(d["parameters"].items())) for d in sampler.generate(exp)
+            tuple(sorted(d["parameters"].items())) for d in sampler.generate()
         )
 
         # Assert exististence of all specified values
@@ -37,7 +37,7 @@ def test_Conditions(tmp_path):
         ]
 
         samples = sorted(
-            tuple(sorted(d["parameters"].items())) for d in sampler.generate(exp)
+            tuple(sorted(d["parameters"].items())) for d in sampler.generate()
         )
 
         # Assert exististence of all specified values
@@ -55,7 +55,7 @@ def test_Conditions(tmp_path):
 
         # Assert exististence of all specified values
         samples = sorted(
-            tuple(sorted(d["parameters"].items())) for d in sampler.generate(exp)
+            tuple(sorted(d["parameters"].items())) for d in sampler.generate()
         )
         assert samples == [
             (("x", 1),),
@@ -68,7 +68,7 @@ def test_Conditions(tmp_path):
         ]
 
         samples = sorted(
-            tuple(sorted(d["parameters"].items())) for d in sampler.generate(exp)
+            tuple(sorted(d["parameters"].items())) for d in sampler.generate()
         )
 
         # Assert exististence of all specified values
@@ -84,7 +84,7 @@ def test_Conditions(tmp_path):
         ]
 
         samples = sorted(
-            tuple(sorted(d["parameters"].items())) for d in sampler.generate(exp)
+            tuple(sorted(d["parameters"].items())) for d in sampler.generate()
         )
 
         # Assert exististence of all specified values
@@ -101,7 +101,7 @@ def test_Conditions(tmp_path):
         ]
 
         samples = sorted(
-            tuple(sorted(d["parameters"].items())) for d in sampler.generate(exp)
+            tuple(sorted(d["parameters"].items())) for d in sampler.generate()
         )
 
         # Assert exististence of all specified values

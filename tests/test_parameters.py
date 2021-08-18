@@ -17,7 +17,7 @@ def test_Random(tmp_path):
         def exp(trial):
             pass
 
-        sample_iter = sampler.generate(exp)
+        sample_iter = sampler.generate()
         samples = set(tuple(sorted(d["parameters"].items())) for d in sample_iter)
 
         # Assert exististence of all grid  cells

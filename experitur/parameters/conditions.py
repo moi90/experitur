@@ -16,7 +16,7 @@ class _ConditionsSamplerIter(ParameterGeneratorIter):
         for parent_configuration in self.parent:
             for value, sub_gen in self.parameter_generator.sub_generators.items():
                 sub_gen: ParameterGenerator
-                for sub_params in sub_gen.generate(self.experiment):
+                for sub_params in sub_gen.generate():
                     yield merge_dicts(
                         parent_configuration,
                         sub_params,
