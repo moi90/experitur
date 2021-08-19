@@ -202,7 +202,9 @@ class Experiment:
         self._pre_trial = None
         self._commands: Dict[str, Any] = {}
 
-        self.func = None
+        self.func: Optional[Callable[[Trial], Any]] = None
+
+        self._event_handlers: Dict[str, List[Callable]] = defaultdict(list)
 
         # Merge parameters from all ancestors
         parent = self.parent
@@ -214,8 +216,6 @@ class Experiment:
         self._base_parameter_generators = (
             [] if self.parent is None else self.parent._parameter_generators
         )
-
-        self._on_success = []
 
         self.ctx._register_experiment(self)
 
@@ -252,6 +252,26 @@ class Experiment:
 
         return self
 
+    def _register_handler(self, event: str, func: Callable):
+        self._event_handlers[event].append(func)
+
+    def _handle_event(self, event: str, *args):
+        for handler in self._event_handlers[event]:
+            handler(*args)
+
+    def on_pre_run(self, func: Callable[[Trial], Any]):
+        """
+        Register a callback that is called before a trial runs.
+
+        Example:
+            experiment = Experiment(...)
+            @experiment.on_pre_run
+            def on_experiment_pre_run(trial: Trial):
+                ...
+        """
+
+        self._register_handler("on_pre_run", func)
+
     def on_success(self, func: Callable[[Trial], Any]):
         """
         Register a callback that is called after a trial finished successfully.
@@ -263,11 +283,20 @@ class Experiment:
                 ...
         """
 
-        self._on_success.append(func)
+        self._register_handler("on_success", func)
 
-    def _handle_success(self, trial: Trial):
-        for handler in self._on_success:
-            handler(trial)
+    def on_update(self, func: Callable[[Trial], Any]):
+        """
+        Register a callback that is called when a trial is updated.
+
+        Example:
+            experiment = Experiment(...)
+            @experiment.on_update
+            def on_experiment_update(trial: Trial):
+                ...
+        """
+
+        self._register_handler("on_update", func)
 
     @property
     def _parameter_generators(self) -> List[ParameterGenerator]:
@@ -432,6 +461,8 @@ class Experiment:
 
         trial.save()
 
+        self._handle_event("on_pre_run", trial)
+
         try:
             with self.ctx.set_current_trial(trial):
                 result = self.func(trial)
@@ -464,7 +495,7 @@ class Experiment:
             trial.time_end = datetime.datetime.now()
             trial.save()
 
-        self._handle_success(trial)
+        self._handle_event("on_success", trial)
 
         return trial.result
 
@@ -523,6 +554,8 @@ class Experiment:
             elif isinstance(ours, dict) and isinstance(theirs, dict):
                 # Merge dict attributes
                 setattr(self, name, {**theirs, **ours})
+
+        self._event_handlers.update(other._event_handlers)
 
     def pre_trial(self, func):
         """Update the pre-trial hook.
