@@ -4,8 +4,6 @@ import inspect
 import itertools
 import os.path
 from collections import OrderedDict, defaultdict
-from collections.abc import Collection
-from numbers import Real
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -22,6 +20,7 @@ from typing import (
     Union,
 )
 
+import joblib
 import numpy as np
 
 from experitur.core.logger import YAMLLogger
@@ -88,10 +87,7 @@ class Trial(collections.abc.MutableMapping):
     """
 
     def __init__(
-        self,
-        data: MutableMapping,
-        root: "RootTrialCollection",
-        prefix: str = "",
+        self, data: MutableMapping, root: "RootTrialCollection", prefix: str = "",
     ):
         self._root = root
         self._data = data
@@ -148,6 +144,52 @@ class Trial(collections.abc.MutableMapping):
 
         # Write to the store
         self._root.update(self)
+
+    def save_checkpoint(self, *args, **kwargs):
+        """
+        Save a checkpoint that allows the experiment to be resumed.
+
+        Args:
+            *args, **kwargs: Arguments supplied to the experiment function upon resumption.
+        """
+
+        # XXX: Interaction with log: Commit log entries if checkpoint is saved. Remove uncommitted log entries upon restorage.
+
+        checkpoint = dict(args=args, kwargs=kwargs)
+
+        checkpoint_fn = os.path.join(
+            self.wdir, f"checkpoint_{datetime.datetime.now().isoformat()}.chk"
+        )
+
+        joblib.dump(checkpoint, checkpoint_fn, compress=True)
+
+        try:
+            old_checkpoint_fn = self.checkpoint_fn
+        except AttributeError:
+            old_checkpoint_fn = None
+
+        self.checkpoint_fn = checkpoint_fn
+        self.save()
+
+        if old_checkpoint_fn:
+            # TODO: Catch sensible exceptions
+            os.remove(old_checkpoint_fn)
+
+        self.log(save_checkpoint=checkpoint_fn)
+
+        print(f"Saved checkpoint: {checkpoint_fn}")
+
+    def load_checkpoint(self):
+        try:
+            checkpoint_fn = self.checkpoint_fn
+        except AttributeError:
+            checkpoint_fn = None
+
+        if checkpoint_fn:
+            self.log(load_checkpoint=checkpoint_fn)
+            return joblib.load(checkpoint_fn)
+
+        return None
 
     @property
     def is_failed(self):
@@ -367,10 +409,7 @@ class Trial(collections.abc.MutableMapping):
         return self
 
     def choice(
-        self,
-        parameter_name: str,
-        choices: Union[Mapping, Iterable],
-        default=None,
+        self, parameter_name: str, choices: Union[Mapping, Iterable], default=None,
     ):
         """
         Chose a value from an iterable whose name matches the value stored in parameter_name.
@@ -606,9 +645,7 @@ class BaseTrialCollection(collections.abc.Collection):
         return result
 
     def groupby(
-        self,
-        parameters=None,
-        experiment=False,
+        self, parameters=None, experiment=False,
     ) -> Generator[Tuple[dict, "TrialCollection"], None, None]:
         if isinstance(parameters, str):
             parameters = [parameters]

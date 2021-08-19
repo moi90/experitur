@@ -299,3 +299,35 @@ def test_skip(tmp_path):
     ctx.run()
 
     assert len(ctx.trials) == 4
+
+
+
+def test_checkpoint_resume(tmp_path):
+    config = {"skip_existing": True, "resume_failed": True}
+    with Context(str(tmp_path), config=config, writable=True) as ctx:
+
+        @Experiment()
+        def a(trial: Trial, checkpoint=None):
+            if checkpoint is None:
+                checkpoint = 0
+
+            trial.save_checkpoint(checkpoint=checkpoint + 1)
+
+            if checkpoint < 1:
+                raise Exception()
+
+            return dict(checkpoint=checkpoint)
+
+        with pytest.raises(Exception):
+            a.run()
+
+        trial = a.trials.one()
+        assert trial.is_failed
+        assert len(trial.find_files("checkpoint_*.chk")) == 1
+
+        a.run()
+
+        trial = a.trials.one()
+
+        assert not trial.is_failed
+        assert len(trial.find_files("checkpoint_*.chk")) == 1

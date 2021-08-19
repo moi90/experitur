@@ -4,8 +4,8 @@ import functools
 import inspect
 import os
 import socket
-import textwrap
 import traceback
+from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, Union
 
 import click
@@ -453,11 +453,35 @@ class Experiment:
     def run_trial(self, trial: Trial):
         """Run the current trial and save the results."""
 
-        # Record intital state
-        trial.success = False
-        trial.time_start = datetime.datetime.now()
-        trial.result = None
-        trial.error = None
+        assert self.func is not None
+
+        if trial.is_successful:
+            raise ValueError(f"Trial {trial.id} was already successful")
+
+        checkpoint = trial.load_checkpoint()
+
+        if checkpoint is None:
+            # Record intital state
+            trial.success = False
+            trial.time_start = datetime.datetime.now()
+            trial.result = None
+            trial.error = None
+
+            args = ()
+            kwargs = {}
+        else:
+            # Reset any errors
+            trial.error = None
+            trial.time_end = None
+
+            args = checkpoint["args"]
+            kwargs = checkpoint["kwargs"]
+
+            print(f"Restored checkpoint {trial.checkpoint_fn}")
+
+        # Properly inject runtime metadata.
+        # Otherwise, resumed trials appear as zombies.
+        trial.experiment["meta"].update({k: self.meta[k] for k in ("hostname", "pid")})
 
         trial.save()
 

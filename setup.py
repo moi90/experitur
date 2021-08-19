@@ -25,6 +25,7 @@ setup(
         "unavailable-object",
         "filelock",
         "cachetools",
+        "joblib",  # We use joblib.dump for checkpoints
     ],
     python_requires=">=3.6",
     extras_require={

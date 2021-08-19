@@ -236,7 +236,7 @@ class Context:
             assert popped is experiment
 
     @property
-    def current_experiment(self) -> Experiment:
+    def current_experiment(self) -> "Experiment":
         try:
             return self._experiment_stack[-1]
         except IndexError:
