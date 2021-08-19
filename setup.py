@@ -25,7 +25,8 @@ setup(
         "unavailable-object",
         "filelock",
         "cachetools",
-        "joblib",  # We use joblib.dump for checkpoints
+        "joblib",  # joblib.dump for checkpoints
+        "termcolor",  # for colorful terminal output
     ],
     python_requires=">=3.6",
     extras_require={

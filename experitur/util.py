@@ -1,6 +1,7 @@
 import sys
 from collections.abc import Iterable, Mapping
 from typing import IO, Dict
+import termcolor
 
 
 def callable_to_name(obj):

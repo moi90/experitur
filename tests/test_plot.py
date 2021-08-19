@@ -1,22 +1,30 @@
+from experitur.core.trial import Trial
 import pytest
 
+from experitur.configurators import Grid
 from experitur.core.context import Context
 from experitur.core.experiment import Experiment
-from experitur.parameters import Grid
 
-pytest.importorskip("matplotlib")
-pytest.importorskip("pandas")
-
-from experitur.plot import Integer, Numeric, Real, plot_partial_dependence
-
-
-@pytest.mark.slow
-def test_plot_partial_dependence(tmp_path):
+try:
     import matplotlib
 
     matplotlib.use("Agg")
 
-    with Context(str(tmp_path), writable=True) as ctx:
+    import matplotlib.pyplot as plt
+    import pandas as pd
+    import pandas.testing
+
+    from experitur.plot import Integer, Numeric, plot_partial_dependence
+except ImportError as exc:
+    pytestmark = pytest.mark.skip(str(exc))
+
+
+@pytest.mark.slow
+def test_plot_partial_dependence(tmp_path):
+    print(tmp_path)
+    with Context(
+        str(tmp_path), config={"catch_exceptions": False}, writable=True
+    ) as ctx:
 
         @Grid(
             {
@@ -26,18 +34,20 @@ def test_plot_partial_dependence(tmp_path):
             }
         )
         @Experiment()
-        def experiment(parameters):  # pylint: disable=unused-variable
-            y = parameters["float"] + parameters["integer"]
+        def experiment(trial: Trial):
+            assert trial.wdir
 
-            if parameters["categorical"] == 1:
+            y = trial["float"] + trial["integer"]
+
+            if trial["categorical"] == 1:
                 y *= 1
-            elif parameters["categorical"] == None:
+            elif trial["categorical"] == None:
                 y *= 2
-            elif parameters["categorical"] == "a":
+            elif trial["categorical"] == "a":
                 y *= 3
-            elif parameters["categorical"] == (1, 2):
+            elif trial["categorical"] == (1, 2):
                 y *= 4
-            elif parameters["categorical"] == [1, 2]:
+            elif trial["categorical"] == [1, 2]:
                 y *= 5
 
             return {"y": y}
@@ -46,17 +56,12 @@ def test_plot_partial_dependence(tmp_path):
 
     plot_partial_dependence(experiment.trials, "y", maximize=True)
 
-    import matplotlib.pyplot as plt
-
     plt.savefig(tmp_path / "plot.pdf")
 
     print(tmp_path)
 
 
 def test_Numeric_log10():
-    import pandas as pd
-    import pandas.testing
-
     logfloat = [10 ** -i for i in range(4)]
 
     n = Numeric(scale="log10")
@@ -90,8 +95,6 @@ def test_plot_partial_dependence_scale(tmp_path):
             return {"y": y}
 
     ctx.run()
-
-    import matplotlib.pyplot as plt
 
     plot_partial_dependence(
         experiment.trials,

@@ -7,7 +7,7 @@ import typing
 import uuid
 import warnings
 from abc import abstractmethod
-from typing import Dict, Iterator, List, Optional
+from typing import Dict, Iterator, List, Mapping, Optional
 
 from filelock import SoftFileLock
 
@@ -90,7 +90,7 @@ class TrialStore(collections.abc.MutableMapping):
         return trial_data_list
 
     @abstractmethod
-    def _create(self, trial_data):
+    def _create(self, trial_data: Mapping) -> Mapping:
         """
         Create an entry using the trial_data["id"].
 
@@ -247,7 +247,11 @@ class FileTrialStore(TrialStore):
         path = os.path.dirname(fn)
 
         # Create temporary file
-        temp_fh = tempfile.NamedTemporaryFile(mode=mode, dir=path, delete=False,)
+        temp_fh = tempfile.NamedTemporaryFile(
+            mode=mode,
+            dir=path,
+            delete=False,
+        )
 
         yield temp_fh
 

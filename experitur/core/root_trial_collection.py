@@ -27,14 +27,15 @@ class RootTrialCollection(BaseTrialCollection):
         raise NotImplementedError()
 
     def __iter__(self):
-        for td in self.ctx.store.values():
-            yield Trial(td, self)
+        for trial_data in self.ctx.store.values():
+            yield Trial(trial_data, self)
 
     def __len__(self):
         return len(self.ctx.store)
 
     def get(self, trial_id):
-        return Trial(self.ctx.store[trial_id], self)
+        trial_data = self.ctx.store[trial_id]
+        return Trial(trial_data, self)
 
     def match(
         self, func=None, parameters=None, experiment=None, resolved_parameters=None
@@ -73,6 +74,8 @@ class RootTrialCollection(BaseTrialCollection):
             experiment_name, trial_parameters, experiment_varying_parameters
         )
 
+        trial_data["wdir"] = self.ctx.get_trial_wdir(trial_id)
+
         try:
             return self.ctx.store.create(trial_id, trial_data)
         except KeyExistsError:
@@ -101,6 +104,8 @@ class RootTrialCollection(BaseTrialCollection):
                 sorted(set(experiment_varying_parameters + new_independent_parameters)),
             )
 
+            trial_data["wdir"] = self.ctx.get_trial_wdir(trial_id)
+
             try:
                 return self.ctx.store.create(trial_id, trial_data)
             except KeyExistsError:
@@ -109,6 +114,8 @@ class RootTrialCollection(BaseTrialCollection):
         # Otherwise, just append a version number
         for i in itertools.count(1):
             test_trial_id = "{}.{}".format(trial_id, i)
+
+            trial_data["wdir"] = self.ctx.get_trial_wdir(test_trial_id)
 
             try:
                 return self.ctx.store.create(test_trial_id, trial_data)
@@ -124,8 +131,6 @@ class RootTrialCollection(BaseTrialCollection):
         )
 
         trial_data = self._create(trial_data)
-
-        trial_data["wdir"] = self.ctx.get_trial_wdir(trial_data["id"])
 
         return Trial(trial_data, self, **kwargs)
 

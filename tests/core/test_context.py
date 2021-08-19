@@ -114,6 +114,7 @@ def test_collect(tmp_path):
         "success",
         "error",
         "revision",
+        "used_parameters",
     }
 
 
