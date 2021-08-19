@@ -352,6 +352,24 @@ class Experiment(Configurable):
 
         self._register_handler("on_update", func)
 
+    def child(
+        self,
+        name: Optional[str] = None,
+        configurator=None,
+    ) -> "Experiment":
+        """Create a child experiment.
+
+        Args:
+            name (str, optional): Name for the child experiment.
+                Defaults to the name of the parent.
+        """
+        if name is None:
+            name = self.name
+
+        exp = Experiment(name=name, configurator=configurator, parent=self)
+
+        return exp
+
     def prepend_configurator(self, configurator: BaseConfigurator) -> None:
         self._own_configurators.insert(0, configurator)
 
@@ -717,3 +735,20 @@ class Experiment(Configurable):
     @property
     def trials(self):
         return self.ctx.get_trials(experiment=self)
+
+    def get_matching_trials(self, exclude=None):
+        parameters = self.parameters
+
+        if exclude is not None:
+            if isinstance(exclude, str):
+                exclude = [exclude]
+
+            parameters = [k for k in parameters if k not in exclude]
+
+        print("get_matching_trials: parameters", parameters)
+
+        sampler = self.configurator.build_sampler()
+
+        return self.ctx.trials.match(func=self.func).filter(
+            lambda trial: sampler.contains_superset_of({"parameters": dict(trial)})
+        )

@@ -322,3 +322,35 @@ def test_checkpoint_resume(tmp_path):
 
         assert not trial.is_failed
         assert len(trial.find_files("checkpoint_*.chk")) == 1
+
+
+def test_get_matching_trials(tmp_path):
+    config = {"skip_existing": True, "catch_exceptions": False}
+    with Context(str(tmp_path), config=config, writable=True) as ctx:
+
+        # Run many experiments of the same kind with different parameter settings
+
+        @Const(a=0)
+        @Experiment()
+        def experiment0(trial: Trial):
+            return dict(trial)
+
+        for i in range(1, 5):
+            experiment0.child(f"experiment{i}", Const(a=i))
+
+        experiment_total = experiment0.child(
+            f"experiment_total", Grid({"a": [0, 1, 2, 3, 4]})
+        )
+
+        print(ctx.registered_experiments)
+
+        ctx.run()
+
+        # Because experiment_total defines all previous settings, all trials should match.
+
+        matching_trial_ids = sorted(
+            t.id for t in experiment_total.get_matching_trials()
+        )
+        all_trial_ids = sorted(t.id for t in ctx.trials)
+
+        assert matching_trial_ids == all_trial_ids

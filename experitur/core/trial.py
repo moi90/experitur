@@ -703,7 +703,7 @@ class BaseTrialCollection(collections.abc.Collection):
         self,
         parameters=None,
         experiment=False,
-    ) -> Generator[Tuple[dict, "TrialCollection"], None, None]:
+    ) -> "TrialCollectionGroupby":
         if isinstance(parameters, str):
             parameters = [parameters]
 
