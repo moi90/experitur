@@ -57,6 +57,34 @@ def freeze(value):
     return value
 
 
+def isatty(stream: IO):
+    try:
+        return stream.isatty()
+    except AttributeError:
+        return False
+
+
+def cprint(*args, color=None, on_color=None, attrs=None, file=sys.stdout, **kwargs):
+    """
+    Print styled text if connected to a tty.
+
+    Available text colors:
+        red, green, yellow, blue, magenta, cyan, white.
+
+    Available text highlights:
+        on_red, on_green, on_yellow, on_blue, on_magenta, on_cyan, on_white.
+
+    Available attributes:
+        bold, dark, underline, blink, reverse, concealed.
+    """
+    if isatty(file):
+        text = " ".join(str(o) for o in args)
+        termcolor.cprint(
+            text, color=color, on_color=on_color, attrs=attrs, file=file, **kwargs
+        )
+    else:
+        print(*args, file=file, **kwargs)
+
 class _Unset:
     """
     Singleton to signify an unset value.
