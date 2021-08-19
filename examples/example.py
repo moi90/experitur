@@ -18,7 +18,7 @@ from experitur import Experiment
 # Most of your experiments will vary some parameters. Specify these in parameter_grid.
 
 
-@Experiment(parameters={"a": [1, 2], "b": [3, 4]})
+@Experiment(configurator={"a": [1, 2], "b": [3, 4]})
 def experiment1(trial):
     """This is the first experiment."""
     print("I am experiment1!")

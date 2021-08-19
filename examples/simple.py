@@ -1,7 +1,7 @@
 import time
 
 from experitur import Experiment
-from experitur.parameters import Grid
+from experitur.configurators import Grid
 
 
 @Grid({"a": [1, 2], "b": [3, 4]})
