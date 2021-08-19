@@ -493,9 +493,43 @@ class Trial(collections.abc.MutableMapping):
     def aggregate_log(self, include):
         return self._logger.aggregate(include)
 
-    def find_file(self, pattern, recursive=False):
+    def find_files(self, pattern, recursive=False) -> List[AnyStr]:
+        """
+        Find files of the trial.
+
+        Args:
+            pattern (str): Filename pattern.
+            recursive (boolean, optional): Search recursively.
+                If True, the pattern '**' will match any files and
+                zero or more directories and subdirectories.
+
+        Returns:
+            List of filenames.
+        """
+
         pattern = os.path.join(glob.escape(self.wdir), pattern)
-        matches = glob.glob(pattern, recursive=recursive)
+        return glob.glob(pattern, recursive=recursive)
+
+    def has_file(self, pattern, recursive=False):
+        return len(self.find_files(pattern, recursive)) > 0
+
+    def find_file(self, pattern: str, recursive: bool = False):
+        """
+        Find a file of the trial.
+
+        Args:
+            pattern (str): Filename pattern.
+            recursive (boolean, optional): Search recursively.
+                If True, the pattern '**' will match any files and
+                zero or more directories and subdirectories.
+
+        Returns:
+            filename
+
+        Raises:
+            ValueError: If not exactly one file was found.
+        """
+        matches = self.find_files(pattern, recursive)
         if not matches:
             raise ValueError(f"No matches for {pattern}")
         if len(matches) > 1:
