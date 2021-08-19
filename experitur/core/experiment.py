@@ -431,6 +431,26 @@ class Experiment:
 
         trials = self._trial_generator(self.parameter_generator)
 
+        if self.ctx.config["resume_failed"]:
+            # TODO: Make sure that these are not resumed simultaneously by another process!
+            failed_with_checkpoint = self.trials.filter(
+                lambda trial: trial.is_failed or trial.is_zombie and trial.is_resumable
+            )
+            cprint(f"{len(failed_with_checkpoint)} resumable trials")
+
+            def _check_unmodified(t: Trial):
+                try:
+                    t.save()
+                except ModifiedError:
+                    return False
+                return True
+
+            failed_with_checkpoint = (
+                t for t in failed_with_checkpoint if _check_unmodified(t)
+            )
+
+            trials = itertools.chain(failed_with_checkpoint, trials)
+
         for trial in trials:
             print()
             cprint(f"Running trial {trial.id} ...", color="white", attrs=["dark"])
