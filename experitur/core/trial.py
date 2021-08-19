@@ -3,6 +3,7 @@ import datetime
 import glob
 import inspect
 import itertools
+import operator
 import os
 import os.path
 from collections import OrderedDict, defaultdict
@@ -54,11 +55,6 @@ def _get_object_name(obj):
 class Trial(collections.abc.MutableMapping):
     """
     Data related to a trial.
-
-    Args:
-        store: TrialStore
-        data (optional): Trial data dictionary.
-        func (optional): Experiment function.
 
     This is automatically instanciated by experitur and provided to the experiment function:
 
@@ -785,7 +781,7 @@ class BaseTrialCollection(collections.abc.Collection):
 
     def match(
         self, func=None, parameters=None, experiment=None, resolved_parameters=None
-    ) -> List[Dict]:
+    ) -> "TrialCollection":
         func = callable_to_name(func)
 
         from experitur.core.experiment import Experiment

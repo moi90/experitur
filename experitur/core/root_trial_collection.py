@@ -38,7 +38,7 @@ class RootTrialCollection(BaseTrialCollection):
 
     def match(
         self, func=None, parameters=None, experiment=None, resolved_parameters=None
-    ) -> List[Dict]:
+    ) -> TrialCollection:
         func = callable_to_name(func)
 
         from experitur.core.experiment import Experiment

@@ -2,18 +2,21 @@ import collections.abc
 import itertools
 import random
 import warnings
-from abc import ABC, abstractmethod, abstractproperty
+from abc import ABCMeta, abstractmethod, abstractproperty
 from typing import (
     Any,
     Container,
     Dict,
     Iterable,
     Iterator,
+    List,
     Mapping,
     Optional,
     Set,
     Tuple,
     Type,
+    TypeVar,
+    Union,
 )
 
 from typing_extensions import final
@@ -21,7 +24,7 @@ from typing_extensions import final
 from experitur.helpers.merge_dicts import merge_dicts
 
 
-class BaseConfigurationSampler(ABC):
+class BaseConfigurationSampler(metaclass=ABCMeta):
     """
     Base class for all configuration samplers.
     """
@@ -92,6 +95,21 @@ class _RootSampler(BaseConfigurationSampler):
         return not configuration
 
 
+class Configurable(metaclass=ABCMeta):
+    """ABC for classes that implement `prepend_configurator`."""
+
+    @abstractmethod
+    def prepend_configurator(self, configurator: "BaseConfigurator") -> None:
+        """
+        Prepend a configurator.
+
+        Used by BaseConfigurator.__call__.
+        """
+
+
+AnyConfigurable = TypeVar("AnyConfigurable", bound=Configurable)
+
+
 class BaseConfigurator:
     @abstractmethod
     def build_sampler(
@@ -115,6 +133,15 @@ class BaseConfigurator:
             return NotImplemented
 
         return MultiplicativeConfiguratorChain(self, other)
+
+    def __call__(self, configurable: AnyConfigurable) -> AnyConfigurable:
+        """
+        Prepend the Configurator to a Configurable.
+
+        Allows a Configurator object to be used as a decorator.
+        """
+        configurable.prepend_configurator(self)
+        return configurable
 
 
 class ConfigurationSampler(BaseConfigurationSampler):
@@ -458,7 +485,7 @@ class Grid(Configurator):
         .. code-block:: python
 
             from experitur import Experiment, Trial
-            from experitur.parameters import Grid
+            from experitur.configurators import Grid
 
             @Grid({"a": [1,2], "b": [3,4]})
             @Experiment()
@@ -524,3 +551,30 @@ class RandomGrid(Grid):
         super().__init__(grid, shuffle=True)
 
     shuffle = True
+
+
+def validate_configurators(configurators) -> List[BaseConfigurator]:
+    """
+    Check configurators argument.
+
+    Convert None, Mapping, Iterable to list of :py:class:`BaseConfigurator`s.
+    """
+
+    if configurators is None:
+        return []
+    if isinstance(configurators, Mapping):
+        return [Grid(configurators)]
+    if isinstance(configurators, Iterable):
+        return sum((validate_configurators(c) for c in configurators), [])
+    if isinstance(configurators, BaseConfigurator):
+        return [configurators]
+
+    raise ValueError(f"Unsupported type for configurators: {configurators!r}")
+
+
+def is_invariant(configured_values: Union[Tuple, Container]):
+    """Return True if not more than one single value is configured."""
+    if isinstance(configured_values, tuple):
+        return len(configured_values) < 2
+
+    return False

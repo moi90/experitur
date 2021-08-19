@@ -1,5 +1,14 @@
 import copy
 import datetime
+
+import warnings
+from experitur.core.configurators import (
+    BaseConfigurator,
+    Configurable,
+    is_invariant,
+    validate_configurators,
+    MultiplicativeConfiguratorChain,
+)
 import functools
 import inspect
 import itertools
@@ -20,16 +29,11 @@ from typing import (
 )
 
 import click
-import tqdm
 
 import experitur
 from experitur.core.context import get_current_context
-from experitur.core.parameters import (
-    Multi,
-    ParameterGenerator,
-    check_parameter_generators,
-    count_values,
-)
+
+
 from experitur.core.trial import Trial
 from experitur.core.trial_store import ModifiedError
 from experitur.errors import ExperiturError
@@ -117,7 +121,7 @@ class _SkipCache:
         self.update()
 
         # ... and retry
-        return self._trial_collection.match(resolved_parameters=parameters)
+        return self._trial_collection.match(resolved_parameters=parameters)  # type: ignore
 
     def __contains__(self, parameters):
         existing_trials = self.get_trials(parameters)
@@ -128,19 +132,7 @@ class _SkipCache:
         return False
 
 
-class _TempParameterGeneratorContext:
-    def __init__(self, experiment: "Experiment", parameter_generator):
-        self.experiment = experiment
-        self.parameter_generator = parameter_generator
-
-    def __enter__(self):
-        pass
-
-    def __exit__(self, *_, **__):
-        self.experiment.remove_parameter_generator(self.parameter_generator)
-
-
-class Experiment:
+class Experiment(Configurable):
     """
     Define an experiment.
 
@@ -181,6 +173,7 @@ class Experiment:
         self,
         name: Optional[str] = None,
         parameters=None,
+        configurators=None,
         parent: "Experiment" = None,
         meta: Optional[Mapping] = None,
         active: bool = True,
@@ -218,8 +211,23 @@ class Experiment:
             else depends_on
         )
 
-        self._own_parameter_generators: List[ParameterGenerator]
-        self._own_parameter_generators = check_parameter_generators(parameters)
+        # Deprecation of parameters
+        if parameters is not None:
+            warnings.warn(
+                "parameters is deprecated. Use configurators instead.",
+                DeprecationWarning,
+            )
+
+            if configurators is not None:
+                raise ValueError(
+                    "parameters and configurators can not be set at the same time."
+                )
+
+            configurators = parameters
+
+        self._own_configurators: List[BaseConfigurator] = validate_configurators(
+            configurators
+        )
 
         self._pre_trial = None
         self._commands: Dict[str, Any] = {}
@@ -228,18 +236,39 @@ class Experiment:
 
         self._event_handlers: Dict[str, List[Callable]] = defaultdict(list)
 
-        # Merge parameters from all ancestors
-        parent = self.parent
-        while parent is not None:
-            self._merge(parent)
-            parent = parent.parent
+        # Merge settings from all ancestors
+        self._merge_parents()
 
-        self._base_parameter_generators: List[ParameterGenerator]
-        self._base_parameter_generators = (
-            [] if self.parent is None else self.parent._parameter_generators
+        self._base_configurators: List[BaseConfigurator] = (
+            [] if self.parent is None else self.parent._configurators
         )
 
         self.ctx._register_experiment(self)
+
+    def _merge_parents(self):
+        """
+        Merge configuration of all ancestors into self.
+
+        This does not include configurators!
+        """
+
+        parent: "Optional[Experiment]" = self.parent
+        while parent is not None:
+            # Copy attributes: func, meta, ...
+            for name in ("func", "meta"):
+                ours = getattr(self, name)
+                theirs = getattr(parent, name)
+
+                if ours is None and theirs is not None:
+                    # Shallow-copy regular attributes
+                    setattr(self, name, copy.copy(theirs))
+                elif isinstance(ours, dict) and isinstance(theirs, dict):
+                    # Merge dict attributes
+                    setattr(self, name, {**theirs, **ours})
+
+            self._event_handlers.update(parent._event_handlers)
+
+            parent = parent.parent
 
     @staticmethod
     def _validate_minimize_maximize(
@@ -322,53 +351,36 @@ class Experiment:
 
         self._register_handler("on_update", func)
 
-    @property
-    def _parameter_generators(self) -> List[ParameterGenerator]:
-        return self._base_parameter_generators + self._own_parameter_generators
-
-    def add_parameter_generator(
-        self, parameter_generator: ParameterGenerator, prepend=False
-    ):
-        """
-        Add a ParameterGenerator to the Experiment.
-
-        When used as a context manager, the ParameterGenerator is removed when the context is exited.
-        """
-        if prepend:
-            self._own_parameter_generators.insert(0, parameter_generator)
-        else:
-            self._own_parameter_generators.append(parameter_generator)
-
-        return _TempParameterGeneratorContext(self, parameter_generator)
-
-    def remove_parameter_generator(self, parameter_generator: ParameterGenerator):
-        self._own_parameter_generators.remove(parameter_generator)
+    def prepend_configurator(self, configurator: BaseConfigurator) -> None:
+        self._own_configurators.insert(0, configurator)
 
     @property
-    def parameter_generator(self) -> ParameterGenerator:
-        return Multi(self._parameter_generators)
+    def _configurators(self) -> List[BaseConfigurator]:
+        return self._base_configurators + self._own_configurators
 
     @property
-    def independent_parameters(self) -> List[str]:
-        """Independent parameters. (Parameters that were actually configured.)"""
-        return sorted(self.parameter_generator.independent_parameters.keys())
+    def configurator(self) -> BaseConfigurator:
+        return MultiplicativeConfiguratorChain(*self._configurators)
+
+    @property
+    def parameters(self) -> List[str]:
+        """Names of the configured parameters."""
+        return sorted(self.configurator.parameter_values.keys())
 
     @property
     def varying_parameters(self) -> List[str]:
-        """Varying parameters of this experiment."""
+        """Names of varying parameters, i.e. parameters that can assume more than one value."""
         return sorted(
             k
-            for k, v in self.parameter_generator.independent_parameters.items()
-            if count_values(v) != 1
+            for k, v in self.configurator.parameter_values.items()
+            if not is_invariant(v)
         )
 
     @property
     def invariant_parameters(self) -> List[str]:
-        """Varying parameters of this experiment."""
+        """Names of invariant parameters, i.e. parameters that assume only one single value."""
         return sorted(
-            k
-            for k, v in self.parameter_generator.independent_parameters.items()
-            if count_values(v) == 1
+            k for k, v in self.configurator.parameter_values.items() if is_invariant(v)
         )
 
     def __str__(self):
@@ -379,14 +391,15 @@ class Experiment:
     def __repr__(self):  # pragma: no cover
         return "Experiment(name={})".format(self.name)
 
-    def _trial_generator(self, parameter_generator: ParameterGenerator):
+    def _trial_generator(self):
         """Yields readily created trials."""
         # Generate trial configurations
-        trial_configurations = parameter_generator.generate()
+
+        sampler = self.configurator.build_sampler()
 
         skip_cache = _SkipCache(self)
 
-        for trial_configuration in trial_configurations:
+        for trial_configuration in sampler:
             # Inject experiment data into trial_configuration
             # TODO: Insert runtime meta elsewhere
             trial_configuration = self._setup_trial_configuration(trial_configuration)
@@ -446,14 +459,16 @@ class Experiment:
 
         print("Experiment", self)
 
+        # Print varying parameters of this experiment
         print("Varying parameters:")
-        for k, v in sorted(self.parameter_generator.independent_parameters.items()):
-            if count_values(v) == 1:
+        for k, v in sorted(self.configurator.parameter_values.items()):
+            if is_invariant(v):
                 continue
+
             print("{}: {}".format(k, v))
         print()
 
-        trials = self._trial_generator(self.parameter_generator)
+        trials = self._trial_generator()
 
         if self.ctx.config["resume_failed"]:
             # TODO: Make sure that these are not resumed simultaneously by another process!
@@ -580,8 +595,8 @@ class Experiment:
                 "parent": self.parent.name if self.parent is not None else None,
                 "func": callable_to_name(self.func),
                 "meta": self.meta,
-                # Parameters that where actually configured.
-                "independent_parameters": self.independent_parameters,
+                # Names of parameters that where actually configured.
+                "independent_parameters": self.parameters,
                 "varying_parameters": self.varying_parameters,
                 "minimize": self.minimize,
                 "maximize": self.maximize,
@@ -605,29 +620,6 @@ class Experiment:
             raise ExperimentError(f"Missing metrics in result: {missing_metrics}")
 
         return trial_result
-
-    def _merge(self, other):
-        """
-        Merge configuration of other into self.
-
-        This does not include parameter generators!
-
-        `other` is usually the parent experiment.
-        """
-
-        # Copy attributes: func, meta, ...
-        for name in ("func", "meta"):
-            ours = getattr(self, name)
-            theirs = getattr(other, name)
-
-            if ours is None and theirs is not None:
-                # Shallow-copy regular attributes
-                setattr(self, name, copy.copy(theirs))
-            elif isinstance(ours, dict) and isinstance(theirs, dict):
-                # Merge dict attributes
-                setattr(self, name, {**theirs, **ours})
-
-        self._event_handlers.update(other._event_handlers)
 
     def pre_trial(self, func):
         """Update the pre-trial hook.
@@ -697,10 +689,10 @@ class Experiment:
                 raise TrialNotFoundError(target_name) from exc
 
             # Inject the Trial
-            cmd_wrapped = functools.partial(cmd, Trial(trial, self.ctx.store))
+            cmd_wrapped = functools.partial(cmd, Trial(trial, self.ctx.trials))
             # Copy over __click_params__ if they exist
             try:
-                cmd_wrapped.__click_params__ = cmd.__click_params__
+                cmd_wrapped.__click_params__ = cmd.__click_params__  # type: ignore
             except AttributeError:
                 pass
 
@@ -711,7 +703,7 @@ class Experiment:
             cmd_wrapped = functools.partial(cmd, self)
             # Copy over __click_params__ if they exist
             try:
-                cmd_wrapped.__click_params__ = cmd.__click_params__
+                cmd_wrapped.__click_params__ = cmd.__click_params__  # type: ignore
             except AttributeError:
                 pass
 
