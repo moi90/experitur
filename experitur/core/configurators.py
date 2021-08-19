@@ -477,7 +477,7 @@ class Grid(Configurator):
     shuffle = False
 
     def __init__(self, grid: Mapping[str, Iterable], shuffle: bool = False):
-        if shuffle:
+        if shuffle and not isinstance(self, RandomGrid):
             warnings.warn(
                 "shuffle is deprecated, use RandomGrid instead.", DeprecationWarning
             )
