@@ -106,7 +106,7 @@ class Context:
 
         self.writable = writable
 
-        self._current_trial = None
+        self._trial_stack: List[Trial] = []
         self._experiment_stack: List[Experiment] = []
 
     def _register_experiment(self, experiment):
@@ -210,17 +210,21 @@ class Context:
     def get_trial(self, trial_id) -> Trial:
         return Trial(self.store[trial_id], self.trials)
 
-    @property
-    def current_trial(self):
-        return self._current_trial
-
     @contextlib.contextmanager
     def set_current_trial(self, trial: Trial):
         try:
-            self._current_trial = trial
+            self._trial_stack.append(trial)
             yield
         finally:
-            self._current_trial = None
+            popped = self._trial_stack.pop()
+            assert popped is trial
+
+    @property
+    def current_trial(self) -> Trial:
+        try:
+            return self._trial_stack[-1]
+        except IndexError:
+            raise ContextError("Trial stack is empty") from None
 
     @contextlib.contextmanager
     def set_current_experiment(self, experiment: "Experiment"):
@@ -232,7 +236,7 @@ class Context:
             assert popped is experiment
 
     @property
-    def current_experiment(self):
+    def current_experiment(self) -> Experiment:
         try:
             return self._experiment_stack[-1]
         except IndexError:
