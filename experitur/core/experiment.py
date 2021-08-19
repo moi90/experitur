@@ -173,7 +173,7 @@ class Experiment(Configurable):
         self,
         name: Optional[str] = None,
         parameters=None,
-        configurators=None,
+        configurator=None,
         parent: "Experiment" = None,
         meta: Optional[Mapping] = None,
         active: bool = True,
@@ -214,19 +214,20 @@ class Experiment(Configurable):
         # Deprecation of parameters
         if parameters is not None:
             warnings.warn(
-                "parameters is deprecated. Use configurators instead.",
+                "parameters is deprecated. Use configurator instead.",
                 DeprecationWarning,
+                stacklevel=2,
             )
 
-            if configurators is not None:
+            if configurator is not None:
                 raise ValueError(
-                    "parameters and configurators can not be set at the same time."
+                    "parameters and configurator can not be set at the same time."
                 )
 
-            configurators = parameters
+            configurator = parameters
 
         self._own_configurators: List[BaseConfigurator] = validate_configurators(
-            configurators
+            configurator
         )
 
         self._pre_trial = None

@@ -389,10 +389,6 @@ class AdditiveConfiguratorChain(Configurator):
         ) -> bool:
             """Return True if there exists a sample that is a subset of `configuration`, i.e. if there is one in a child."""
 
-            # print(
-            #     f"{type(self).__qualname__}.contains_subset_of", configuration, exclude
-            # )
-
             return any(
                 s.contains_subset_of(configuration, exclude) for s in self.samplers
             )

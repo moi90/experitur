@@ -60,7 +60,7 @@ class Trial(collections.abc.MutableMapping):
 
     .. code-block:: python
 
-        @Experiment(parameters={"a": [1,2,3], "prefix_a": [10]})
+        @Experiment(configurator={"a": [1,2,3], "prefix_a": [10]})
         def exp1(trial: Trial):
             # Access current value of parameter `a` (item access)
             trial["a"]

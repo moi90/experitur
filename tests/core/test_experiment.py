@@ -30,9 +30,9 @@ def test_merge(tmp_path):
     config = {"skip_existing": False}
     with Context(str(tmp_path), config, writable=True) as ctx:
 
-        sampler = Grid({"a": [1, 2]})
+        configurator = Grid({"a": [1, 2]})
 
-        @Experiment("a", parameters=sampler, meta={"a": "foo"})
+        @Experiment("a", configurator=configurator, meta={"a": "foo"})
         def a(_):
             pass
 
@@ -43,7 +43,7 @@ def test_merge(tmp_path):
         assert b.meta == a.meta
 
         # Assert that inherited samplers are concatenated in the right way
-        c = Experiment("c", parameters=Grid({"b": [1, 2]}), parent=a)
+        c = Experiment("c", configurator=Grid({"b": [1, 2]}), parent=a)
         ctx.run()
 
         # Parameters in a and b should be the same
@@ -80,21 +80,21 @@ def test_parameters(tmp_path):
         def exp1(_):  # pylint: disable=unused-variable
             pass
 
-        @Experiment(parameters={"a": [1, 2, 3]})
+        @Experiment(configurator={"a": [1, 2, 3]})
         def exp2(_):  # pylint: disable=unused-variable
             pass
 
-        @Experiment(parameters=[{"a": [1, 2, 3]}])
+        @Experiment(configurator=[{"a": [1, 2, 3]}])
         def exp3(_):  # pylint: disable=unused-variable
             pass
 
-        @Experiment(parameters=Grid({}))
+        @Experiment(configurator=Grid({}))
         def exp4(_):  # pylint: disable=unused-variable
             pass
 
         with pytest.raises(ValueError):
 
-            @Experiment(parameters=1)
+            @Experiment(configurator=1)
             def exp5(_):  # pylint: disable=unused-variable
                 pass
 
@@ -130,7 +130,7 @@ def test_configurator_order(tmp_path):
 
         @PG3()
         @PG4()
-        @Experiment(parameters=PG5(), parent=parent_experiment)
+        @Experiment(configurator=PG5(), parent=parent_experiment)
         def child_experiment(_):
             pass
 
@@ -194,7 +194,7 @@ def test_parameter_substitution(tmp_path):
     config = {"skip_existing": False}
     with Context(str(tmp_path), config, writable=True) as ctx:
 
-        @Experiment(parameters={"a1": [1], "a2": [2], "b": [1, 2], "a": ["{a{b}}"]})
+        @Experiment(configurator={"a1": [1], "a2": [2], "b": [1, 2], "a": ["{a{b}}"]})
         def experiment(trial):
             return dict(trial)
 
@@ -263,7 +263,7 @@ def test_trials(tmp_path):
 
         sampler = Grid({"a": [1, 2]})
 
-        @Experiment("a", parameters=Grid({"a": [1, 2], "b": [3, 4]}))
+        @Experiment("a", configurator=Grid({"a": [1, 2], "b": [3, 4]}))
         def a(trial: Trial):
             return dict(trial)
 
@@ -276,7 +276,7 @@ def test_skip(tmp_path):
     config = {"skip_existing": True}
     with Context(str(tmp_path), config, writable=True) as ctx:
 
-        @Experiment("a", parameters=Grid({"a": [1, 2], "b": [3, 4]}))
+        @Experiment("a", configurator=Grid({"a": [1, 2], "b": [3, 4]}))
         def a(trial: Trial):
             return dict(trial)
 

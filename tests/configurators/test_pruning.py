@@ -1,9 +1,11 @@
-from experitur.parameters import Prune, Grid
-from experitur import Experiment, Trial
-from experitur.core.context import Context
 import math
+
 import numpy as np
 import pytest
+
+from experitur import Experiment, Trial
+from experitur.configurators import Grid, Prune
+from experitur.core.context import Context
 
 
 def B(S, B0, k, t):

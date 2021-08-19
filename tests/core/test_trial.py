@@ -28,7 +28,7 @@ def test_trial(tmp_path):
         def parametrized(a=1, b=2, c=3, d=4):
             return dict(a=a, b=b, c=c, d=d)
 
-        @Experiment(parameters={"a": [1], "b": [2]})
+        @Experiment(configurator={"a": [1], "b": [2]})
         def experiment1(parameters):
             print("trial.wdir:", parameters.wdir)
 
@@ -50,7 +50,7 @@ def test_trial_parameters(tmp_path):
     config = {"catch_exceptions": False}
     with Context(str(tmp_path), config, writable=True) as ctx:
 
-        @Experiment(parameters={"a": [1], "b": [2], "c": ["{a}"]})
+        @Experiment(configurator={"a": [1], "b": [2], "c": ["{a}"]})
         def experiment(trial: Trial):
             assert ctx.current_trial == trial
 

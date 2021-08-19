@@ -9,7 +9,7 @@ def test_trial_collection(tmp_path):
     config = {"skip_existing": False}
     with Context(str(tmp_path), config, writable=True) as ctx:
 
-        @Experiment(parameters=Grid({"a": [1, 2], "b": [3, 4], "c": [5]}))
+        @Experiment(configurator=Grid({"a": [1, 2], "b": [3, 4], "c": [5]}))
         def a(trial):
             pass
 
@@ -25,7 +25,7 @@ def test_trial_collection(tmp_path):
 def test_groupby(tmp_path):
     with Context(str(tmp_path), writable=True) as ctx:
 
-        @Experiment(parameters=Grid({"a": [1, 2], "b": [3, 4], "c": [5, 6]}))
+        @Experiment(configurator=Grid({"a": [1, 2], "b": [3, 4], "c": [5, 6]}))
         def a(trial):
             return dict(trial)
 

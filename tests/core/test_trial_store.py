@@ -30,7 +30,7 @@ def test_trial_store(tmp_path, TrialStoreImplementation: Type[TrialStore]):
         ctx: Context
         trial_store: TrialStore = TrialStoreImplementation(ctx)
 
-        @Experiment("test", parameters={"a": [1, 2], "b": [2, 3]})
+        @Experiment("test", configurator={"a": [1, 2], "b": [2, 3]})
         def test(_):
             return {"result": (1, 2)}
 

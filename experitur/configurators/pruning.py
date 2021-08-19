@@ -1,31 +1,15 @@
-from experitur.core.parameters import ParameterGenerator, ParameterGeneratorIter
+from typing import Iterator, Mapping, Optional, Set
+from experitur.core.configurators import Configurator, ConfigurationSampler
 from experitur.helpers.merge_dicts import merge_dicts
 
 
-class _PruneIter(ParameterGeneratorIter):
-    parameter_generator: "Prune"
-
-    def __iter__(self):
-
-        for parent_configuration in self.parent:
-            parameters = parent_configuration.get("parameters")
-
-            pruning_config = merge_dicts(
-                self.parameter_generator.config, parameters=parameters
-            )
-
-            yield merge_dicts(parent_configuration, pruning_config=pruning_config)
-
-
-class Prune(ParameterGenerator):
+class Prune(Configurator):
     """
     Record the parameter configuration so far to enable pruning among groups of trials.
 
     Args:
         quantile: Keep the best x% trials.
     """
-
-    _iterator = _PruneIter
 
     def __init__(
         self,
@@ -59,5 +43,18 @@ class Prune(ParameterGenerator):
         }
 
     @property
-    def independent_parameters(self):
+    def parameter_values(self):
         return {}
+
+    class _Sampler(ConfigurationSampler):
+        configurator: "Prune"
+
+        def sample(self, exclude: Optional[Set] = None) -> Iterator[Mapping]:
+            for parent_configuration in self.parent.sample(exclude=exclude):
+                parameters = parent_configuration.get("parameters")
+
+                pruning_config = merge_dicts(
+                    self.configurator.config, parameters=parameters
+                )
+
+                yield merge_dicts(parent_configuration, pruning_config=pruning_config)
