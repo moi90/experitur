@@ -82,22 +82,29 @@ class _SkipCache:
     def __init__(self, experiment: "Experiment"):
         self.experiment = experiment
 
-        self._trial_collection: Optional[TrialCollection] = None
+        self._trial_collection: Optional["TrialCollection"] = None
 
-    def __contains__(self, parameters):
-        if self._trial_collection is not None:
-            existing = self._trial_collection.match(resolved_parameters=parameters)
-            if existing:
-                return True
-
-        # If configuration was not yet found, update cache...
-        self._trial_collection = self.experiment.ctx.get_trials(
+    def update(self):
+        self._trial_collection = self.experiment.ctx.trials.match(
             func=self.experiment.func
         )
 
+    def get_trials(self, parameters):
+        if self._trial_collection is not None:
+            existing = self._trial_collection.match(resolved_parameters=parameters)
+            if existing:
+                return existing
+
+        # If configuration was not yet found, update cache...
+        self.update()
+
         # ... and retry
-        existing = self._trial_collection.match(resolved_parameters=parameters)
-        if existing:
+        return self._trial_collection.match(resolved_parameters=parameters)
+
+    def __contains__(self, parameters):
+        existing_trials = self.get_trials(parameters)
+
+        if existing_trials:
             return True
 
         return False
@@ -319,6 +326,54 @@ class Experiment:
     def __repr__(self):  # pragma: no cover
         return "Experiment(name={})".format(self.name)
 
+    def _trial_generator(self, parameter_generator: ParameterGenerator):
+        """Yields readily created trials."""
+        # Generate trial configurations
+        trial_configurations = parameter_generator.generate()
+
+        skip_cache = _SkipCache(self)
+
+        for trial_configuration in trial_configurations:
+            # Inject experiment data into trial_configuration
+            # TODO: Insert runtime meta elsewhere
+            trial_configuration = self._setup_trial_configuration(trial_configuration)
+
+            # Remove "unset" parameters
+            parameters = trial_configuration["parameters"] = clean_unset(
+                trial_configuration.get("parameters", {})
+            )
+
+            # Run the pre-trial hook to allow the user to interact
+            # with the parameters before the trial is created and run.
+            if self._pre_trial is not None:
+                self._pre_trial(self.ctx, trial_configuration)
+
+            if self.ctx.config["skip_existing"]:
+                existing_trials = skip_cache.get_trials(parameters)
+                if existing_trials:
+                    cprint(
+                        f"Skipping existing configuration ({format_trial_parameters(func=self.func, parameters=parameters)}): "
+                        + (", ".join(t.id for t in existing_trials)),
+                        color="white",
+                        attrs=["dark"],
+                    )
+
+                    continue
+
+            trial_configuration = merge_dicts(
+                trial_configuration,
+                resolved_parameters=RecursiveDict(
+                    trial_configuration["parameters"], allow_missing=True
+                ).as_dict(),
+            )
+
+            trial = self.ctx.trials.create(
+                trial_configuration, record_used_parameters=True
+            )
+            os.makedirs(trial.wdir, exist_ok=True)
+
+            yield trial
+
     def run(self):
         """
         Run this experiment.
@@ -345,58 +400,16 @@ class Experiment:
             print("{}: {}".format(k, v))
         print()
 
-        # Generate trial configurations
-        trial_configurations = self.parameter_generator.generate()
+        trials = self._trial_generator(self.parameter_generator)
 
-        skip_cache = _SkipCache(self)
-
-        pbar = tqdm.tqdm(trial_configurations, unit="")
-        for trial_configuration in pbar:
-            # Inject experiment data into trial_configuration
-            trial_configuration = self._setup_trial_configuration(trial_configuration)
-
-            # Run the pre-trial hook to allow the user to interact
-            # with the parameters before the trial is created and run.
-            if self._pre_trial is not None:
-                self._pre_trial(self.ctx, trial_configuration)
-
-            parameters = trial_configuration.get("parameters", {})
-
-            if self.ctx.config["skip_existing"] and parameters in skip_cache:
-                pbar.write(
-                    "Skip existing configuration: {}".format(
-                        format_trial_parameters(func=self.func, parameters=parameters)
-                    )
-                )
-                pbar.write("")
-                pbar.set_description("[Skipped]")
-                continue
-
-            trial_configuration = merge_dicts(
-                trial_configuration,
-                resolved_parameters=RecursiveDict(
-                    trial_configuration["parameters"], allow_missing=True
-                ).as_dict(),
-            )
-
-            trial = self.ctx.trials.create(trial_configuration)
-            os.makedirs(trial.wdir, exist_ok=True)
-            trial._record_used_parameters = (
-                True  # pylint: disable=record_used_parameters
-            )
-
-            pbar.write("Trial {}".format(trial.id))
-            pbar.set_description("Running trial {}...".format(trial.id))
+        for trial in trials:
+            print()
+            cprint(f"Running trial {trial.id} ...", color="white", attrs=["dark"])
 
             # Run the trial
             try:
-                with tqdm_redirect.redirect_stdout():
-                    result = self.run_trial(trial)
-                result = self._validate_trial_result(result)
+                self.run_trial(trial)
             except Exception:  # pylint: disable=broad-except
-                msg = textwrap.indent(traceback.format_exc(-1), "    ")
-                pbar.write("{} failed!".format(trial.id))
-                pbar.write(msg)
                 if not self.ctx.config["catch_exceptions"]:
                     raise
             else:
