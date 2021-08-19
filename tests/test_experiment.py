@@ -201,7 +201,8 @@ def test_volatile_experiment(tmp_path):
 
         ctx.run()
 
-        assert on_success_called
+        with pytest.raises(ContextError):
+            ctx.current_trial
 
         assert len(ctx.store) == 0
 

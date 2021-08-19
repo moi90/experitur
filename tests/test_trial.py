@@ -240,7 +240,8 @@ def test_trial_parameters(tmp_path):
 
         ctx.run()
 
-        assert ctx.current_trial is None
+        with pytest.raises(ContextError):
+            ctx.current_trial
 
 
 def test_trial_logging(tmp_path):
