@@ -1,5 +1,5 @@
 from experitur.core.context import Context
-from experitur.core.root_trial_collection import RootTrialCollection, _format_trial_id
+from experitur.core.root_trial_collection import _format_trial_id
 
 
 def test__format_trial_id():

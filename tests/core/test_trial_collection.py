@@ -2,7 +2,7 @@ import pytest
 
 from experitur.core.context import Context
 from experitur.core.experiment import Experiment
-from experitur.core.parameters import Grid
+from experitur.core.configurators import Grid
 
 
 def test_trial_collection(tmp_path):

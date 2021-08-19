@@ -7,7 +7,7 @@ from experitur.core.context import (
     get_current_context,
 )
 from experitur.core.experiment import Experiment
-from experitur.parameters import Grid
+from experitur.configurators import Grid
 
 try:
     import pandas as pd

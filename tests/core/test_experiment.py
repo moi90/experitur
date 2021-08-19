@@ -6,7 +6,7 @@ from experitur.core.experiment import (
     ExperimentError,
     format_trial_parameters,
 )
-from experitur.core.parameters import Const, Grid, ParameterGenerator
+from experitur.core.configurators import Configurator, Const, Grid
 from experitur.core.trial import Trial
 
 
@@ -99,25 +99,25 @@ def test_parameters(tmp_path):
                 pass
 
 
-def test_parameter_generator_order(tmp_path):
-    class ConcreteParameterGenerator(ParameterGenerator):
+def test_configurator_order(tmp_path):
+    class ConcreteConfigurator(Configurator):
         @property
         def independent_parameters(self):
             return {}
 
-    class PG1(ConcreteParameterGenerator):
+    class PG1(ConcreteConfigurator):
         pass
 
-    class PG2(ConcreteParameterGenerator):
+    class PG2(ConcreteConfigurator):
         pass
 
-    class PG3(ConcreteParameterGenerator):
+    class PG3(ConcreteConfigurator):
         pass
 
-    class PG4(ConcreteParameterGenerator):
+    class PG4(ConcreteConfigurator):
         pass
 
-    class PG5(ConcreteParameterGenerator):
+    class PG5(ConcreteConfigurator):
         pass
 
     with Context(str(tmp_path)):
@@ -136,7 +136,7 @@ def test_parameter_generator_order(tmp_path):
 
         pg_types = [
             type(pg)
-            for pg in child_experiment._parameter_generators  # pylint: disable=protected-access
+            for pg in child_experiment._configurators  # pylint: disable=protected-access
         ]
 
         assert pg_types == [PG1, PG2, PG3, PG4, PG5]
@@ -165,23 +165,6 @@ def test_failing_experiment(tmp_path):
         trial = ctx.trials.one()
         assert trial.error == "Exception: Some error"
         assert trial.success is False
-
-
-def test_parameter_generator_context(tmp_path):
-    config = {"catch_exceptions": False}
-    with Context(str(tmp_path), config, writable=True) as ctx:
-
-        @Experiment(volatile=True)
-        def experiment(trial):
-            assert ctx.current_trial is trial
-
-        tmp_pgen = Const(temporary=True)
-        with experiment.add_parameter_generator(tmp_pgen):
-            assert experiment.parameter_generator.generators == [tmp_pgen]
-            assert experiment.independent_parameters == ["temporary"]
-
-        assert experiment.parameter_generator.generators == []
-        assert experiment.independent_parameters == []
 
 
 def test_volatile_experiment(tmp_path):
