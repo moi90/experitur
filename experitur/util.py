@@ -1,4 +1,5 @@
 from collections.abc import Iterable, Mapping
+from typing import Dict
 
 
 def callable_to_name(obj):
@@ -54,3 +55,24 @@ def freeze(value):
         return frozenset(value)
 
     return value
+
+
+class _Unset:
+    """
+    Singleton to signify an unset value.
+
+    Warning: If a value is not set, the trial might be skipped if a trial with this value set exists!
+    
+    """
+
+    def __repr__(self):
+        return "<unset>"
+
+
+unset = _Unset()
+del _Unset
+
+
+def clean_unset(mapping: Mapping) -> Dict:
+    return {k: v for k, v in mapping.items() if v is not unset}
+

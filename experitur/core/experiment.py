@@ -24,7 +24,7 @@ from experitur.errors import ExperiturError
 from experitur.helpers import tqdm_redirect
 from experitur.helpers.merge_dicts import merge_dicts
 from experitur.recursive_formatter import RecursiveDict
-from experitur.util import callable_to_name, ensure_dict, ensure_list
+from experitur.util import callable_to_name, clean_unset, ensure_dict, ensure_list
 
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.context import Context
