@@ -86,14 +86,20 @@ class Trial(collections.abc.MutableMapping):
             # In our case, trial_prefix["a"] == 10.
     """
 
+
     def __init__(
-        self, data: MutableMapping, root: "RootTrialCollection", prefix: str = "",
+        self,
+        data: MutableMapping,
+        root: "RootTrialCollection",
+        prefix: str = "",
+        record_used_parameters=False,
     ):
         self._root = root
         self._data = data
         self._prefix = prefix
+        self._record_used_parameters = record_used_parameters
 
-        self._validate_data()
+        self._data.setdefault("used_parameters", [])
 
         self._logger = YAMLLogger(self)
 
@@ -109,7 +115,15 @@ class Trial(collections.abc.MutableMapping):
 
     def __getitem__(self, name):
         """Get the value of a parameter."""
-        return self._data["resolved_parameters"][f"{self._prefix}{name}"]
+
+        key = f"{self._prefix}{name}"
+        if self._record_used_parameters:
+            self.used_parameters.append(key)
+        return self._data["resolved_parameters"][key]
+
+    @property
+    def unused_parameters(self):
+        return sorted(set(self.resolved_parameters.keys()) - set(self.used_parameters))
 
     def __setitem__(self, name, value):
         """Set the value of a parameter."""
@@ -370,7 +384,12 @@ class Trial(collections.abc.MutableMapping):
                 trial_prefix = trial.prefix("prefix_")
                 trial_prefix["a"] == trial["prefix_a"] # True
         """
-        return Trial(self._data, self._root, f"{self._prefix}{prefix}")
+        return Trial(
+            self._data,
+            self._root,
+            f"{self._prefix}{prefix}",
+            self._record_used_parameters,
+        )
 
     def setdefaults(
         self,
