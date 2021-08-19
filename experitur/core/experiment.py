@@ -2,11 +2,22 @@ import copy
 import datetime
 import functools
 import inspect
+import itertools
 import os
 import socket
 import traceback
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Tuple,
+    Union,
+)
 
 import click
 import tqdm
@@ -20,11 +31,18 @@ from experitur.core.parameters import (
     count_values,
 )
 from experitur.core.trial import Trial
+from experitur.core.trial_store import ModifiedError
 from experitur.errors import ExperiturError
 from experitur.helpers import tqdm_redirect
 from experitur.helpers.merge_dicts import merge_dicts
 from experitur.recursive_formatter import RecursiveDict
-from experitur.util import callable_to_name, clean_unset, ensure_dict, ensure_list
+from experitur.util import (
+    callable_to_name,
+    clean_unset,
+    cprint,
+    ensure_dict,
+    ensure_list,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.context import Context
@@ -192,9 +210,13 @@ class Experiment:
             minimize, maximize
         )
 
-        self.depends_on: List["Experiment"] = [depends_on] if isinstance(
-            depends_on, Experiment
-        ) else [] if depends_on is None else depends_on
+        self.depends_on: List["Experiment"] = (
+            [depends_on]
+            if isinstance(depends_on, Experiment)
+            else []
+            if depends_on is None
+            else depends_on
+        )
 
         self._own_parameter_generators: List[ParameterGenerator]
         self._own_parameter_generators = check_parameter_generators(parameters)
@@ -220,7 +242,9 @@ class Experiment:
         self.ctx._register_experiment(self)
 
     @staticmethod
-    def _validate_minimize_maximize(minimize, maximize):
+    def _validate_minimize_maximize(
+        minimize: Union[str, List[str], None], maximize: Union[str, List[str], None]
+    ) -> Tuple[List[str], List[str]]:
         minimize, maximize = ensure_list(minimize), ensure_list(maximize)
 
         common = set(minimize) & set(maximize)
@@ -465,8 +489,6 @@ class Experiment:
                 if self.volatile:
                     trial.remove()
 
-            pbar.set_description("Running trial {}... Done.".format(trial.id))
-
             if self.ctx.should_stop():
                 return
 
@@ -478,6 +500,10 @@ class Experiment:
         if trial.is_successful:
             raise ValueError(f"Trial {trial.id} was already successful")
 
+        # Reset any errors and end time
+        trial.error = None
+        trial.time_end = None
+
         checkpoint = trial.load_checkpoint()
 
         if checkpoint is None:
@@ -485,15 +511,10 @@ class Experiment:
             trial.success = False
             trial.time_start = datetime.datetime.now()
             trial.result = None
-            trial.error = None
 
             args = ()
             kwargs = {}
         else:
-            # Reset any errors
-            trial.error = None
-            trial.time_end = None
-
             args = checkpoint["args"]
             kwargs = checkpoint["kwargs"]
 
@@ -509,7 +530,14 @@ class Experiment:
 
         try:
             with self.ctx.set_current_trial(trial):
-                result = self.func(trial)
+                result = self.func(trial, *args, **kwargs)
+
+            # Merge returned result into existing result
+            trial.result = {**ensure_dict(trial.result), **ensure_dict(result)}
+
+            # Validate result
+            self._validate_trial_result(result)
+
         except (Exception, KeyboardInterrupt) as exc:
             # TODO: Store.log_error()
             # Log complete exc to file
@@ -569,7 +597,7 @@ class Experiment:
                 f"Experiments are expected to return a dict, got {trial_result!r}"
             )
         missing_metrics = (
-            set(self.maximize) | set(self.maximize)
+            set(self.maximize) | set(self.minimize)
         ) - trial_result.keys()
 
         if missing_metrics:

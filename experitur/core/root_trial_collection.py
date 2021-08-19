@@ -115,7 +115,7 @@ class RootTrialCollection(BaseTrialCollection):
             except KeyExistsError:
                 continue
 
-    def create(self, trial_data):
+    def create(self, trial_data, **kwargs):
         """Create a :py:class:`TrialData` instance."""
 
         # Initialize defaults
@@ -127,7 +127,7 @@ class RootTrialCollection(BaseTrialCollection):
 
         trial_data["wdir"] = self.ctx.get_trial_wdir(trial_data["id"])
 
-        return Trial(trial_data, self)
+        return Trial(trial_data, self, **kwargs)
 
 
 def _format_trial_id(

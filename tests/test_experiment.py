@@ -1,6 +1,6 @@
 import pytest
 
-from experitur.core.context import Context
+from experitur.core.context import Context, ContextError
 from experitur.core.experiment import (
     Experiment,
     ExperimentError,
@@ -268,6 +268,8 @@ def test_mimimize_nonexisting(tmp_path):
         def experiment(_):  # pylint: disable=unused-variable
             return {}
 
+        assert experiment.maximize == ["a"]
+
         with pytest.raises(ExperimentError):
             ctx.run()
 
@@ -302,9 +304,12 @@ def test_skip(tmp_path):
     assert len(ctx.trials) == 4
 
 
+class ExpectedException(Exception):
+    pass
+
 
 def test_checkpoint_resume(tmp_path):
-    config = {"skip_existing": True, "resume_failed": True}
+    config = {"skip_existing": True, "resume_failed": True, "catch_exceptions": False}
     with Context(str(tmp_path), config=config, writable=True) as ctx:
 
         @Experiment()
@@ -313,19 +318,21 @@ def test_checkpoint_resume(tmp_path):
                 checkpoint = 0
 
             trial.save_checkpoint(checkpoint=checkpoint + 1)
+            assert len(trial.find_files("checkpoint_*.chk")) == 1
 
             if checkpoint < 1:
-                raise Exception()
+                raise ExpectedException()
 
             return dict(checkpoint=checkpoint)
 
-        with pytest.raises(Exception):
+        with pytest.raises(ExpectedException):
             a.run()
 
         trial = a.trials.one()
         assert trial.is_failed
         assert len(trial.find_files("checkpoint_*.chk")) == 1
 
+        # Run a second time so that the trial is resumed at the checkpoint
         a.run()
 
         trial = a.trials.one()

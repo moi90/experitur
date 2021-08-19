@@ -1,12 +1,15 @@
 import collections.abc
+import datetime
 import glob
 import inspect
 import itertools
+import os
 import os.path
 from collections import OrderedDict, defaultdict
 from typing import (
     TYPE_CHECKING,
     Any,
+    AnyStr,
     Callable,
     Dict,
     Generator,
@@ -28,6 +31,7 @@ from experitur.util import callable_to_name, freeze
 
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.experiment import Experiment
+    from experitur.core.root_trial_collection import RootTrialCollection
     from experitur.core.trial_store import TrialStore
 
 T = TypeVar("T")
@@ -85,7 +89,6 @@ class Trial(collections.abc.MutableMapping):
             # trial_prefix.<attr>, trial_prefix[<key>], trial_prefix.record_defaults, trial_prefix.call, ...
             # In our case, trial_prefix["a"] == 10.
     """
-
 
     def __init__(
         self,
@@ -428,7 +431,10 @@ class Trial(collections.abc.MutableMapping):
         return self
 
     def choice(
-        self, parameter_name: str, choices: Union[Mapping, Iterable], default=None,
+        self,
+        parameter_name: str,
+        choices: Union[Mapping, Iterable],
+        default=None,
     ):
         """
         Chose a value from an iterable whose name matches the value stored in parameter_name.
@@ -493,7 +499,7 @@ class Trial(collections.abc.MutableMapping):
     def aggregate_log(self, include):
         return self._logger.aggregate(include)
 
-    def find_files(self, pattern, recursive=False) -> List[AnyStr]:
+    def find_files(self, pattern, recursive=False) -> List:
         """
         Find files of the trial.
 
@@ -676,7 +682,7 @@ class BaseTrialCollection(collections.abc.Collection):
             print("Can't convert to pandas:", tdata)
             raise
 
-    def one(self):
+    def one(self) -> Trial:
         if len(self) != 1:
             raise ValueError("No individual trial.")
 
@@ -698,7 +704,9 @@ class BaseTrialCollection(collections.abc.Collection):
         return result
 
     def groupby(
-        self, parameters=None, experiment=False,
+        self,
+        parameters=None,
+        experiment=False,
     ) -> Generator[Tuple[dict, "TrialCollection"], None, None]:
         if isinstance(parameters, str):
             parameters = [parameters]

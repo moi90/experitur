@@ -14,7 +14,9 @@ def test_RootTrialCollection(tmp_path):
 
         # Check that creating the same trial a second time appends a number
         ctx.trials.create(
-            {"experiment": {"name": "test2", "varying_parameters": []},}
+            {
+                "experiment": {"name": "test2", "varying_parameters": []},
+            }
         )
 
         trial = ctx.trials.create(
@@ -37,6 +39,7 @@ def test_RootTrialCollection(tmp_path):
             "resolved_parameters": {},
             "experiment": {"name": "test2", "varying_parameters": []},
             "wdir": trial_wdir,
+            "used_parameters": [],
         }
 
         trial = ctx.trials.create(

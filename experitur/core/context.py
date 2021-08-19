@@ -80,6 +80,7 @@ class Context:
     _default_config = {
         "skip_existing": True,
         "catch_exceptions": False,
+        "resume_failed": False,
     }
 
     def __init__(

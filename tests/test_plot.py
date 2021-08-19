@@ -1,20 +1,21 @@
-import math
-
-import matplotlib
-import pandas as pd
-import pandas.testing
 import pytest
 
 from experitur.core.context import Context
 from experitur.core.experiment import Experiment
 from experitur.parameters import Grid
-from experitur.plot import Integer, Numeric, Real, plot_partial_dependence
 
-matplotlib.use("Agg")
+pytest.importorskip("matplotlib")
+pytest.importorskip("pandas")
+
+from experitur.plot import Integer, Numeric, Real, plot_partial_dependence
 
 
 @pytest.mark.slow
 def test_plot_partial_dependence(tmp_path):
+    import matplotlib
+
+    matplotlib.use("Agg")
+
     with Context(str(tmp_path), writable=True) as ctx:
 
         @Grid(
@@ -53,6 +54,9 @@ def test_plot_partial_dependence(tmp_path):
 
 
 def test_Numeric_log10():
+    import pandas as pd
+    import pandas.testing
+
     logfloat = [10 ** -i for i in range(4)]
 
     n = Numeric(scale="log10")
@@ -74,7 +78,10 @@ def test_plot_partial_dependence_scale(tmp_path):
     with Context(str(tmp_path), writable=True) as ctx:
 
         @Grid(
-            {"integer": list(range(4)), "logfloat": [10 ** -i for i in range(4)],}
+            {
+                "integer": list(range(4)),
+                "logfloat": [10 ** -i for i in range(4)],
+            }
         )
         @Experiment()
         def experiment(parameters):  # pylint: disable=unused-variable
@@ -98,4 +105,3 @@ def test_plot_partial_dependence_scale(tmp_path):
     plt.savefig(fig_fn)
 
     print(fig_fn)
-

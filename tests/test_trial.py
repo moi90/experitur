@@ -5,7 +5,7 @@ import re
 
 import pytest
 
-from experitur.core.context import Context
+from experitur.core.context import Context, ContextError
 from experitur.core.experiment import Experiment
 from experitur.core.trial import Trial
 from experitur.util import callable_to_name
@@ -94,7 +94,12 @@ def test_trial_parameters(tmp_path):
             assert trial.prefixed("prefix__").call(identity) == (1, 2, 3, 5)
 
             # test call: keyword parameter
-            assert trial.prefixed("prefix1__").call(identity, c=6, d=7) == (1, 2, 3, 7,)
+            assert trial.prefixed("prefix1__").call(identity, c=6, d=7) == (
+                1,
+                2,
+                3,
+                7,
+            )
             assert trial["prefix1__d"] == 7
 
             # test record_defaults
@@ -105,7 +110,12 @@ def test_trial_parameters(tmp_path):
 
             # Positional arguments will not be recorded and can't be overwritten
             identity_a8 = functools.partial(identity, 8)
-            assert trial.prefixed("prefix3__").call(identity_a8, b=2) == (8, 2, 4, 5,)
+            assert trial.prefixed("prefix3__").call(identity_a8, b=2) == (
+                8,
+                2,
+                4,
+                5,
+            )
             assert "prefix3__a" not in trial
 
             with pytest.raises(TypeError):
@@ -181,7 +191,8 @@ def test_trial_parameters(tmp_path):
                 raise SpecialException()
 
             with pytest.raises(
-                SpecialException, match=re.escape("Error calling"),
+                SpecialException,
+                match=re.escape("Error calling"),
             ):
                 trial.prefixed("__empty1c_").call(raising_fun)
 
@@ -289,7 +300,9 @@ def test_trial_revisions(tmp_path):
 
     with Context(str(tmp_path), config, writable=True) as ctx:
         trial = ctx.trials.create(
-            {"experiment": {"name": "test2", "varying_parameters": []},}
+            {
+                "experiment": {"name": "test2", "varying_parameters": []},
+            }
         )
 
         assert "revision" in trial._data
