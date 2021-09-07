@@ -1,9 +1,10 @@
 import collections
 import os.path
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Mapping, Optional, Union
 
-from experitur.core.trial import TrialCollection, Trial
+from experitur.core.trial import Trial, TrialCollection
 from experitur.errors import ExperiturError
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -213,4 +214,11 @@ _context_stack: List[Context] = []
 
 
 def get_current_context() -> Context:
-    return _context_stack[-1]
+    try:
+        return _context_stack[-1]
+    except IndexError:
+        raise ContextError(
+            "Context stack is empty.\n"
+            "Experiments have to be run using the experitur CLI:\n"
+            f"    experitur run {sys.argv[0]}"
+        ) from None
