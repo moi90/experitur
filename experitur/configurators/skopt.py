@@ -1,4 +1,7 @@
-from experitur.core.configurators import ConfigurationSampler, Configurator
+from experitur.core.configurators import (
+    ConfigurationSampler,
+    Configurator,
+)
 import logging
 from collections import OrderedDict
 from typing import Container, Iterator, Optional, Set, TYPE_CHECKING, Any, Mapping
@@ -15,26 +18,11 @@ import skopt.space
 import skopt.utils
 
 
-class _DimensionWrapper(Container):
-    def __init__(self, dimension) -> None:
-        self.dimension = dimension
-
-    def __contains__(self, x) -> bool:
-        if isinstance(self.dimension, skopt.space.Real, skopt.space.Integer):
-            return self.dimension.low <= x <= self.dimension.high
-
-        if isinstance(self.dimension, skopt.space.Categorical):
-            return x in self.dimension.categories
-
-        raise ValueError(
-            f"Can not check for containment of {x!r} in {self.dimension!r}"
-        )
-
-    def __repr__(self) -> str:
-        return repr(self.dimension)
-
-
 def convert_objective(value, maximize):
+    if isinstance(value, tuple):
+        # value is a (value, time) tuple
+        value = value[0]
+
     if maximize:
         return -value
     return value
@@ -63,8 +51,7 @@ def convert_trial(
         result = (result, (time_end - time_start).total_seconds())
 
     point = skopt.utils.point_aslist(
-        space,
-        {k: v for k, v in parameters.items() if k in space},
+        space, {k: v for k, v in parameters.items() if k in space},
     )
 
     return (point, result)
@@ -124,7 +111,7 @@ class SKOpt(Configurator):
     Integer = skopt.space.Integer
     Categorical = skopt.space.Categorical
 
-    __str_attrs__ = ["space", "objective", "n_iter"]
+    __str_attrs__ = ("space", "objective", "n_iter")
 
     def __init__(
         self,
@@ -147,8 +134,10 @@ class SKOpt(Configurator):
 
     @property
     def parameter_values(self) -> Mapping[str, Container]:
-        """Parameters in this sampler. Does not include parameters that do not vary."""
-        return {k: _DimensionWrapper(v) for k, v in self.space.items()}
+        return {
+            k: v.categories if isinstance(v, self.Categorical) else v
+            for k, v in self.space.items()
+        }
 
     class _Sampler(ConfigurationSampler):
         configurator: "SKOpt"
@@ -178,7 +167,7 @@ class SKOpt(Configurator):
                 existing_trials = ctx.get_trials(
                     func=experiment.func,
                     parameters=parent_configuration.get("parameters", {}),
-                )
+                ).filter(lambda trial: trial.result is not None)
 
                 # Yield existing configurations
                 existing_parameter_configurations = set(
@@ -193,12 +182,7 @@ class SKOpt(Configurator):
                 for parameters in existing_parameter_configurations:
                     yield merge_dicts(parent_configuration, parameters=dict(parameters))
 
-                # Calculate n_iter as n_iter - already existing iterations
-                n_iter = self.configurator.n_iter - len(
-                    existing_parameter_configurations
-                )
-
-                for _ in range(n_iter):
+                while True:
                     optimizer = skopt.Optimizer(
                         skopt.utils.dimensions_aslist(self.configurator.space),
                         n_initial_points=self.configurator.n_initial_points,
@@ -209,7 +193,10 @@ class SKOpt(Configurator):
                     existing_trials = ctx.get_trials(
                         func=experiment.func,
                         parameters=parent_configuration.get("parameters", {}),
-                    )
+                    ).filter(lambda trial: trial.result is not None)
+
+                    if len(existing_trials) >= self.configurator.n_iter:
+                        break
 
                     results = _filter_results(
                         optimizer,

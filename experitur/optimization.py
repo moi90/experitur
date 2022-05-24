@@ -1,12 +1,11 @@
 from collections import OrderedDict
-from numbers import Real
 from typing import Iterable, List, Mapping, Optional, Union, TYPE_CHECKING
 
 import numpy as np
 
 from experitur.util import ensure_list
 
-Result = Optional[Mapping[str, Real]]
+Result = Optional[Mapping[str, float]]
 Objective = Union[str, Iterable[str], None]
 
 if TYPE_CHECKING:
@@ -17,7 +16,7 @@ class Optimization:
     def __init__(
         self, minimize: Objective = None, maximize: Objective = None,
     ):
-        minimize, maximize = ensure_list(minimize), ensure_list(maximize)
+        minimize, maximize = ensure_list(minimize), ensure_list(maximize)  # type: ignore
 
         common = set(minimize) & set(maximize)
 
@@ -37,7 +36,7 @@ class Optimization:
         self._minimize = _minimize
 
     def invert_signs(self, values: Result):
-        """Invert signs to that only minimization has to be considered."""
+        """Invert signs so that only minimization has to be considered."""
         if values is None:
             return None
 
@@ -51,7 +50,7 @@ class Optimization:
 
     def to_minimization(
         self, results: List[Result], quantile=1.0
-    ) -> List[Optional[Real]]:
+    ) -> List[Optional[float]]:
         """
         Turn a list of of (possibly multi-value) results into a list of numbers that can be minimized to optimize the provided objective(s).
         """
@@ -64,7 +63,7 @@ class Optimization:
             return [r[objective] if r is not None else None for r in results]
 
         if len(results) < 2:
-            return [0] * len(results)
+            return [0.0] * len(results)
 
         # Y.shape(n_trials, n_objectives)
         Y = np.array(
@@ -86,6 +85,8 @@ class Optimization:
 
         # Sample the objective space to estimate the dominated hypervolume using Monte-Carlo-sampling
         N = 10000
+
+        # TODO: Replace uniform sampling by sampling 1-dimensional KDEs
 
         # Calculate reference point using quantiles for robustness
         reference_point = np.nanquantile(Y, quantile, axis=0) / quantile

@@ -63,7 +63,7 @@ class Random(Configurator):
 
     """
 
-    _str_attr = ["distributions", "n_iter"]
+    __str_attrs__ = ("distributions", "n_iter")
 
     @staticmethod
     def uniform(low, high):

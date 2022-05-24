@@ -73,14 +73,14 @@ def test_trial_store(tmp_path, TrialStoreImplementation: Type[TrialStore]):
 
         # Check that deleting an unknown trial_id raises a KeyError
         with pytest.raises(KeyError):
-            del trial_store["foo"]
+            trial_store.delete("foo")
 
         # Check that creating the same key twices raises a  KeyExistsError
         trial_store.create("existing", {})
         with pytest.raises(KeyExistsError):
             trial_store.create("existing", {})
 
-        del trial_store["existing"]
+        trial_store.delete("existing")
 
         trial_data = trial_store.create(
             "test3/a-1_b-2",
@@ -147,12 +147,7 @@ def test_trial_store(tmp_path, TrialStoreImplementation: Type[TrialStore]):
         # parameters
         assert set(
             trial["id"] for trial in trial_store.match(parameters={"a": 1, "b": 2})
-        ) == {
-            "func_test1/_",
-            "func_test2/_",
-            "func_test3/_",
-            "test3/a-1_b-2",
-        }
+        ) == {"func_test1/_", "func_test2/_", "func_test3/_", "test3/a-1_b-2",}
 
         # experiment
         assert set(
@@ -166,7 +161,68 @@ def test_trial_store(tmp_path, TrialStoreImplementation: Type[TrialStore]):
             trial_store["foo"] = None
 
         with pytest.raises(RuntimeError):
-            del trial_store["foo"]
+            trial_store.delete("foo")
 
         with pytest.raises(RuntimeError):
             trial_store.delete_all([])
+
+
+def test_trial_store_write(
+    tmp_path, TrialStoreImplementation: Type[TrialStore], benchmark
+):
+    with Context(str(tmp_path), writable=True) as ctx:
+        ctx: Context
+        trial_store: TrialStore = TrialStoreImplementation(ctx)
+
+        @Experiment("test", configurator={"a": [1, 2], "b": [2, 3]})
+        def test(_):
+            return {"result": (1, 2)}
+
+        @Experiment("test2", parent=test)
+        def test2(_):  # pylint: disable=unused-variable
+            return {"result": (2, 4)}
+
+        trial_data = trial_store.create(
+            "test2/_", {"experiment": {"name": "test2", "varying_parameters": []},}
+        )
+        assert "id" in trial_data
+        assert trial_data["id"] == "test2/_"
+
+        trial_data = merge_dicts(trial_data, foo="bar", bar="baz")
+
+        # Benchmark writing
+        benchmark(trial_store.__setitem__, "test2/_", trial_data)
+
+        trial_data = trial_store["test2/_"]
+        del trial_data["revision"]
+
+        assert trial_data == {
+            "id": "test2/_",
+            "foo": "bar",
+            "bar": "baz",
+            "experiment": {"name": "test2", "varying_parameters": []},
+        }
+
+
+def test_trial_store_read(
+    tmp_path, TrialStoreImplementation: Type[TrialStore], benchmark
+):
+    with Context(str(tmp_path), writable=True) as ctx:
+        ctx: Context
+        trial_store: TrialStore = TrialStoreImplementation(ctx)
+
+        trial_data = trial_store.create(
+            "test2/_", {"experiment": {"name": "test2", "varying_parameters": []},}
+        )
+
+        assert "id" in trial_data
+        assert trial_data["id"] == "test2/_"
+
+        # Benchmark reading
+        result = benchmark(trial_store.__getitem__, "test2/_")
+        del result["revision"]
+        assert result == {
+            "id": "test2/_",
+            "experiment": {"name": "test2", "varying_parameters": [],},
+        }
+

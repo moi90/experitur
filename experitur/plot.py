@@ -1,27 +1,42 @@
-import itertools
+import difflib
+import warnings
 from abc import ABC, abstractmethod
 from inspect import signature
-from typing import Any, Callable, TYPE_CHECKING, List, Mapping, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Iterable, List, Mapping, Optional, Tuple, Union
 
 import matplotlib.cm
 import matplotlib.colors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import skopt.optimizer
+from matplotlib.axes import Axes
 from matplotlib.gridspec import GridSpec
-from matplotlib.patches import Patch
-from matplotlib.ticker import MaxNLocator
+from matplotlib.ticker import (
+    Formatter,
+    Locator,
+    MaxNLocator,
+    StrMethodFormatter,
+    FuncFormatter,
+)
 from scipy.stats.distributions import rv_discrete, uniform
+from sklearn.linear_model import LinearRegression
+from sklearn.multioutput import MultiOutputRegressor
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.preprocessing import LabelBinarizer
-from matplotlib.ticker import Formatter, StrMethodFormatter
 
 from experitur.util import freeze
 
 if TYPE_CHECKING:
     from experitur.core.trial import TrialCollection
     from experitur.optimization import Objective
+
+try:
+    from natsort import natsorted
+except ImportError:
+    warnings.warn("Falling back to sorted for natsorted")
+
+    def natsorted(x):
+        return sorted(x)
 
 
 class Transformer(ABC):
@@ -32,6 +47,10 @@ class Transformer(ABC):
     @abstractmethod
     def inverse_transform(self, X):
         raise NotImplementedError
+
+    @property
+    def transformed_size(self) -> int:
+        return 1
 
 
 class Identity(Transformer):
@@ -139,21 +158,45 @@ class CategoricalEncoder(Transformer):
         Xt: np.ndarray = np.asarray(Xt)
         return [self.inverse_mapping_[i] for i in self._lb.inverse_transform(Xt)]
 
+    @property
+    def transformed_size(self) -> int:
+        if self._lb.y_type_ == "binary":
+            return 1
+        return len(self._lb.classes_)
+
 
 class Dimension(ABC):
-    name: Optional[str]
     transformer: Transformer
     formatter: Optional[Formatter]
+    locator: Optional[Locator]
+
+    def __init__(self, label=None):
+        self.name = None  # Set by initialize
+        self.label = label
 
     @staticmethod
-    def from_values(name, values, dimension=None):
-        if dimension is None:
+    def get_instance(name, values, dimension_or_label: Optional["Dimension"] = None):
+
+        if isinstance(dimension_or_label, Dimension):
+            dimension = dimension_or_label
+        else:
             dimension = _KIND_TO_DIMENSION[values.dtype.kind]()
+            dimension.label = dimension_or_label
 
-        return dimension.init(name, values)
+        try:
+            return dimension.initialize(name, values)
+        except:
+            print(
+                f"Error initializing {dimension.__class__.__name__} {name} from {values}"
+            )
+            raise
 
-    @abstractmethod
-    def init(self, name, values):
+    def initialize(self, name, values):
+        self.name = name
+
+        if self.label is None:
+            self.label = name
+
         return self
 
     @abstractmethod
@@ -162,8 +205,12 @@ class Dimension(ABC):
         pass
 
     @abstractmethod
-    def linspace(self, n_samples):
-        """Evenly sample the original space."""
+    def linspace(self, n_samples) -> np.ndarray:
+        """
+        Evenly samples up to n_samples from the original space.
+
+        Used in partial_dependence.
+        """
         pass
 
     def prepare(self, X) -> pd.Series:
@@ -187,7 +234,7 @@ class Dimension(ABC):
 
     @property
     def transformed_size(self):
-        return 1
+        return self.transformer.transformed_size
 
     def __repr__(self):
         parameters = ", ".join(
@@ -205,6 +252,18 @@ def _uniform_inclusive(loc=0.0, scale=1.0):
 
 
 class Numeric(Dimension):
+    """
+    Arguments:
+        low (optional): Lower bound of the interval.
+        high (optional): Upper bound of the interval.
+        scale (optional): Scaling applied to the values.
+        formatter (:class:`~matplotlib.ticker.Formatter`, optional): Formatter for axis ticks.
+        label (str, optional): Axis label.
+        replace_na (optional): Replace NaNs with this value.
+
+    If low, high or name are not set during construction, they will be guessed from the provided values.
+    """
+
     def __init__(
         self,
         low=None,
@@ -212,14 +271,26 @@ class Numeric(Dimension):
         *,
         scale="linear",
         formatter=None,
-        name=None,
+        locator=None,
+        label=None,
         replace_na=None,
+        marks: Optional[List] = None,
+        ticks: Optional[List] = None,
     ):
+        super().__init__()
+
         self.low = low
         self.high = high
-        self.name = name
+        self.label = label
         self.replace_na = replace_na
         self.formatter = formatter
+        self.marks = marks
+        self.ticks = ticks
+
+        if locator is None and isinstance(self, Integer):
+            locator = MaxNLocator(integer=True)
+
+        self.locator = locator
 
         if scale in ("linear", None):
             self.scale = None
@@ -239,14 +310,14 @@ class Numeric(Dimension):
             pass
 
         self._transformer = Normalize(
-            self.low,
-            self.high,
-            is_int=isinstance(self, Integer),
+            self.low, self.high, is_int=isinstance(self, Integer),
         )
 
         return self._transformer
 
-    def init(self, name, values):
+    def initialize(self, name, values):
+        super().initialize(name, values)
+
         # Replace NaNs
         values = self.prepare(values)
 
@@ -326,23 +397,26 @@ class Categorical(Dimension):
         self,
         categories=None,
         *,
-        name=None,
+        label=None,
         replace: Optional[Mapping[str, str]] = None,
         formatter=None,
+        locator=None,
     ):
-        self.name = name
+        super().__init__()
+
+        self.label = label
         self.categories = categories
         self.replace = replace
         self.formatter = formatter
+        self.locator = locator
 
-    def init(self, name, values):
-        if self.name is None:
-            self.name = name
+    def initialize(self, name, values):
+        super().initialize(name, values)
 
         values = self.prepare(values)
 
         if self.categories is None:
-            self.categories = sorted(set(values))
+            self.categories = natsorted(set(values))
 
         return self
 
@@ -369,7 +443,7 @@ class Categorical(Dimension):
 
         return self._transformer
 
-    def transform(self, X):
+    def transform(self, X) -> np.ndarray:
         """
         Transform samples from the original space to a warped space.
 
@@ -384,10 +458,6 @@ class Categorical(Dimension):
             print(f"X: {X!r}")
             raise
 
-    @property
-    def transformed_size(self):
-        return len(self.categories)
-
     def rvs_transformed(self, n_samples):
         """Draw samples in the transformed space."""
 
@@ -399,12 +469,16 @@ class Categorical(Dimension):
 
         return self.transform(np.array(self.categories)[numerical])
 
-    def linspace(self, n_samples):
-        """Evenly sample the original space."""
+    def linspace(self, n_samples) -> np.ndarray:
+        """
+        Evenly sample the original space.
 
-        return np.array(
-            list(itertools.islice(itertools.cycle(self.categories), n_samples))
-        )
+        Ignores n_samples and returns the list of categories instead to avoid duplicate samples.
+        """
+
+        del n_samples
+
+        return np.array(self.categories)
 
     def to_numeric(self, X, jitter=0):
         X = self.prepare(X)
@@ -420,6 +494,7 @@ class Categorical(Dimension):
         return X
 
 
+# After all Dimension types are defined, we can define the mapping of dtype kinds
 _KIND_TO_DIMENSION = {
     "i": Integer,
     "u": Integer,
@@ -449,15 +524,19 @@ class Space:
 
 
 def partial_dependence(
-    space,
-    model,
-    i,
-    j=None,
-    sample_points=None,
-    n_points=40,
+    space: Space, model, i, j=None, sample_points=None, n_points=40,
 ) -> Union[Tuple[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """
+    Calculates the partial dependence of one parameter or a pair of parameters.
+
+    Returns:
+        (xi, zi, errors) if  j is None.
+        (xi, yi, zi) if j is not None such that len(xi) == M is the number of columns in Z and len(yi) == N is the number of rows in Z.
+    """
 
     dim_locs = np.cumsum([0] + [d.transformed_size for d in space.dimensions])
+
+    assert sample_points.shape[-1] == dim_locs[-1]
 
     # One-dimensional case
     if j is None:
@@ -495,8 +574,25 @@ def partial_dependence(
         row = []
         for y_ in yi_t:
             sample_points_ = np.array(sample_points, copy=True)  # copy
-            sample_points_[:, dim_locs[j] : dim_locs[j + 1]] = x_
-            sample_points_[:, dim_locs[i] : dim_locs[i + 1]] = y_
+
+            try:
+                sample_points_[:, dim_locs[j] : dim_locs[j + 1]] = x_
+            except:
+                print(f"Error for dimension {space.dimensions[j]}")
+                print("Transformed linspace:", x_)
+                print("transformed_size:", space.dimensions[j].transformed_size)
+                print("dim_locs:", dim_locs)
+                print("sample_points_.shape:", sample_points_.shape)
+                raise
+
+            try:
+                sample_points_[:, dim_locs[i] : dim_locs[i + 1]] = y_
+            except:
+                print(f"Error for dimension {space.dimensions[i]}")
+                print("Transformed linspace:", y_)
+                print("transformed_size", space.dimensions[i].transformed_size)
+                raise
+
             row.append(np.mean(model.predict(sample_points_)))
         zi.append(row)
 
@@ -508,8 +604,61 @@ def _rand_jitter(arr):
     return arr + np.random.randn(len(arr)) * stdev
 
 
+def _link_matching_points(
+    ax: Axes,
+    results,
+    varying_parameters,
+    parameter,
+    dimension,
+    objective,
+    *,
+    swapaxes=False,
+    link_opt=None,
+):
+    """Show fine lines that link points that vary only in parameter."""
+
+    if len(varying_parameters) > 1:
+        groups = [
+            group
+            for _, group in results.groupby(
+                [p for p in varying_parameters if p != parameter]
+            )
+        ]
+    else:
+        groups = [results]
+
+    for group in groups:
+        if len(group) < 2:
+            continue
+
+        # for v, configurations in group.groupby(parameter):
+        #     if len(configurations) > 1:
+        #         print(f"Warning: Multiple configurations for {parameter}={v}:")
+        #         print(configurations)
+
+        if isinstance(dimension, Categorical):
+            group[parameter] = dimension.to_numeric(group[parameter])
+
+        group = group.sort_values(parameter)
+
+        if link_opt == "max":
+            xy = zip(*[(v, c[objective].max()) for v, c in group.groupby(parameter)])
+        elif link_opt == "min":
+            xy = zip(*[(v, c[objective].min()) for v, c in group.groupby(parameter)])
+        elif link_opt is None:
+            xy = (group[parameter], group[objective])
+        else:
+            raise ValueError(f"Unknown link_opt value: {link_opt!r}")
+
+        if swapaxes:
+            xy = reversed(xy)
+
+        ax.plot(*xy, lw=0.5, c="k", alpha=0.5)
+
+
 def _plot_partial_dependence_nd(
-    objective_dim,
+    *,
+    objective_dim: Numeric,
     results: pd.DataFrame,
     objective,
     space,
@@ -520,21 +669,27 @@ def _plot_partial_dependence_nd(
     cmap,
     idx_opt,
     jitter,
+    show_optima,
+    title,
+    gs_kwargs,
+    xticklabels_kwargs,
+    yticklabels_kwargs,
+    highlight_levels: Iterable,
+    link_matching_points: bool,
+    error_bands: bool,
 ):
     n_parameters = len(varying_parameters)
 
-    fig = plt.figure(
-        constrained_layout=True,
-        figsize=(12, 12),
-    )
+    fig = plt.figure(constrained_layout=True, figsize=(12, 12),)
 
-    ratios = [4] * (n_parameters - 1)
+    ratios = [4.0] * (n_parameters - 1)
     gs = GridSpec(
         n_parameters,
         n_parameters + 1,
         figure=fig,
-        width_ratios=[3] + ratios + [0.5],
-        height_ratios=ratios + [3],
+        width_ratios=[3.0] + ratios + [0.5],
+        height_ratios=ratios + [3.0],
+        **gs_kwargs,
     )
 
     # Create axes
@@ -552,40 +707,24 @@ def _plot_partial_dependence_nd(
         ]
     )
 
-    # Legend
-    if False:
-        # TODO: Use blend patch for 2d
-        # https://stackoverflow.com/a/55501861/1116842
-        lax = fig.add_subplot(gs[-1, 0])
-        lax.axis("off")
-        legend_elements = []
-        legend_elements.append(
-            Patch(color=(0, 0, 0, 0), label="Cluster selection method:")
-        )
-        lax.legend(handles=legend_elements, loc="center")
-
     for ax in list(axes_ij.flat) + list(axes_i) + list(axes_j):
         if ax is None:
             continue
         ax.use_sticky_edges = False
         ax.margins(0.01)
 
-    fig.suptitle(objective_dim.name)
+    fig.suptitle(title)
 
-    color_norm = matplotlib.colors.Normalize(
-        results[objective].min(), results[objective].max()
-    )
+    color_norm = matplotlib.colors.Normalize(objective_dim.low, objective_dim.high)
 
     for i, i_dim in enumerate(reversed(range(n_parameters - 1))):
         dim_row = space.dimensions[i_dim]
-        axes_i[i].set_ylabel(dim_row)
-
-        if isinstance(dim_row, Integer):
-            axes_i[i].get_yaxis().set_major_locator(MaxNLocator(integer=True))
+        axes_i[i].set_ylabel(dim_row.label)
+        axes_i[i].set_xlim(objective_dim.low, objective_dim.high)
 
         results_i = results[varying_parameters[i_dim]]
 
-        # Show partial dependence of dim_row on objective
+        # Show partial dependence of dim_row on one objective
         xi, yit, errors = partial_dependence(
             space, model, i_dim, n_points=n_points, sample_points=samples
         )
@@ -598,13 +737,32 @@ def _plot_partial_dependence_nd(
             xi = dim_row.to_numeric(xi)
             results_i = dim_row.to_numeric(results_i, jitter)
             axes_i[i].set_yticks(list(range(len(dim_row.categories))))
-            axes_i[i].set_yticklabels(dim_row.categories)
+            axes_i[i].set_yticklabels(dim_row.categories, **yticklabels_kwargs)
 
         if dim_row.formatter is not None:
             axes_i[i].get_yaxis().set_major_formatter(dim_row.formatter)
 
-        axes_i[i].fill_betweenx(xi, upper, lower, alpha=0.5)
+        if dim_row.locator is not None:
+            axes_i[i].get_yaxis().set_major_locator(dim_row.locator)
+
+        if error_bands:
+            axes_i[i].fill_betweenx(xi, upper, lower, alpha=0.5)
+
         axes_i[i].plot(yi, xi)
+
+        # Show fine lines that link points that vary only in this current dimension (results_i)
+        if link_matching_points:
+            _link_matching_points(
+                axes_i[i],
+                results,
+                varying_parameters,
+                varying_parameters[i_dim],
+                dim_row,
+                objective,
+                swapaxes=True,
+            )
+
+        # Show points
         axes_i[i].scatter(
             results[objective],
             results_i,
@@ -614,12 +772,14 @@ def _plot_partial_dependence_nd(
             norm=color_norm,
         )
 
-        # Show optimum
-        axes_i[i].axhline(
-            results_i.loc[idx_opt],
-            c="r",
-            ls="--",
-        )
+        if show_optima:
+            # Show optimum
+            axes_i[i].axhline(
+                results_i.loc[idx_opt], c="r", ls="--",
+            )
+
+        for l in highlight_levels:
+            axes_i[i].axvline(l, c="red", ls="dashed")
 
         for j, j_dim in enumerate(reversed(range(i_dim + 1, n_parameters))):
             dim_col = space.dimensions[j_dim]
@@ -631,15 +791,20 @@ def _plot_partial_dependence_nd(
                 axes_j[j].set_xticks(list(range(len(dim_col.categories))))
                 axes_j[j].set_xticklabels(dim_col.categories)
 
-            if dim_col.formatter is not None:
-                axes_j[j].get_xaxis().set_major_formatter(dim_col.formatter)
+            if xticklabels_kwargs:
+                # Only if xticklabels_kwargs is non-empty, otherwise setp thinks it should print the current values.
+                plt.setp(axes_j[j].get_xticklabels(), **xticklabels_kwargs)
 
             if i == n_parameters - 2:
-                # Show partial dependence of dim_col on objective
-                axes_j[j].set_xlabel(dim_col)
+                # Show partial dependence of dim_col on one objective
+                axes_j[j].set_xlabel(dim_col.label)
+                axes_j[j].set_ylim(objective_dim.low, objective_dim.high)
 
-                if isinstance(dim_col, Integer):
-                    axes_j[j].get_xaxis().set_major_locator(MaxNLocator(integer=True))
+                if dim_col.formatter is not None:
+                    axes_j[j].get_xaxis().set_major_formatter(dim_col.formatter)
+
+                if dim_col.locator is not None:
+                    axes_j[j].get_xaxis().set_major_locator(dim_col.locator)
 
                 xi, yit, errors = partial_dependence(
                     space, model, j_dim, n_points=n_points, sample_points=samples
@@ -652,9 +817,22 @@ def _plot_partial_dependence_nd(
                 if isinstance(dim_col, Categorical):
                     xi = dim_col.to_numeric(xi)
 
-                axes_j[j].fill_between(xi, upper, lower, alpha=0.5)
+                if error_bands:
+                    axes_j[j].fill_between(xi, upper, lower, alpha=0.5)
 
                 axes_j[j].plot(xi, yi)
+
+                # Show fine lines that link points that vary only in this current dimension (results_i)
+                if link_matching_points:
+                    _link_matching_points(
+                        axes_j[j],
+                        results,
+                        varying_parameters,
+                        varying_parameters[j_dim],
+                        dim_col,
+                        objective,
+                        swapaxes=False,
+                    )
 
                 # Plot true observations
                 axes_j[j].scatter(
@@ -666,12 +844,14 @@ def _plot_partial_dependence_nd(
                     norm=color_norm,
                 )
 
-                # Show optimum
-                axes_j[j].axvline(
-                    results_j.loc[idx_opt],
-                    c="r",
-                    ls="--",
-                )
+                if show_optima:
+                    # Show optimum
+                    axes_j[j].axvline(
+                        results_j.loc[idx_opt], c="r", ls="--",
+                    )
+
+                for l in highlight_levels:
+                    axes_j[j].axhline(l, c="red", ls="dashed")
 
             # Show partial dependence of dim_col/dim_col on objective
             # axes_ij[i, j].set_xlabel(dim_col)
@@ -695,12 +875,18 @@ def _plot_partial_dependence_nd(
 
             levels = 50
 
+            # xi and yi must be 1-D such that len(xi) == M is the number of columns in Z and len(yi) == N is the number of rows in Z.
             cnt = axes_ij[i, j].contourf(xi, yi, zi, levels, norm=color_norm, cmap=cmap)
 
             # Fix for countour lines showing in PDF autput:
             # https://stackoverflow.com/a/32911283/1116842
             for c in cnt.collections:
                 c.set_edgecolor("face")
+
+            if highlight_levels:
+                axes_ij[i, j].contour(
+                    xi, yi, zi, highlight_levels, colors="red", linestyles="dashed"
+                )
 
             # Plot true observations
             axes_ij[i, j].scatter(
@@ -713,14 +899,18 @@ def _plot_partial_dependence_nd(
                 alpha=0.75,
             )
 
-            # Plot optimum
-            # TODO:
-            axes_ij[i, j].scatter(
-                results_j.loc[idx_opt],
-                results_i.loc[idx_opt],
-                fc="none",
-                ec="r",
-            )
+            if show_optima:
+                # Plot optimum
+                # TODO:
+                axes_ij[i, j].scatter(
+                    results_j.loc[idx_opt], results_i.loc[idx_opt], fc="none", ec="r",
+                )
+
+    for ax in axes_i[:-1]:
+        plt.setp(ax.get_xticklabels(), visible=False)
+
+    for ax in axes_j[1:]:
+        plt.setp(ax.get_yticklabels(), visible=False)
 
     # ax[-2, 0].set_xlabel(objective_dim)
     # ax[-2, 0].xaxis.set_tick_params(labelbottom=True)
@@ -728,11 +918,19 @@ def _plot_partial_dependence_nd(
     # ax[-1, 1].set_ylabel(objective_dim)
     # ax[-1, 1].yaxis.set_tick_params(labelleft=True)
 
+    axes_i[-1].set_xlabel(objective_dim.label)
+    axes_j[0].set_ylabel(objective_dim.label)
+
     cax = fig.add_subplot(gs[:-1, -1])
-    fig.colorbar(
+    cb = fig.colorbar(
         matplotlib.cm.ScalarMappable(norm=color_norm, cmap=cmap),
         cax=cax,
+        label=objective_dim.label,
     )
+
+    if highlight_levels:
+        for l in highlight_levels:
+            cb.ax.axhline(l, c="red", ls="dashed")
 
 
 def _plot_partial_dependence_1d(
@@ -747,21 +945,20 @@ def _plot_partial_dependence_1d(
     cmap,
     idx_opt,
     jitter,
+    show_optima,
+    title,
 ):
-    fig = plt.figure(
-        constrained_layout=True,
-        figsize=(12, 12),
-    )
+    fig = plt.figure(constrained_layout=True, figsize=(12, 12),)
     ax = fig.add_subplot(111)
 
-    fig.suptitle(objective_dim.name)
+    fig.suptitle(title)
 
     color_norm = matplotlib.colors.Normalize(
         results[objective].min(), results[objective].max()
     )
 
-    ax.set_xlabel(space.dimensions[0])
-    ax.set_ylabel(objective_dim.name)
+    ax.set_xlabel(space.dimensions[0].label)
+    ax.set_ylabel(objective_dim.label)
 
     # Show partial dependence of dimension on objective
     xi, yit, errors = partial_dependence(
@@ -791,36 +988,72 @@ def _plot_partial_dependence_1d(
         norm=color_norm,
     )
 
-    # Show optimum
-    ax.axvline(
-        results.loc[idx_opt, parameter],
-        c="r",
-        ls="--",
-    )
+    if show_optima:
+        # Show optimum
+        ax.axvline(
+            results.loc[idx_opt, parameter], c="r", ls="--",
+        )
 
 
 _RUNTIME_DIVISORS = {"s": 1, "min": 60, "h": 60 * 60, "d": 24 * 60 * 60}
 
 
+def _try_get(mapping: Mapping[str, Any], key: str):
+    try:
+        return mapping[key]
+    except KeyError:
+        close_matches = ", ".join(
+            repr(m) for m in difflib.get_close_matches(key, mapping.keys(), cutoff=0.1)
+        )
+        if close_matches:
+            print(f"{key!r} not found. Did you mean one of the following?")
+            print(close_matches)
+        raise
+
+
 def plot_partial_dependence(
     trials: "TrialCollection",
     objective,
+    *,
     dimensions=None,
     model=None,
-    objective_dim=None,
     cmap=None,
     maximize=False,
     runtime_unit="s",
     jitter=0.025,
     ignore=None,
+    show_optima=True,
+    title=None,
+    gs_kwargs=None,
+    xticklabels_kwargs=None,
+    yticklabels_kwargs=None,
+    highlight_levels=None,
+    link_matching_points=False,
+    error_bands=True,
 ):
     if dimensions is None:
         dimensions = {}
+
+    if gs_kwargs is None:
+        gs_kwargs = {}
+
+    if xticklabels_kwargs is None:
+        xticklabels_kwargs = {}
+    if yticklabels_kwargs is None:
+        yticklabels_kwargs = {}
 
     if ignore is None:
         ignore = []
 
     ignore = set(ignore)
+
+    if highlight_levels is None:
+        highlight_levels = []
+
+    if not isinstance(highlight_levels, Iterable):
+        highlight_levels = [highlight_levels]
+
+    highlight_levels = sorted(highlight_levels)
 
     if cmap is None:
         cmap = "viridis" if maximize else "viridis_r"
@@ -834,13 +1067,13 @@ def plot_partial_dependence(
     results = pd.DataFrame(
         (
             {
-                objective: t.result.get(objective),
+                objective: _try_get(t.result, objective),
                 "_runtime": (t.time_end - t.time_start).total_seconds()
                 / runtime_divisor,
                 **{p: t.get(p) for p in varying_parameters},
             }
             for t in trials
-            if t.result is not None
+            if t.is_successful and t.result is not None
         ),
         dtype=object,
     )
@@ -860,11 +1093,14 @@ def plot_partial_dependence(
         if not isinstance(dimensions.get(c), Categorical):
             results[c] = results[c].infer_objects()
 
-    objective_dim = Dimension.from_values(
+    objective_dim = Dimension.get_instance(
         f"Runtime ({runtime_unit})" if objective == "_runtime" else objective,
         results[objective],
-        objective_dim,
+        dimensions.get(objective),
     )
+
+    if title is None:
+        title = objective_dim.label
 
     # Calculate optimum
     idx_opt = results[objective].idxmax() if maximize else results[objective].idxmin()
@@ -877,7 +1113,7 @@ def plot_partial_dependence(
 
     space = Space(
         [
-            Dimension.from_values(p, results[p], dimensions.get(p))
+            Dimension.get_instance(p, results[p], dimensions.get(p))
             for p in varying_parameters
         ]
     )
@@ -904,17 +1140,25 @@ def plot_partial_dependence(
 
     if n_parameters > 1:
         _plot_partial_dependence_nd(
-            objective_dim,
-            results,
-            objective,
-            space,
-            model,
-            varying_parameters,
-            n_points,
-            samples,
-            cmap,
-            idx_opt,
-            jitter,
+            objective_dim=objective_dim,
+            results=results,
+            objective=objective,
+            space=space,
+            model=model,
+            varying_parameters=varying_parameters,
+            n_points=n_points,
+            samples=samples,
+            cmap=cmap,
+            idx_opt=idx_opt,
+            jitter=jitter,
+            show_optima=show_optima,
+            title=title,
+            gs_kwargs=gs_kwargs,
+            xticklabels_kwargs=xticklabels_kwargs,
+            yticklabels_kwargs=yticklabels_kwargs,
+            highlight_levels=highlight_levels,
+            link_matching_points=link_matching_points,
+            error_bands=error_bands,
         )
     else:
         _plot_partial_dependence_1d(
@@ -929,4 +1173,239 @@ def plot_partial_dependence(
             cmap,
             idx_opt,
             jitter,
+            show_optima,
+            title,
         )
+
+
+def joinex(parts):
+    parts = list(parts)
+
+    return ", ".join(parts[:-1]) + " and " + parts[-1]
+
+
+def textplot(xx, yy, ss, *, ax, **kwargs):
+    for x, y, s in zip(xx, yy, ss):
+        ax.text(x, y, str(s), **kwargs)
+
+
+def _get_formatter(formatter: Union[str, Formatter]) -> Formatter:
+    if isinstance(formatter, Formatter):
+        return formatter
+
+    if isinstance(formatter, str):
+        return StrMethodFormatter(formatter)
+
+    if callable(formatter):
+        return FuncFormatter(formatter)
+
+    raise ValueError(f"Unknown formatter: {formatter!r}")
+
+
+def plot_parameters_objectives(
+    trials,
+    objectives,
+    *,
+    dimensions=None,
+    show_partial_dependence=True,
+    model=None,
+    ignore=None,
+    title=None,
+    highlight_levels=None,
+    link_matching_points=False,
+    xticklabels_kwargs=None,
+    number_points=False,
+    mark_kwds=None,
+):
+
+    if dimensions is None:
+        dimensions = {}
+
+    if ignore is None:
+        ignore = []
+
+    if xticklabels_kwargs is None:
+        xticklabels_kwargs = {}
+
+    if mark_kwds is None:
+        mark_kwds = {}
+
+    ignore = set(ignore)
+
+    if highlight_levels is None:
+        highlight_levels = []
+
+    if not isinstance(highlight_levels, Iterable):
+        highlight_levels = [highlight_levels]
+
+    highlight_levels = sorted(highlight_levels)
+
+    varying_parameters = sorted(
+        p for p in trials.varying_parameters.keys() if p not in ignore
+    )
+
+    data = pd.DataFrame(
+        (
+            {
+                **{p: t.get(p) for p in varying_parameters},
+                **{target: t.result.get(target) for target in objectives},
+            }
+            for t in trials
+            if t.is_successful and t.result is not None
+        ),
+        dtype=object,
+    )
+
+    for t in objectives:
+        data[t] = data[t].infer_objects()
+
+    for p in varying_parameters:
+        if not isinstance(dimensions.get(p), Categorical):
+            data[p] = data[p].infer_objects()
+
+    data = data.dropna(subset=objectives)
+
+    # Sort varying_parameters by position in dimensions
+    parameter_position = {k: i for i, k in enumerate(dimensions.keys())}
+    varying_parameters = sorted(
+        varying_parameters, key=lambda p: parameter_position.get(p, 1000)
+    )
+
+    parameter_space = Space(
+        [
+            Dimension.get_instance(p, data[p], dimensions.get(p))
+            for p in varying_parameters
+        ]
+    )
+
+    objective_space = Space(
+        [Dimension.get_instance(t, data[t], dimensions.get(t)) for t in objectives]
+    )
+
+    print(parameter_space)
+
+    # Prepare results
+    for p, dim in zip(varying_parameters, parameter_space.dimensions):
+        data[p] = dim.prepare(data[p])
+
+    n_samples = 1000
+    samples = parameter_space.rvs_transformed(n_samples=n_samples)
+
+    Xt = parameter_space.transform(*(data[p] for p in varying_parameters))
+    Yt = objective_space.transform(*(data[t] for t in objectives))
+
+    if model is None:
+        n_neighbors = min(5, len(Xt))
+        model = KNeighborsRegressor(weights="distance", n_neighbors=n_neighbors)
+
+    regressor = MultiOutputRegressor(model)
+    regressor.fit(Xt, Yt)
+
+    fig, axes = plt.subplots(
+        nrows=len(objective_space.dimensions),
+        ncols=len(parameter_space.dimensions),
+        sharey="row",
+        sharex="col",
+        squeeze=False,
+    )
+
+    for i, parameter in enumerate(parameter_space.dimensions):
+        for j, target in enumerate(objective_space.dimensions):
+            xi, y, e = partial_dependence(
+                parameter_space, regressor.estimators_[j], i, sample_points=samples
+            )
+            yi = target.inverse_transform(y)
+
+            data_p = data[parameter.name]
+
+            if isinstance(parameter, Categorical):
+                xi = parameter.to_numeric(xi)
+                data_p = parameter.to_numeric(data_p, False)
+                axes[j, i].set_xticks(list(range(len(parameter.categories))))
+                if parameter.formatter:
+                    formatter = _get_formatter(parameter.formatter)
+                    categories = [formatter(x=x) for x in parameter.categories]
+                else:
+                    categories = parameter.categories
+                axes[j, i].set_xticklabels(categories)
+
+            if isinstance(target, Numeric) and target.marks is not None:
+                for m in target.marks:
+                    axes[j, i].axhline(m, **mark_kwds)
+
+            if isinstance(parameter, Numeric) and parameter.marks is not None:
+                for m in parameter.marks:
+                    axes[j, i].avhline(m, **mark_kwds)
+
+            # Format all xticklabels
+            if xticklabels_kwargs:
+                # Only if xticklabels_kwargs is non-empty, otherwise setp thinks it should print the current values.
+                plt.setp(axes[j, i].get_xticklabels(), **xticklabels_kwargs)
+
+            if show_partial_dependence:
+                axes[j, i].plot(xi, yi)
+
+            # Show points
+            if number_points:
+                textplot(
+                    data_p,
+                    data[target.name],
+                    data.index,
+                    ax=axes[j, i],
+                    va="center",
+                    ha="center",
+                )
+            else:
+                axes[j, i].scatter(
+                    data_p,
+                    data[target.name],
+                    # c=results[target],
+                    # cmap=cmap,
+                    ec="w",
+                    # norm=color_norm,
+                )
+
+            if link_matching_points:
+                link_opt = (
+                    None if link_matching_points is True else link_matching_points
+                )
+                _link_matching_points(
+                    axes[j, i],
+                    data,
+                    varying_parameters,
+                    parameter.name,
+                    parameter,
+                    target.name,
+                    link_opt=link_opt,
+                )
+
+            if j == len(objective_space.dimensions) - 1:
+                axes[j, i].set_xlabel(parameter.label)
+                if parameter.formatter is not None and not isinstance(
+                    parameter, Categorical
+                ):
+                    axes[j, i].get_xaxis().set_major_formatter(parameter.formatter)
+
+                if isinstance(parameter, Numeric) and parameter.ticks is not None:
+                    axes[j, i].set_xticks(parameter.prepare(parameter.ticks))
+                    ticks = parameter.ticks
+                    if parameter.formatter is not None:
+                        ticks = [parameter.formatter(t, None) for t in ticks]
+                    axes[j, i].set_xticklabels(ticks)
+
+            if i == 0:
+                axes[j, i].set_ylabel(target.label)
+                if target.formatter is not None:
+                    axes[j, i].get_yaxis().set_major_formatter(target.formatter)
+
+    if title is None:
+        title = "Partial dependence of {} on {}".format(
+            joinex(d.label for d in objective_space.dimensions),
+            joinex(d.label for d in parameter_space.dimensions),
+        )
+
+    if title:
+        fig.suptitle(title)
+
+    fig.align_ylabels(axes)
+    fig.align_xlabels(axes)

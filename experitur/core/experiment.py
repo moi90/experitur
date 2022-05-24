@@ -1,21 +1,13 @@
 import copy
 import datetime
-
-import warnings
-from experitur.core.configurators import (
-    BaseConfigurator,
-    Configurable,
-    is_invariant,
-    validate_configurators,
-    MultiplicativeConfiguratorChain,
-)
 import functools
-import inspect
 import itertools
 import os
 import socket
 import traceback
+import warnings
 from collections import defaultdict
+from enum import Enum
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -31,13 +23,17 @@ from typing import (
 import click
 
 import experitur
-from experitur.core.context import get_current_context
-
-
+from experitur.core.configurators import (
+    BaseConfigurator,
+    Configurable,
+    MultiplicativeConfiguratorChain,
+    is_invariant,
+    validate_configurators,
+)
+from experitur.core.context import ExperimentStoppedError, get_current_context
 from experitur.core.trial import Trial
 from experitur.core.trial_store import ModifiedError
 from experitur.errors import ExperiturError
-from experitur.helpers import tqdm_redirect
 from experitur.helpers.merge_dicts import merge_dicts
 from experitur.recursive_formatter import RecursiveDict
 from experitur.util import (
@@ -100,6 +96,21 @@ def format_trial_parameters(func=None, parameters=None, experiment=None):
     return func + parameters
 
 
+def _detect_keyboard_interrupt(exception: BaseException):
+    queue = [exception]
+    while queue:
+        exception = queue.pop()
+
+        if isinstance(exception, KeyboardInterrupt):
+            return True
+
+        if exception.__cause__ is not None:
+            queue.append(exception.__cause__)
+        if exception.__context__ is not None:
+            queue.append(exception.__context__)
+    return False
+
+
 class _SkipCache:
     def __init__(self, experiment: "Experiment"):
         self.experiment = experiment
@@ -146,6 +157,8 @@ class Experiment(Configurable):
         volatile (:py:class:`bool`, optional): If True, the results of a successful run will not be saved (Default: False).
         minimize (:py:class:`str` or list of str, optional): Metric or list of metrics to minimize.
         maximize (:py:class:`str` or list of str, optional): Metric or list of metrics to maximize.
+        doc (str, optional): Docstring for this experiment.
+        defaults (dict, optional): Default values for parameters.
 
     This can be used as a constructor or a decorator:
 
@@ -169,6 +182,10 @@ class Experiment(Configurable):
     See :py:class:`~experitur.Trial` for more details.
     """
 
+    class Optimize(Enum):
+        MAXIMIZE = "max"
+        MINIMIZE = "min"
+
     def __init__(
         self,
         name: Optional[str] = None,
@@ -177,11 +194,15 @@ class Experiment(Configurable):
         parent: "Experiment" = None,
         meta: Optional[Mapping] = None,
         active: bool = True,
-        volatile: bool = False,
+        volatile: Optional[bool] = None,
         minimize: Union[str, List[str], None] = None,
         maximize: Union[str, List[str], None] = None,
-        depends_on: Optional[List["Experiment"]] = None,
+        depends_on: Union[None, "Experiment", List["Experiment"]] = None,
+        doc: Optional[str] = None,
+        defaults=None,
     ):
+        super().__init__()
+
         if not (isinstance(name, str) or name is None):
             raise ValueError(f"'name' has to be a string or None, got {name!r}")
 
@@ -199,9 +220,9 @@ class Experiment(Configurable):
         self.active = active
         self.volatile = volatile
 
-        self.minimize, self.maximize = self._validate_minimize_maximize(
-            minimize, maximize
-        )
+        self.optimize: Dict[
+            str, Experiment.Optimize
+        ] = self._validate_minimize_maximize(minimize, maximize)
 
         self.depends_on: List["Experiment"] = (
             [depends_on]
@@ -235,10 +256,18 @@ class Experiment(Configurable):
 
         self.func: Optional[Callable[[Trial], Any]] = None
 
+        if defaults is None:
+            defaults = {}
+        self.defaults = defaults
+
         self._event_handlers: Dict[str, List[Callable]] = defaultdict(list)
 
         # Merge settings from all ancestors
         self._merge_parents()
+
+        # If volatile was not set by any parent, set now.
+        if self.volatile is None:
+            self.volatile = False
 
         self._base_configurators: List[BaseConfigurator] = (
             [] if self.parent is None else self.parent._configurators
@@ -256,7 +285,7 @@ class Experiment(Configurable):
         parent: "Optional[Experiment]" = self.parent
         while parent is not None:
             # Copy attributes: func, meta, ...
-            for name in ("func", "meta"):
+            for name in ("func", "meta", "defaults"):
                 ours = getattr(self, name)
                 theirs = getattr(parent, name)
 
@@ -283,7 +312,25 @@ class Experiment(Configurable):
             common = ", ".join(sorted(common))
             raise ValueError(f"minimize and maximize share common metrics: {common}")
 
-        return minimize, maximize
+        optimize = {}
+        for m in maximize:
+            optimize[m] = Experiment.Optimize.MAXIMIZE
+        for m in minimize:
+            optimize[m] = Experiment.Optimize.MAXIMIZE
+
+        return optimize
+
+    @property
+    def maximize(self):
+        return sorted(
+            k for k, v in self.optimize.items() if v == Experiment.Optimize.MAXIMIZE
+        )
+
+    @property
+    def minimize(self):
+        return sorted(
+            k for k, v in self.optimize.items() if v == Experiment.Optimize.MINIMIZE
+        )
 
     def add_dependency(self, dependency: "Experiment"):
         self.depends_on.append(dependency)
@@ -352,11 +399,7 @@ class Experiment(Configurable):
 
         self._register_handler("on_update", func)
 
-    def child(
-        self,
-        name: Optional[str] = None,
-        configurator=None,
-    ) -> "Experiment":
+    def child(self, name: Optional[str] = None, configurator=None,) -> "Experiment":
         """Create a child experiment.
 
         Args:
@@ -490,10 +533,27 @@ class Experiment(Configurable):
         trials = self._trial_generator()
 
         if self.ctx.config["resume_failed"]:
+            hostname = self.meta.get("hostname", object())
+
             # TODO: Make sure that these are not resumed simultaneously by another process!
-            failed_with_checkpoint = self.trials.filter(
-                lambda trial: trial.is_failed or trial.is_zombie and trial.is_resumable
+            failed_with_checkpoint = (
+                self.trials.filter(
+                    lambda trial: trial.is_failed
+                    or trial.is_zombie
+                    and trial.is_resumable
+                )
+                # Resume only trials that were started on the same host
+                .filter(
+                    lambda trial: trial.get("experiment", {})
+                    .get("meta", {})
+                    .get("hostname", object())
+                    == hostname
+                )
             )
+
+            for t in failed_with_checkpoint:
+                print(t.experiment)
+
             cprint(f"{len(failed_with_checkpoint)} resumable trials")
 
             def _check_unmodified(t: Trial):
@@ -513,6 +573,9 @@ class Experiment(Configurable):
             print()
             cprint(f"Running trial {trial.id} ...", color="white", attrs=["dark"])
 
+            # Apply defaults
+            trial.setdefaults(self.defaults)
+
             # Run the trial
             try:
                 self.run_trial(trial)
@@ -522,9 +585,18 @@ class Experiment(Configurable):
             else:
                 if self.volatile:
                     trial.remove()
+            finally:
+                self.ctx.on_trial_end()
 
-            if self.ctx.should_stop():
-                return
+            try:
+                self.ctx.check_stop()
+            except ExperimentStoppedError:
+                cprint(
+                    "Execution of further trials stopped by signal.",
+                    color="red",
+                    attrs=["dark"],
+                )
+                raise
 
     def run_trial(self, trial: Trial):
         """Run the current trial and save the results."""
@@ -554,7 +626,7 @@ class Experiment(Configurable):
 
             print(f"Restored checkpoint {trial.checkpoint_fn}")
 
-        # Properly inject runtime metadata.
+        # TODO: Properly inject runtime metadata.
         # Otherwise, resumed trials appear as zombies.
         trial.experiment["meta"].update({k: self.meta[k] for k in ("hostname", "pid")})
 
@@ -570,7 +642,7 @@ class Experiment(Configurable):
             trial.result = {**ensure_dict(trial.result), **ensure_dict(result)}
 
             # Validate result
-            self._validate_trial_result(result)
+            self._validate_trial_result(trial.result)
 
         except (Exception, KeyboardInterrupt) as exc:
             # TODO: Store.log_error()
@@ -578,25 +650,49 @@ class Experiment(Configurable):
             error_fn = os.path.join(trial.wdir, "error.txt")
             with open(error_fn, "w") as f:
                 f.write(str(exc))
-                f.write(traceback.format_exc())
                 f.write("\n")
-                for k, v in inspect.trace()[-1][0].f_locals.items():
-                    f.write(f"{k}: {try_str(v)}\n")
+                # f.write(traceback.format_exc())
+                tb_exc = traceback.TracebackException.from_exception(
+                    exc, capture_locals=self.ctx.config["traceback_capture_locals"],
+                )
+                f.write("".join(tb_exc.format()))
+                # f.write("\n")
+                # for k, v in inspect.trace()[-1][0].f_locals.items():
+                #     f.write(f"{k}: {try_str(v)}\n")
 
-            trial.error = ": ".join(filter(None, (exc.__class__.__name__, str(exc))))
+            if _detect_keyboard_interrupt(exc):
+                exc = KeyboardInterrupt()
+
+            trial.error = ": ".join(
+                filter(None, (exc.__class__.__name__, str(exc).split("\n")[0]))
+            )
 
             print("\n", flush=True)
-            print(
-                f"Error running {trial.id}.\n"
+            cprint(
+                f"{trial.error}\n"
+                f"{trial.id} failed.\n"
                 f"See {error_fn} for the complete traceback.",
                 flush=True,
+                color="red",
+                attrs=["bold"],
             )
 
             raise exc
-
         else:
-            trial.result = result
+            print()
+            cprint(
+                f"{trial.id} succeeded.", color="green", attrs=["dark"],
+            )
+
             trial.success = True
+
+            if trial.unused_parameters:
+                unused_parameters = ", ".join(trial.unused_parameters)
+                cprint(
+                    f"Some parameters were not used during the execution of the trial: {unused_parameters}",
+                    color="red",
+                    attrs=["dark"],
+                )
         finally:
             trial.time_end = datetime.datetime.now()
             trial.save()
@@ -607,6 +703,7 @@ class Experiment(Configurable):
 
     def _setup_trial_configuration(self, trial_configuration):
         trial_configuration.setdefault("parameters", {})
+        trial_configuration.setdefault("tags", [])
         return merge_dicts(
             trial_configuration,
             experiment={
@@ -630,15 +727,30 @@ class Experiment(Configurable):
             raise ExperimentError(
                 f"Experiments are expected to return a dict, got {trial_result!r}"
             )
+
         missing_metrics = (
             set(self.maximize) | set(self.minimize)
         ) - trial_result.keys()
 
         if missing_metrics:
             missing_metrics = ", ".join(sorted(missing_metrics))
-            raise ExperimentError(f"Missing metrics in result: {missing_metrics}")
+            raise ExperimentError(
+                f"Missing metrics in result: {missing_metrics}.\n"
+                f"Available metrics: {sorted(trial_result.keys())}"
+            )
 
         return trial_result
+
+    def update(self):
+        """
+        Run on_update hook for all existing trials.
+        """
+
+        for trial in self.trials.filter(lambda trial: trial.is_successful):
+            orig_data = copy.deepcopy(trial._data)
+            self._handle_event("on_update", trial)
+
+            yield orig_data, trial
 
     def pre_trial(self, func):
         """Update the pre-trial hook.
@@ -734,9 +846,20 @@ class Experiment(Configurable):
 
     @property
     def trials(self):
-        return self.ctx.get_trials(experiment=self)
+        if self.name is not None:
+            return self.ctx.trials.match(experiment=self)
+
+        raise ValueError(
+            f"Experiment has no name set. Set a name explicitely if you intend to use Experiment.trials in the DOX."
+        )
 
     def get_matching_trials(self, exclude=None):
+        """
+        Return all trials that match the configuration of this experiment.
+        
+        This includes all matching trials, regardless whether they were belong to this or to another experiment.
+        """
+
         parameters = self.parameters
 
         if exclude is not None:
@@ -745,10 +868,8 @@ class Experiment(Configurable):
 
             parameters = [k for k in parameters if k not in exclude]
 
-        print("get_matching_trials: parameters", parameters)
-
         sampler = self.configurator.build_sampler()
 
         return self.ctx.trials.match(func=self.func).filter(
-            lambda trial: sampler.contains_superset_of({"parameters": dict(trial)})
+            lambda trial: sampler.contains_subset_of({"parameters": dict(trial)})
         )

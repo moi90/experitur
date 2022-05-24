@@ -1,11 +1,13 @@
 import collections.abc
 import os.path
 import weakref
-from abc import abstractmethod, ABC
+from abc import ABC, abstractmethod
 from collections import defaultdict
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, List, Mapping
 
 import cachetools
+
 from experitur.helpers import yaml
 
 if TYPE_CHECKING:
@@ -17,6 +19,11 @@ except ImportError:
     pd = None
 
 LogValues = Mapping[str, Any]
+
+
+class Message(Enum):
+    COMMIT = "commit"
+    ROLLBACK = "rollback"
 
 
 class LoggerBase(ABC):
@@ -60,6 +67,22 @@ class LoggerBase(ABC):
 
         return result
 
+    @abstractmethod
+    def commit(self) -> None:
+        """
+        Commit recently written entries.
+
+        Called by Trial.save_checkpoint.
+        """
+
+    @abstractmethod
+    def rollback(self) -> None:
+        """
+        Rollback uncommitted entries.
+
+        Called by Trial.load_checkpoint.
+        """
+
 
 class YAMLLogger(LoggerBase):
     # Dict[filename, Tuple[mtime, list]]
@@ -77,6 +100,23 @@ class YAMLLogger(LoggerBase):
         with open(self.log_fn, "a") as fp:
             yaml.dump(values, fp, Dumper=yaml.Dumper, explicit_start=True)
 
+    def _read(self) -> List:
+        result = []
+        queue = []
+        with open(self.log_fn, "r") as fp:
+            for entry in yaml.load_all(fp, Loader=yaml.Loader):
+                if entry is Message.ROLLBACK:
+                    queue.clear()
+                elif entry is Message.COMMIT:
+                    result.extend(queue)
+                    queue.clear()
+                else:
+                    queue.append(entry)
+
+        # Append entries that were not rolled back
+        result.extend(queue)
+        return result
+
     def read(self):
         try:
             mtime = os.path.getmtime(self.log_fn)
@@ -92,11 +132,18 @@ class YAMLLogger(LoggerBase):
                 return cache_entry[1]
 
         try:
-            with open(self.log_fn, "r") as fp:
-                log = list(yaml.load_all(fp, Loader=yaml.Loader))
+            log = self._read()
         except FileNotFoundError:
             return []
 
         self._cache[self.log_fn] = (mtime, log)
 
         return log
+
+    def commit(self):
+        with open(self.log_fn, "a") as fp:
+            yaml.dump(Message.COMMIT, fp, Dumper=yaml.Dumper, explicit_start=True)
+
+    def rollback(self):
+        with open(self.log_fn, "a") as fp:
+            yaml.dump(Message.ROLLBACK, fp, Dumper=yaml.Dumper, explicit_start=True)

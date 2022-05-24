@@ -1,12 +1,14 @@
 import collections
 import contextlib
 import os.path
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Mapping, Optional, Union
 
 from experitur.core.root_trial_collection import RootTrialCollection
 from experitur.core.trial import Trial, TrialCollection
 from experitur.errors import ExperiturError
+from experitur.helpers import yaml
 
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.experiment import Experiment
@@ -20,6 +22,10 @@ class DependencyError(ContextError):
     pass
 
 
+class ExperimentStoppedError(Exception):
+    pass
+
+
 def _format_dependencies(experiments: List["Experiment"]):
     msg = []
     for exp in experiments:
@@ -28,7 +34,7 @@ def _format_dependencies(experiments: List["Experiment"]):
 
 
 def _order_experiments(experiments) -> List["Experiment"]:
-    experiments = set(experiments)
+    experiments = list(experiments)
 
     # Include parents
     stack = collections.deque(experiments)
@@ -38,7 +44,7 @@ def _order_experiments(experiments) -> List["Experiment"]:
 
         for dependency in exp.depends_on:
             if dependency not in experiments:
-                experiments.add(dependency)
+                experiments.append(dependency)
                 stack.append(dependency)
 
     done = set()
@@ -46,11 +52,11 @@ def _order_experiments(experiments) -> List["Experiment"]:
 
     while experiments:
         # Get all without dependencies
-        ready = {
+        ready = [
             exp
             for exp in experiments
             if not exp.depends_on or all(d in done for d in exp.depends_on)
-        }
+        ]
 
         if not ready:
             raise DependencyError(
@@ -80,6 +86,8 @@ class Context:
     _default_config = {
         "skip_existing": True,
         "catch_exceptions": False,
+        "run_n_trials": None,
+        "traceback_capture_locals": False,
         "resume_failed": False,
     }
 
@@ -110,6 +118,9 @@ class Context:
         self._trial_stack: List[Trial] = []
         self._experiment_stack: List[Experiment] = []
 
+        self.run_n_trials = self.config["run_n_trials"]
+        self._initial_stop_timestamp = self._read_stop_timestamp()
+
     def _register_experiment(self, experiment):
         self.registered_experiments.append(experiment)
 
@@ -135,6 +146,8 @@ class Context:
             for exp in ordered_experiments:
                 with self.set_current_experiment(exp):
                     exp.run()
+        except ExperimentStoppedError:
+            pass
         finally:
             # If no more trials are running (also in other processes) clear the stop signal
             running_trials = self.trials.filter(
@@ -173,10 +186,12 @@ class Context:
         Raises:
             :obj:`KeyError` if no experiment with this name is found.
         """
+
+        experiments = [e for e in self.registered_experiments if e.name == name]
+
         try:
-            return [e for e in self.registered_experiments if e.name == name][0]
+            return experiments[0]
         except IndexError:
-            print(self.registered_experiments)
             raise KeyError(name) from None
 
     def get_trials(
@@ -249,18 +264,44 @@ class Context:
         flag_fn = os.path.join(self.wdir, "stop")
 
         if stop:
-            with open(flag_fn, "w"):
-                pass
+            with open(flag_fn, "w") as f:
+                yaml.dump(time.time(), f)
         else:
             try:
                 os.unlink(flag_fn)
             except Exception:  # pylint: disable=broad-except
                 pass
 
-    def should_stop(self):
+    def _read_stop_timestamp(self):
         flag_fn = os.path.join(self.wdir, "stop")
 
-        return os.path.isfile(flag_fn)
+        try:
+            with open(flag_fn, "r") as f:
+                return yaml.load(f, Loader=yaml.Loader)
+        except FileNotFoundError:
+            return None
+
+    def should_stop(self):
+        if self.run_n_trials is not None and self.run_n_trials <= 0:
+            return True
+
+        timestamp = self._read_stop_timestamp()
+        if timestamp is None:
+            return False
+
+        if self._initial_stop_timestamp is None:
+            return True
+
+        if timestamp > self._initial_stop_timestamp:
+            return True
+
+    def check_stop(self):
+        if self.should_stop():
+            raise ExperimentStoppedError()
+
+    def on_trial_end(self):
+        if self.run_n_trials is not None:
+            self.run_n_trials -= 1
 
 
 _context_stack: List[Context] = []

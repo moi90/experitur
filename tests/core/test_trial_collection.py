@@ -47,10 +47,28 @@ def test_groupby(tmp_path):
 
         assert "a" not in group.varying_parameters
 
-    result = groups.filter(lambda trial: trial["b"] == 3)
+    result = groups.filter(lambda trial: trial["b"] == 3).best_n(10, maximize="c")
 
     assert len(result) == 2
 
     trials = result.coalesce()
 
     assert set(trials.varying_parameters.keys()) == {"a", "c"}
+
+
+def test_pareto_optimal(tmp_path):
+    with Context(str(tmp_path), writable=True) as ctx:
+
+        @Experiment(configurator=Grid({"a": [1, 2], "b": [3, 4], "c": [5, 6]}))
+        def a(trial):
+            return dict(trial)
+
+        @Experiment(parent=a)
+        def b(trial):
+            return dict(trial)
+
+    ctx.run()
+
+    trials = ctx.trials.match()
+
+    trials.pareto_optimal(minimize=["a", "b"], maximize="c")

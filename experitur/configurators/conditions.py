@@ -31,11 +31,12 @@ def _validate_conditions(conditions, name) -> Mapping[Any, BaseConfigurator]:
 
 
 class _Conditions(Configurator):
-    _Sampler = AdditiveConfiguratorChain._Sampler
-
-    def __init__(self, conditions: Mapping[Any, BaseConfigurator], name: str) -> None:
+    def __init__(
+        self, conditions: Mapping[Any, BaseConfigurator], name: str, shuffle=False
+    ) -> None:
         self.conditions = conditions
         self.name = name
+        self.shuffle = shuffle
 
     def merge(self, other_conditions):
         conditions = dict(self.conditions)
@@ -65,8 +66,9 @@ class _Conditions(Configurator):
         if parent is None:
             parent = _RootSampler()
 
-        return self._Sampler(  # pylint: disable=no-member
-            tuple(c.build_sampler(parent) for c in self.conditions.values())
+        return AdditiveConfiguratorChain._Sampler(  # pylint: disable=no-member
+            tuple(c.build_sampler(parent) for c in self.conditions.values()),
+            shuffle=self.shuffle,
         )
 
 
@@ -97,7 +99,9 @@ class Conditions(_Conditions):
         This example will produce "1 1", "1 2", "2 3", "2 4".
     """
 
-    def __init__(self, name, conditions: Mapping, active: Optional[List[str]] = None):
+    def __init__(
+        self, name, conditions: Mapping, active: Union[str, List[str], None] = None
+    ):
         if isinstance(active, str):
             active = [active]
 

@@ -16,7 +16,6 @@ from typing import (
     Tuple,
     Type,
     TypeVar,
-    Union,
 )
 
 from typing_extensions import final
@@ -169,10 +168,6 @@ class ConfigurationSampler(BaseConfigurationSampler):
         - `configuration` does not match if values for existing keys are different.
         """
 
-        # print(
-        #     f"{type(self).__qualname__}.contains_subset_of", configuration, exclude
-        # )
-
         if exclude is None:
             exclude = set()
 
@@ -264,7 +259,7 @@ class Configurator(BaseConfigurator):
 
     _Sampler: Type[ConfigurationSampler]
 
-    __str_attrs__: Tuple[str] = tuple()
+    __str_attrs__: Tuple[str, ...]
 
     def build_sampler(
         self, parent: Optional["BaseConfigurationSampler"] = None
@@ -322,6 +317,9 @@ class MultiplicativeConfiguratorChain(Configurator):
 
         return MultiplicativeConfiguratorChain(*self.configurators, other)
 
+    def __str__(self):
+        return "(" + (" * ".join(str(c) for c in self.configurators)) + ")"
+
 
 def extend_parameter_values(
     left: Dict[str, Container], right: Mapping[str, Container]
@@ -350,8 +348,9 @@ class AdditiveConfiguratorChain(Configurator):
     The result is the concatenation of all contained configurators.
     """
 
-    def __init__(self, *configurators: BaseConfigurator) -> None:
+    def __init__(self, *configurators: BaseConfigurator, shuffle=False) -> None:
         self.configurators = configurators
+        self.shuffle = shuffle
 
     def build_sampler(
         self, parent: Optional["BaseConfigurationSampler"] = None
@@ -360,7 +359,8 @@ class AdditiveConfiguratorChain(Configurator):
             parent = _RootSampler()
 
         return self._Sampler(  # pylint: disable=no-member
-            tuple(c.build_sampler(parent) for c in self.configurators)
+            tuple(c.build_sampler(parent) for c in self.configurators),
+            shuffle=self.shuffle,
         )
 
     @property
@@ -376,11 +376,26 @@ class AdditiveConfiguratorChain(Configurator):
 
         return AdditiveConfiguratorChain(*self.configurators, other)
 
+    def __str__(self):
+        return "(" + (" + ".join(str(c) for c in self.configurators)) + ")"
+
     class _Sampler(BaseConfigurationSampler):
-        def __init__(self, samplers: Iterable[BaseConfigurationSampler]) -> None:
+        def __init__(
+            self, samplers: Iterable[BaseConfigurationSampler], shuffle: bool
+        ) -> None:
             self.samplers = samplers
+            self.shuffle = shuffle
 
         def sample(self, exclude=None) -> Iterator[Mapping]:
+            if self.shuffle:
+                generators = [s.sample(exclude) for s in self.samplers]
+                while generators:
+                    g = random.choice(generators)
+                    try:
+                        yield next(g)
+                    except StopIteration:
+                        generators.remove(g)
+
             for s in self.samplers:
                 yield from s.sample(exclude)  # pylint: disable=protected-access
 
@@ -431,6 +446,8 @@ class Const(Configurator):
         This example will produce "1 2 3".
     """
 
+    __str_attrs__ = ("values",)
+
     def __init__(self, values: Optional[Mapping[str, Any]] = None, **kwargs):
         if values is None:
             self.values = kwargs
@@ -453,6 +470,27 @@ class Const(Configurator):
             for parent_configuration in self.parent.sample(exclude=exclude):
                 # print(self.configurator, ":", values)
                 yield merge_dicts(parent_configuration, parameters=values)
+
+
+class ZeroConfigurator(Configurator):
+    """
+    Empty parameter configurator.
+
+    This is different from Const() without arguments in that it DOES NOT YIELD ANY configurations.
+    """
+
+    __str_attrs__ = tuple()
+
+    @property
+    def parameter_values(self) -> Mapping[str, Container]:
+        return {}
+
+    class _Sampler(ConfigurationSampler):
+        configurator: "ZeroConfigurator"
+
+        def sample(self, exclude: Optional[Set] = None) -> Iterator[Mapping]:
+            while False:
+                yield {}
 
 
 def parameter_product(p: Mapping[str, Iterable]):
@@ -568,9 +606,10 @@ def validate_configurators(configurators) -> List[BaseConfigurator]:
     raise ValueError(f"Unsupported type for configurators: {configurators!r}")
 
 
-def is_invariant(configured_values: Union[Tuple, Container]):
+def is_invariant(configured_values: Any):
     """Return True if not more than one single value is configured."""
-    if isinstance(configured_values, tuple):
+
+    if hasattr(configured_values, "__len__"):
         return len(configured_values) < 2
 
     return False

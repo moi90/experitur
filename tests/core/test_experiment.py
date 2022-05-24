@@ -5,9 +5,11 @@ from experitur.core.experiment import (
     Experiment,
     ExperimentError,
     format_trial_parameters,
+    _detect_keyboard_interrupt,
 )
 from experitur.core.configurators import Configurator, Const, Grid
 from experitur.core.trial import Trial
+from experitur import unset
 
 
 def test_meta(tmp_path):
@@ -32,18 +34,28 @@ def test_merge(tmp_path):
 
         configurator = Grid({"a": [1, 2]})
 
-        @Experiment("a", configurator=configurator, meta={"a": "foo"})
+        @Experiment(
+            "a",
+            configurator=configurator,
+            meta={"a": "foo"},
+            maximize="a",
+            minimize="b",
+        )
         def a(_):
-            pass
+            return {"a": 1, "b": 2}
 
-        b = Experiment("b", parent=a)
+        b = Experiment("b", parent=a, maximize="b")
 
         # Ensure that meta is *copied* to child experiments
         assert id(b.meta) != id(a.meta)
         assert b.meta == a.meta
 
+        # If maximize or minimize are specified, previous optimization settings are overwritten.
+        assert b.maximize == ["b"]
+
         # Assert that inherited samplers are concatenated in the right way
         c = Experiment("c", configurator=Grid({"b": [1, 2]}), parent=a)
+
         ctx.run()
 
         # Parameters in a and b should be the same
@@ -102,7 +114,7 @@ def test_parameters(tmp_path):
 def test_configurator_order(tmp_path):
     class ConcreteConfigurator(Configurator):
         @property
-        def independent_parameters(self):
+        def parameter_values(self):
             return {}
 
     class PG1(ConcreteConfigurator):
@@ -142,6 +154,30 @@ def test_configurator_order(tmp_path):
         assert pg_types == [PG1, PG2, PG3, PG4, PG5]
 
 
+def test_successful_experiment(tmp_path):
+    config = {"catch_exceptions": False}
+    with Context(str(tmp_path), config, writable=True) as ctx:
+
+        @Experiment()
+        def experiment(_):  # pylint: disable=unused-variable
+            pass
+
+        on_success_called = 0
+
+        @experiment.on_success
+        def _(_):
+            nonlocal on_success_called
+            on_success_called += 1
+
+        ctx.run()
+
+        assert on_success_called
+
+        trial = ctx.trials.one()
+        assert trial.error is None
+        assert trial.success
+
+
 def test_failing_experiment(tmp_path):
     config = {"catch_exceptions": False}
     with Context(str(tmp_path), config, writable=True) as ctx:
@@ -150,12 +186,12 @@ def test_failing_experiment(tmp_path):
         def experiment(_):  # pylint: disable=unused-variable
             raise Exception("Some error")
 
-        on_success_called = False
+        on_success_called = 0
 
         @experiment.on_success
-        def on_experiment_success(_):
+        def _(_):
             nonlocal on_success_called
-            on_success_called = True
+            on_success_called += 1
 
         with pytest.raises(Exception):
             ctx.run()
@@ -172,20 +208,33 @@ def test_volatile_experiment(tmp_path):
     with Context(str(tmp_path), config, writable=True) as ctx:
 
         @Experiment(volatile=True)
-        def experiment(_):  # pylint: disable=unused-variable
-            pass
+        def experiment(trial):
+            assert ctx.current_trial is trial
 
-        on_success_called = False
+        on_success_called = 0
+        on_pre_run_called = 0
+
+        @experiment.on_pre_run
+        def _(trial):
+            nonlocal on_pre_run_called
+
+            assert isinstance(trial, Trial)
+            on_pre_run_called += 1
 
         @experiment.on_success
-        def on_experiment_success(_):
+        def _(trial):
             nonlocal on_success_called
-            on_success_called = True
+
+            assert isinstance(trial, Trial)
+            on_success_called += 1
 
         ctx.run()
 
         with pytest.raises(ContextError):
             ctx.current_trial
+
+        assert on_success_called == 1
+        assert on_pre_run_called == 1
 
         assert len(ctx.store) == 0
 
@@ -289,6 +338,59 @@ def test_skip(tmp_path):
 
 class ExpectedException(Exception):
     pass
+
+
+def test__detect_keyboard_interrupt_explicit():
+    exception_raised = False
+    try:
+        try:
+            raise KeyboardInterrupt()
+        except KeyboardInterrupt as exc:
+            raise ExpectedException() from exc
+    except ExpectedException as exc:  # pylint: disable=broad-except
+        exception_raised = True
+        assert _detect_keyboard_interrupt(exc)
+
+    assert exception_raised
+
+
+def test__detect_keyboard_interrupt_implicit():
+    exception_raised = False
+    try:
+        try:
+            raise KeyboardInterrupt()
+        except:
+            raise ExpectedException()
+    except ExpectedException as exc:  # pylint: disable=broad-except
+        exception_raised = True
+        assert _detect_keyboard_interrupt(exc)
+
+    assert exception_raised
+
+
+def test_cleanup_unset(tmp_path):
+    config = {"skip_existing": False}
+    with Context(str(tmp_path), config=config, writable=True) as ctx:
+
+        @Experiment("a", configurator=Grid({"a": [1, 2], "b": [3, unset]}))
+        def a(trial: Trial):
+            return dict(trial)
+
+    ctx.run()
+
+    results = set(tuple(sorted(t.result.items())) for t in ctx.trials)
+    assert results == set(
+        [
+            # a=1, b=3
+            (("a", 1), ("b", 3)),
+            # a=1, b=unset
+            (("a", 1),),
+            # a=2, b=3
+            (("a", 2), ("b", 3)),
+            # a=2, b=unset
+            (("a", 2),),
+        ]
+    )
 
 
 def test_checkpoint_resume(tmp_path):

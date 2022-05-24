@@ -25,13 +25,16 @@ setup(
         "unavailable-object",
         "filelock",
         "cachetools",
-        "joblib",  # joblib.dump for checkpoints
+        "joblib",  # joblib.dump/load for compressed checkpoints
         "termcolor",  # for colorful terminal output
+        "dictdiffer",
+        "numpy>=1.20",
+        "pandas>=1.3",
     ],
     python_requires=">=3.6",
     extras_require={
-        "tests": ["pytest", "pytest-cov"],
-        "optional": ["scikit-optimize", "scikit-learn", "pandas"],
+        "tests": ["pytest", "pytest-cov", "pytest-benchmark"],
+        "optional": ["scikit-optimize", "scikit-learn", "matplotlib", "natsort"],
         "docs": [
             "sphinx >= 1.4",
             "sphinx_rtd_theme",

@@ -44,6 +44,12 @@ class TrialStore(collections.abc.MutableMapping):
     def iter(self, prefix: Optional[str] = None) -> Iterator[str]:
         pass
 
+    __delitem__ = None
+
+    @abstractmethod
+    def delete(self, trial_id, revision=None):
+        pass
+
     def __iter__(self):
         return self.iter()
 
@@ -114,7 +120,7 @@ class TrialStore(collections.abc.MutableMapping):
         self.check_writable()
 
         for k in keys:
-            del self[k]
+            self.delete(k)
 
 
 class FileTrialStore(TrialStore):
@@ -269,7 +275,7 @@ class FileTrialStore(TrialStore):
             except:  # pylint: disable=bare-except
                 pass
 
-    def __delitem__(self, trial_id):
+    def delete(self, trial_id, revision=None):
         self.check_writable()
 
         with self._lock:
@@ -277,6 +283,16 @@ class FileTrialStore(TrialStore):
 
             if not os.path.isdir(old_path):
                 raise KeyError(trial_id)
+
+            # TODO: Check for modifications
+            if revision is not None:
+                on_disk_data = self[trial_id]
+
+                # Assert that the revision stored in the current data matches the on-disk state
+                if revision != on_disk_data.get("revision", None):
+                    raise ModifiedError(
+                        f"Trial {trial_id} has been altered by another process",
+                    )
 
             new_path_base = new_path = os.path.normpath(
                 os.path.join(self.ctx.wdir, ".trash", os.path.normpath(trial_id))

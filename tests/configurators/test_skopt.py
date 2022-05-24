@@ -11,6 +11,7 @@ except ImportError as exc:
     pytestmark = pytest.mark.skip(str(exc))
 
 
+# TODO: Check correct optimization direction
 def test_SKOpt(tmp_path):
     config = {"skip_existing": True}
     with Context(str(tmp_path), config, writable=True) as ctx:

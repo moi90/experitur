@@ -1,11 +1,11 @@
 import hashlib
 import itertools
-from typing import TYPE_CHECKING, Dict, List, Mapping
+from typing import TYPE_CHECKING, List, Mapping
 
 from experitur.core.trial import BaseTrialCollection, Trial, TrialCollection
 from experitur.core.trial_store import KeyExistsError
 from experitur.helpers.merge_dicts import merge_dicts
-from experitur.util import callable_to_name, freeze
+from experitur.util import callable_to_name
 
 if TYPE_CHECKING:
     from experitur.core.context import Context
@@ -13,13 +13,15 @@ if TYPE_CHECKING:
 
 class RootTrialCollection(BaseTrialCollection):
     def __init__(self, ctx: "Context"):
+        BaseTrialCollection.__init__(self)
+
         self.ctx = ctx
 
     def update(self, trial: Trial):
-        self.ctx.store[trial.id] = trial._data  # pylint: disable=protected-access
+        self.ctx.store[trial.id] = trial._data
 
     def remove(self, trial: Trial):
-        del self.ctx.store[trial.id]
+        self.ctx.store.delete(trial.id, trial.revision)
 
     # __contains__, __iter__, __len__
 
@@ -122,8 +124,8 @@ class RootTrialCollection(BaseTrialCollection):
             except KeyExistsError:
                 continue
 
-    def create(self, trial_data, **kwargs):
-        """Create a :py:class:`TrialData` instance."""
+    def create(self, trial_data, **kwargs) -> Trial:
+        """Create a :py:class:`Trial` instance."""
 
         # Initialize defaults
         trial_data = merge_dicts(
@@ -131,6 +133,8 @@ class RootTrialCollection(BaseTrialCollection):
         )
 
         trial_data = self._create(trial_data)
+
+        assert "wdir" in trial_data
 
         return Trial(trial_data, self, **kwargs)
 
@@ -151,12 +155,12 @@ def _format_trial_id(
         )
 
         hashed = []
-        while parameter_values:
+        while True:
             hashed_str = hashlib.sha1("".join(hashed).encode()).hexdigest()[:7]
             parts = ([hashed_str] if hashed else []) + sorted(parameter_values)
             trial_id = "_".join(parts)
 
-            if not shorten or len(trial_id) < 192:
+            if not shorten or len(trial_id) < 192 or not parameter_values:
                 break
 
             hashed.append(parameter_values.pop())

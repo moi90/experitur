@@ -12,6 +12,7 @@ def B(S, B0, k, t):
     return S - (S - B0) * math.exp(-k * t)
 
 
+# Skip with -k not slow
 @pytest.mark.slow
 @pytest.mark.parametrize("min_steps", [1, 5])
 @pytest.mark.parametrize("min_count", [1, 5])

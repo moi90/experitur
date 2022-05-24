@@ -7,6 +7,8 @@ def test__format_trial_id():
     assert _format_trial_id("foo", parameters, []) == "foo/_"
     assert _format_trial_id("foo", parameters, ["a", "b"]) == "foo/a-1_b-2"
 
+    assert _format_trial_id("foo", {"a": "a" * 200}, ["a"]) == "foo/fb8124b"
+
 
 def test_RootTrialCollection(tmp_path):
     with Context(str(tmp_path), writable=True) as ctx:

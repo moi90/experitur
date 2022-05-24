@@ -17,7 +17,7 @@ def fixture_dox_py_fn(tmp_path):
                 from experitur import Experiment
 
                 @Experiment(
-                    parameters={
+                    configurator={
                         "a1": [1],
                         "a2": [2],
                         "b": [1, 2],
