@@ -31,7 +31,7 @@ setup(
         "numpy>=1.20",
         "pandas>=1.3",
     ],
-    python_requires=">=3.6",
+    python_requires=">=3.7",
     extras_require={
         "tests": ["pytest", "pytest-cov", "pytest-benchmark"],
         "optional": ["scikit-optimize", "scikit-learn", "matplotlib", "natsort"],
@@ -46,9 +46,10 @@ setup(
     entry_points={"console_scripts": ["experitur=experitur.cli:cli"]},
     classifiers=[
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Development Status :: 3 - Alpha",
