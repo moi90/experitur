@@ -2,7 +2,7 @@ from sklearn import datasets, svm
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 
 from experitur import Experiment, Trial
-from experitur.parameters import Grid
+from experitur.configurators import Grid
 
 
 @Grid({"svc_kernel": ["linear", "poly", "rbf", "sigmoid"]})

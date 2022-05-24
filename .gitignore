@@ -19,3 +19,4 @@ examples/simple.csv
 examples/simple.txt
 experiments/*/
 coverage.xml
+.venv/

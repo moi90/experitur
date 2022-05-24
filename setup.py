@@ -17,11 +17,25 @@ setup(
     url="https://github.com/moi90/experitur",
     packages=find_packages(),
     include_package_data=True,
-    install_requires=["Click", "regex", "tqdm", "pyyaml", "unavailable-object"],
-    python_requires=">=3.6",
+    install_requires=[
+        "Click",
+        "regex",
+        "tqdm",
+        "pyyaml",
+        "unavailable-object",
+        "filelock",
+        "cachetools",
+        "joblib",  # joblib.dump/load for compressed checkpoints
+        "termcolor",  # for colorful terminal output
+        "dictdiffer",
+        "numpy>=1.20",
+        "pandas>=1.3",
+        "typing_extensions",  # For `final` from 3.7 onwards
+    ],
+    python_requires=">=3.7",
     extras_require={
-        "tests": ["pytest", "pytest-cov"],
-        "optional": ["scikit-optimize", "scikit-learn", "pandas"],
+        "tests": ["pytest", "pytest-cov", "pytest-benchmark"],
+        "optional": ["scikit-optimize", "scikit-learn", "matplotlib", "natsort"],
         "docs": [
             "sphinx >= 1.4",
             "sphinx_rtd_theme",
@@ -33,9 +47,10 @@ setup(
     entry_points={"console_scripts": ["experitur=experitur.cli:cli"]},
     classifiers=[
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Development Status :: 3 - Alpha",

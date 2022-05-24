@@ -1,9 +1,11 @@
+from experitur.core.trial_store import ModifiedError
 import functools
+import os.path
 import re
 
 import pytest
 
-from experitur.core.context import Context
+from experitur.core.context import Context, ContextError
 from experitur.core.experiment import Experiment
 from experitur.core.trial import Trial
 from experitur.util import callable_to_name
@@ -26,7 +28,7 @@ def test_trial(tmp_path):
         def parametrized(a=1, b=2, c=3, d=4):
             return dict(a=a, b=b, c=c, d=d)
 
-        @Experiment(parameters={"a": [1], "b": [2]})
+        @Experiment(configurator={"a": [1], "b": [2]})
         def experiment1(parameters):
             print("trial.wdir:", parameters.wdir)
 
@@ -36,7 +38,7 @@ def test_trial(tmp_path):
 
         ctx.run()
 
-        trial1 = ctx.get_trials(experiment=experiment1).one()
+        trial1 = ctx.trials.match(experiment=experiment1).one()
         assert trial1.result == {"a": 1, "b": 2, "c": 3, "d": 5}
 
         assert len(ctx.store) == 1
@@ -48,8 +50,10 @@ def test_trial_parameters(tmp_path):
     config = {"catch_exceptions": False}
     with Context(str(tmp_path), config, writable=True) as ctx:
 
-        @Experiment(parameters={"a": [1], "b": [2], "c": ["{a}"]})
-        def experiment(trial: Trial):  # pylint: disable=unused-variable
+        @Experiment(configurator={"a": [1], "b": [2], "c": ["{a}"]})
+        def experiment(trial: Trial):
+            assert ctx.current_trial == trial
+
             assert trial["a"] == 1
             assert trial["b"] == 2
             assert trial["c"] == trial["a"]
@@ -247,6 +251,9 @@ def test_trial_parameters(tmp_path):
 
         ctx.run()
 
+        with pytest.raises(ContextError):
+            ctx.current_trial
+
 
 def test_trial_logging(tmp_path):
     config = {"catch_exceptions": False}
@@ -262,9 +269,71 @@ def test_trial_logging(tmp_path):
 
     ctx.run()
 
-    trial = ctx.get_trials().one()
+    trial = ctx.trials.one()
 
-    log_entries = trial._logger.read()
+    log_entries = list(trial.get_log())
     assert log_entries == [
         {"i": i, "i10": i * 10, "ni": 1 / (i + 1)} for i in range(10)
     ]
+
+
+def test_trial_find_file(tmp_path):
+    config = {"catch_exceptions": False}
+
+    with Context(str(tmp_path), config, writable=True) as ctx:
+
+        @Experiment()
+        def experiment(trial: Trial):  # pylint: disable=unused-variable
+            with open(os.path.join(trial.wdir, "file.txt"), "w") as f:
+                f.write("test")
+
+    ctx.run()
+
+    trial = ctx.trials.one()
+
+    filename = trial.find_file("*.txt")
+    assert filename == os.path.join(trial.wdir, "file.txt")
+
+
+def test_trial_revisions(tmp_path):
+    config = {"catch_exceptions": False}
+
+    with Context(str(tmp_path), config, writable=True) as ctx:
+        trial = ctx.trials.create(
+            {
+                "experiment": {"name": "test2", "varying_parameters": []},
+            }
+        )
+
+        assert "revision" in trial._data
+
+        # Save trial three times and check that the revision changes everytime
+        revisions = []
+        for _ in range(3):
+            rev = trial.revision
+            assert rev not in revisions
+            revisions.append(rev)
+            trial.save()
+
+        trial2 = ctx.get_trial(trial.id)
+
+        assert trial2._root == trial._root
+
+        rev_before_save = trial.revision
+        trial.save()
+        rev_after_save = trial.revision
+
+        assert rev_before_save != rev_after_save
+
+        assert rev_before_save == trial2.revision
+
+        trial3 = ctx.get_trial(trial.id)
+
+        assert rev_after_save == trial3.revision
+
+        assert trial2.revision != trial3.revision
+
+        # revision of trial2 and 1/3 are now different
+
+        with pytest.raises(ModifiedError):
+            trial2.save()

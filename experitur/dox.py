@@ -3,6 +3,7 @@ import os.path
 import sys
 
 from experitur.errors import ExperiturError
+from experitur.core.experiment import Experiment
 
 
 class DOXError(ExperiturError):
@@ -33,6 +34,18 @@ def _load_py(dox_fn, dox_name):
         spec.loader.exec_module(module)
     except Exception as exc:
         raise DOXError("Error loading {}!".format(dox_fn)) from exc
+
+    # Insert into sys.modules
+    sys.modules[module.__name__] = module
+
+    # Guess experiment names from variable name in module
+    for name in dir(module):
+        experiment: Experiment = getattr(module, name)
+        if not isinstance(experiment, Experiment):
+            continue
+
+        if not experiment.name:
+            experiment.name = name
 
 
 _LOADERS = {".py": _load_py}

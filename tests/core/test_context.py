@@ -7,12 +7,9 @@ from experitur.core.context import (
     get_current_context,
 )
 from experitur.core.experiment import Experiment
-from experitur.parameters import Grid
+from experitur.configurators import Grid
 
-try:
-    import pandas as pd
-except ImportError:
-    pd = None
+import pandas as pd
 
 
 def test_Context_enter():
@@ -28,8 +25,8 @@ def test__order_experiments_fail(tmp_path):
     with Context(str(tmp_path), writable=True) as ctx:
         # Create a dependency circle
         a = Experiment("a")
-        b = Experiment("b", parent=a)
-        a.parent = b
+        b = Experiment("b", depends_on=a)
+        a.add_dependency(b)
 
         with pytest.raises(DependencyError):
             ctx.run()
@@ -75,8 +72,9 @@ def test_merge_config(tmp_path):
         assert all(v == ctx.config[k] for k, v in config.items())
 
 
-@pytest.mark.skipif(pd is None, reason="pandas not available")
 def test_collect(tmp_path):
+    pytest.importorskip("pandas")
+
     with Context(str(tmp_path), writable=True) as ctx:
 
         @Grid({"a": [1, 2, 3], "b": [1, 2, 3]})
@@ -117,6 +115,11 @@ def test_collect(tmp_path):
         "parameters.a",
         "success",
         "error",
+        "used_parameters",
+        "unused_parameters",
+        "tags",
+        "revision",
+        "used_parameters",
     }
 
 
@@ -129,3 +132,17 @@ def test_readonly(tmp_path):
 
     with pytest.raises(ContextError):
         ctx.run()
+
+
+def test_stop(tmp_path):
+    with Context(str(tmp_path), writable=True) as ctx:
+
+        @Grid({"a": [1, 2, 3]})
+        @Experiment()
+        def experiment(trial):  # pylint: disable=unused-variable
+            ctx.stop()
+            return dict(trial)
+
+        ctx.run()
+
+        assert len(ctx.trials.match(experiment=experiment)) == 1

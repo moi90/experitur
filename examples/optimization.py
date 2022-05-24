@@ -1,5 +1,5 @@
 from experitur import Experiment, Trial
-from experitur.parameters import Grid, SKOpt
+from experitur.configurators import Grid, SKOpt
 
 
 def rosenbrock_parametric(a, b, x, y):
