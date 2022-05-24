@@ -542,13 +542,13 @@ class Experiment(Configurable):
                     or trial.is_zombie
                     and trial.is_resumable
                 )
-                # Resume only trials that were started on the same host
-                .filter(
-                    lambda trial: trial.get("experiment", {})
-                    .get("meta", {})
-                    .get("hostname", object())
-                    == hostname
-                )
+                # XXX: Resume only trials that were started on the same host
+                # .filter(
+                #     lambda trial: trial.get("experiment", {})
+                #     .get("meta", {})
+                #     .get("hostname", object())
+                #     == hostname
+                # )
             )
 
             for t in failed_with_checkpoint:
