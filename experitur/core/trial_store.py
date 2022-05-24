@@ -253,11 +253,7 @@ class FileTrialStore(TrialStore):
         path = os.path.dirname(fn)
 
         # Create temporary file
-        temp_fh = tempfile.NamedTemporaryFile(
-            mode=mode,
-            dir=path,
-            delete=False,
-        )
+        temp_fh = tempfile.NamedTemporaryFile(mode=mode, dir=path, delete=False)
 
         yield temp_fh
 

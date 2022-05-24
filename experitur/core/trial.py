@@ -42,7 +42,6 @@ from experitur.util import callable_to_name, freeze
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.experiment import Experiment
     from experitur.core.root_trial_collection import RootTrialCollection
-    from experitur.core.trial_store import TrialStore
 
 T = TypeVar("T")
 

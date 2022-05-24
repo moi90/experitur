@@ -9,6 +9,8 @@ from experitur.core.context import (
 from experitur.core.experiment import Experiment
 from experitur.configurators import Grid
 
+import pandas as pd
+
 
 def test_Context_enter():
     """Make sure that the Context context manager works in the expected way."""

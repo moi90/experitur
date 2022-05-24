@@ -3,13 +3,11 @@ import pytest
 from experitur import Experiment, Trial
 from experitur.core.context import Context
 from experitur.configurators import SKOpt
-from unavailable_object import UnavailableObject
 
 try:
     from experitur.configurators.skopt import SKOpt
 except ImportError as exc:
     pytestmark = pytest.mark.skip(str(exc))
-
 
 # TODO: Check correct optimization direction
 def test_SKOpt(tmp_path):
