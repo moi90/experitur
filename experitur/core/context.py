@@ -1,6 +1,7 @@
 import collections
 import contextlib
 import os.path
+import sys
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Mapping, Optional, Union
@@ -312,5 +313,7 @@ def get_current_context() -> Context:
         return _context_stack[-1]
     except IndexError:
         raise ContextError(
-            "Context stack is empty. Use the `experitur` command to run your file."
-        )
+            "Context stack is empty.\n"
+            "Use the `experitur` command to run your file:\n"
+            f"    experitur run {sys.argv[0]}"
+        ) from None
