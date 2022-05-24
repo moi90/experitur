@@ -22,7 +22,6 @@ from typing import (
 
 import click
 
-import experitur
 from experitur.core.configurators import (
     BaseConfigurator,
     Configurable,
@@ -209,11 +208,15 @@ class Experiment(Configurable):
         self.ctx = get_current_context()
         self.name = name
         self.parent = parent
+
+        # Local import to avoid circular import error
+        from experitur import __version__
+
         self.meta = merge_dicts(
             {
                 "hostname": socket.gethostname(),
                 "pid": os.getpid(),
-                "experitur_version": experitur.__version__,
+                "experitur_version": __version__,
             },
             meta,
         )

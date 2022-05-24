@@ -30,6 +30,7 @@ setup(
         "dictdiffer",
         "numpy>=1.20",
         "pandas>=1.3",
+        "typing_extensions",  # For `final` from 3.7 onwards
     ],
     python_requires=">=3.7",
     extras_require={
