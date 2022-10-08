@@ -5,6 +5,7 @@ import warnings
 from abc import ABCMeta, abstractmethod, abstractproperty
 from typing import (
     Any,
+    Callable,
     Container,
     Dict,
     Iterable,
@@ -346,6 +347,10 @@ class AdditiveConfiguratorChain(Configurator):
     """
     Additive configurator chain.
     The result is the concatenation of all contained configurators.
+
+    Args:
+        *configurators: Child configurators.
+        shuffle (bool, optional): Shuffle child configurations.
     """
 
     def __init__(self, *configurators: BaseConfigurator, shuffle=False) -> None:
@@ -613,3 +618,30 @@ def is_invariant(configured_values: Any):
         return len(configured_values) < 2
 
     return False
+
+
+class FilterConfig(Configurator):
+    """
+    Filter configurations, e.g. to avoid invalid parameter combinations.
+
+    Args:
+    """
+
+    def __init__(self, filter_func: Callable):
+        self.filter_func = filter_func
+
+    @property
+    def parameter_values(self):
+        return {}
+
+    class _Sampler(ConfigurationSampler):
+        configurator: "FilterConfig"
+
+        def sample(self, exclude: Optional[Set] = None) -> Iterator[Mapping]:
+            for parent_configuration in self.parent.sample(exclude=exclude):
+                parameters = parent_configuration.get("parameters")
+
+                if not self.configurator.filter_func(parameters):
+                    continue
+
+                yield parent_configuration
