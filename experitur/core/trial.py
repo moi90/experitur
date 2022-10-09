@@ -1280,6 +1280,12 @@ class TrialCollection(MutableSequence[Trial], BaseTrialCollection):
     def insert(self, index, trial: Trial):
         self.trials.insert(index, trial)
 
+    def setdefaults(self, values=None, **kwargs):
+        """Set multiple default values for parameters of contained trials."""
+        values = kwargs if values is None else {**values, **kwargs}
+        for t in self:
+            t.setdefaults(values)
+
     def __repr__(self):
         return f"{self.__class__.__name__}({self.trials!r})"
 
