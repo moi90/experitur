@@ -166,6 +166,19 @@ class Trial(collections.abc.MutableMapping):
             if k.startswith(self._prefix)
         )
 
+    def todict(self, with_prefix=False):
+        """
+        Convert trial data to dictionary.
+
+        Args:
+            with_prefix (bool): Use full key, even when using under `Trial.prefixed`.
+        """
+
+        data = dict(self)
+        if with_prefix:
+            data = {self._prefix + k: v for k, v in data.items()}
+        return data
+
     def __len__(self):
         return sum(1 for k in self)
 
@@ -681,6 +694,19 @@ class Trial(collections.abc.MutableMapping):
 
         pattern = os.path.join(glob.escape(self.wdir), pattern)
         return glob.glob(pattern, recursive=recursive)
+
+    def file(self, filename, make_parents=False):
+        """
+        Return filename relative to the trial's working directory.
+
+        Args:
+            make_parents (bool, optional): Make intermediary directories.
+        """
+        filename = os.path.join(self.wdir, filename)
+        if make_parents:
+            dirname = os.path.dirname(filename)
+            os.makedirs(dirname, exist_ok=True)
+        return filename
 
     def has_file(self, pattern, recursive=False):
         return len(self.find_files(pattern, recursive)) > 0
