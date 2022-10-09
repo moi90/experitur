@@ -372,7 +372,9 @@ class Trial(collections.abc.MutableMapping):
         else:
             values = {**values, **kwargs}
 
-        self._data["result"].update(values)
+        self._data["result"].update(
+            {f"{self._prefix}{k}": v for k, v in values.items()}
+        )
 
     def __getattr__(self, name: str):
         """Access extra attributes."""
