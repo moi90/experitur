@@ -932,7 +932,7 @@ class BaseTrialCollection(Collection[Trial]):
 
     def one(self) -> Trial:
         if len(self) != 1:
-            raise ValueError("No individual trial.")
+            raise ValueError(f"No individual trial (Found {len(self)})")
 
         return next(iter(self))
 
@@ -1017,7 +1017,9 @@ class BaseTrialCollection(Collection[Trial]):
         )
 
     def groupby(
-        self, parameters: Union[List[str], str] = None, experiment=False,
+        self,
+        parameters: Union[List[str], str, None] = None,
+        experiment=False,
     ) -> "TrialCollectionGroupby":
         if isinstance(parameters, str):
             parameters = [parameters]
@@ -1124,7 +1126,11 @@ class BaseTrialCollection(Collection[Trial]):
         output.extend(f"<th>{p}</th>" for p in varying_parameters)
 
         output.extend(
-            ["</tr>", "</thead>", "<tbody>",]
+            [
+                "</tr>",
+                "</thead>",
+                "<tbody>",
+            ]
         )
 
         for i, t in enumerate(self):
@@ -1147,7 +1153,10 @@ class BaseTrialCollection(Collection[Trial]):
             output.append("</tr>")
 
         output.extend(
-            ["</tbody>", "</table>",]
+            [
+                "</tbody>",
+                "</table>",
+            ]
         )
 
         return "\n".join(output)
