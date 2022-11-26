@@ -71,6 +71,10 @@ class TrialNotFoundError(ExperimentError):
     pass
 
 
+class SkipTrial(Exception):
+    pass
+
+
 def format_trial_parameters(func=None, parameters=None, experiment=None):
     if func is not None:
         try:
@@ -402,7 +406,11 @@ class Experiment(Configurable):
 
         self._register_handler("on_update", func)
 
-    def child(self, name: Optional[str] = None, configurator=None,) -> "Experiment":
+    def child(
+        self,
+        name: Optional[str] = None,
+        configurator=None,
+    ) -> "Experiment":
         """Create a child experiment.
 
         Args:
@@ -582,6 +590,13 @@ class Experiment(Configurable):
             # Run the trial
             try:
                 self.run_trial(trial)
+            except SkipTrial:
+                cprint(
+                    "Trial was skipped.",
+                    color="red",
+                    attrs=["dark"],
+                )
+                trial.remove()
             except Exception:  # pylint: disable=broad-except
                 if not self.ctx.config["catch_exceptions"]:
                     raise
@@ -656,7 +671,8 @@ class Experiment(Configurable):
                 f.write("\n")
                 # f.write(traceback.format_exc())
                 tb_exc = traceback.TracebackException.from_exception(
-                    exc, capture_locals=self.ctx.config["traceback_capture_locals"],
+                    exc,
+                    capture_locals=self.ctx.config["traceback_capture_locals"],
                 )
                 f.write("".join(tb_exc.format()))
                 # f.write("\n")
@@ -684,7 +700,9 @@ class Experiment(Configurable):
         else:
             print()
             cprint(
-                f"{trial.id} succeeded.", color="green", attrs=["dark"],
+                f"{trial.id} succeeded.",
+                color="green",
+                attrs=["dark"],
             )
 
             trial.success = True
@@ -859,8 +877,8 @@ class Experiment(Configurable):
     def get_matching_trials(self, exclude=None):
         """
         Return all trials that match the configuration of this experiment.
-        
-        This includes all matching trials, regardless whether they were belong to this or to another experiment.
+
+        This includes all trials with matching configuration, regardless whether they belong to this or to another experiment.
         """
 
         parameters = self.parameters
