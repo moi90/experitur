@@ -392,6 +392,10 @@ class Trial(collections.abc.MutableMapping):
             {f"{self._prefix}{k}": v for k, v in values.items()}
         )
 
+    def update_used_parameters(self, parameters: Iterable):
+        for p in parameters:
+            self[p]
+
     def __getattr__(self, name: str):
         """Access extra attributes."""
 
