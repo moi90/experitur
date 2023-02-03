@@ -50,8 +50,17 @@ def convert_trial(
     if include_duration:
         result = (result, (time_end - time_start).total_seconds())
 
+    parameters = {k: v for k, v in parameters.items() if k in space}
+
+    missing_keys = set(space.keys()) - set(parameters.keys())
+
+    if missing_keys:
+        print(f"Parameters missing in {trial.id}: {sorted(missing_keys)}.")
+        return None
+
     point = skopt.utils.point_aslist(
-        space, {k: v for k, v in parameters.items() if k in space},
+        space,
+        parameters,
     )
 
     return (point, result)

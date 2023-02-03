@@ -22,6 +22,7 @@ from typing import (
 from typing_extensions import final
 
 from experitur.helpers.merge_dicts import merge_dicts
+import fnmatch
 
 
 class BaseConfigurationSampler(metaclass=ABCMeta):
@@ -475,6 +476,60 @@ class Const(Configurator):
             for parent_configuration in self.parent.sample(exclude=exclude):
                 # print(self.configurator, ":", values)
                 yield merge_dicts(parent_configuration, parameters=values)
+
+
+class Reset(Configurator):
+    """
+    Reset parameters to unspecified.
+
+    Parameters:
+        names: The parameters to be reset.
+
+    Example:
+        .. code-block:: python
+
+            from experitur import Experiment, Trial
+            from experitur.configurators import Const, Reset
+
+            @Const({"a": 1, "b": 2}, c=3)
+            @Reset("c")
+            @Experiment()
+            def example1(parameters: Trial):
+                # Raises: KeyError("c")
+                print(parameters["a"], parameters["b"], parameters["c"])
+    """
+
+    __str_attrs__ = ("values",)
+
+    def __init__(self, *names):
+        self.names = names
+
+    @property
+    def parameter_values(self) -> Mapping[str, Container]:
+        return {}
+
+    class _Sampler(ConfigurationSampler):
+        configurator: "Reset"
+
+        def sample(self, exclude: Optional[Set] = None) -> Iterator[Mapping]:
+
+            for parent_configuration in self.parent.sample(exclude=exclude):
+                parent_configuration = parent_configuration.copy()
+
+                parent_configuration["parameters"] = {
+                    k: v
+                    for k, v in parent_configuration["parameters"].items()
+                    if not self._matches(k)
+                }
+
+                yield parent_configuration
+
+        def _matches(self, k):
+            for n in self.configurator.names:
+                if fnmatch.fnmatch(k, n):
+                    return True
+
+            return False
 
 
 class ZeroConfigurator(Configurator):

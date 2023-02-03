@@ -1,3 +1,4 @@
+import collections.abc
 import difflib
 import warnings
 from abc import ABC, abstractmethod
@@ -13,10 +14,10 @@ from matplotlib.axes import Axes
 from matplotlib.gridspec import GridSpec
 from matplotlib.ticker import (
     Formatter,
+    FuncFormatter,
     Locator,
     MaxNLocator,
     StrMethodFormatter,
-    FuncFormatter,
 )
 from scipy.stats.distributions import rv_discrete, uniform
 from sklearn.linear_model import LinearRegression
@@ -310,7 +311,9 @@ class Numeric(Dimension):
             pass
 
         self._transformer = Normalize(
-            self.low, self.high, is_int=isinstance(self, Integer),
+            self.low,
+            self.high,
+            is_int=isinstance(self, Integer),
         )
 
         return self._transformer
@@ -486,7 +489,7 @@ class Categorical(Dimension):
         mapping = {x: i for i, x in enumerate(self.categories)}
         X = X.map(mapping)
 
-        assert not X.isna().any()
+        assert not X.isna().any(), f"{self.name}: Could not map {X} to numeric"
 
         if jitter:
             X = X + np.random.randn(len(X)) * jitter
@@ -499,7 +502,7 @@ _KIND_TO_DIMENSION = {
     "i": Integer,
     "u": Integer,
     "f": Real,
-    "b": Integer,
+    "b": Categorical,
     "O": Categorical,
 }
 
@@ -524,7 +527,12 @@ class Space:
 
 
 def partial_dependence(
-    space: Space, model, i, j=None, sample_points=None, n_points=40,
+    space: Space,
+    model,
+    i,
+    j=None,
+    sample_points=None,
+    n_points=40,
 ) -> Union[Tuple[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """
     Calculates the partial dependence of one parameter or a pair of parameters.
@@ -680,7 +688,10 @@ def _plot_partial_dependence_nd(
 ):
     n_parameters = len(varying_parameters)
 
-    fig = plt.figure(constrained_layout=True, figsize=(12, 12),)
+    fig = plt.figure(
+        constrained_layout=True,
+        figsize=(12, 12),
+    )
 
     ratios = [4.0] * (n_parameters - 1)
     gs = GridSpec(
@@ -775,7 +786,9 @@ def _plot_partial_dependence_nd(
         if show_optima:
             # Show optimum
             axes_i[i].axhline(
-                results_i.loc[idx_opt], c="r", ls="--",
+                results_i.loc[idx_opt],
+                c="r",
+                ls="--",
             )
 
         for l in highlight_levels:
@@ -847,7 +860,9 @@ def _plot_partial_dependence_nd(
                 if show_optima:
                     # Show optimum
                     axes_j[j].axvline(
-                        results_j.loc[idx_opt], c="r", ls="--",
+                        results_j.loc[idx_opt],
+                        c="r",
+                        ls="--",
                     )
 
                 for l in highlight_levels:
@@ -903,7 +918,10 @@ def _plot_partial_dependence_nd(
                 # Plot optimum
                 # TODO:
                 axes_ij[i, j].scatter(
-                    results_j.loc[idx_opt], results_i.loc[idx_opt], fc="none", ec="r",
+                    results_j.loc[idx_opt],
+                    results_i.loc[idx_opt],
+                    fc="none",
+                    ec="r",
                 )
 
     for ax in axes_i[:-1]:
@@ -948,7 +966,10 @@ def _plot_partial_dependence_1d(
     show_optima,
     title,
 ):
-    fig = plt.figure(constrained_layout=True, figsize=(12, 12),)
+    fig = plt.figure(
+        constrained_layout=True,
+        figsize=(12, 12),
+    )
     ax = fig.add_subplot(111)
 
     fig.suptitle(title)
@@ -991,7 +1012,9 @@ def _plot_partial_dependence_1d(
     if show_optima:
         # Show optimum
         ax.axvline(
-            results.loc[idx_opt, parameter], c="r", ls="--",
+            results.loc[idx_opt, parameter],
+            c="r",
+            ls="--",
         )
 
 
@@ -1045,7 +1068,7 @@ def plot_partial_dependence(
     if ignore is None:
         ignore = []
 
-    ignore = set(ignore)
+    ignore = _MatchSet(ignore)
 
     if highlight_levels is None:
         highlight_levels = []
@@ -1139,7 +1162,7 @@ def plot_partial_dependence(
     model.fit(Xt, y)
 
     if n_parameters > 1:
-        _plot_partial_dependence_nd(
+        return _plot_partial_dependence_nd(
             objective_dim=objective_dim,
             results=results,
             objective=objective,
@@ -1161,7 +1184,7 @@ def plot_partial_dependence(
             error_bands=error_bands,
         )
     else:
-        _plot_partial_dependence_1d(
+        return _plot_partial_dependence_1d(
             objective_dim,
             results,
             objective,
@@ -1181,7 +1204,10 @@ def plot_partial_dependence(
 def joinex(parts):
     parts = list(parts)
 
-    return ", ".join(parts[:-1]) + " and " + parts[-1]
+    if len(parts) > 1:
+        return ", ".join(parts[:-1]) + " and " + parts[-1]
+
+    return parts[0]
 
 
 def textplot(xx, yy, ss, *, ax, **kwargs):
@@ -1202,6 +1228,18 @@ def _get_formatter(formatter: Union[str, Formatter]) -> Formatter:
     raise ValueError(f"Unknown formatter: {formatter!r}")
 
 
+import fnmatch
+import re
+
+
+class _MatchSet(collections.abc.Container):
+    def __init__(self, patterns: Iterable) -> None:
+        self._compiled_patterns = [re.compile(fnmatch.translate(p)) for p in patterns]
+
+    def __contains__(self, x):
+        return any(p.match(x) is not None for p in self._compiled_patterns)
+
+
 def plot_parameters_objectives(
     trials,
     objectives,
@@ -1210,6 +1248,7 @@ def plot_parameters_objectives(
     show_partial_dependence=True,
     model=None,
     ignore=None,
+    only=None,
     title=None,
     highlight_levels=None,
     link_matching_points=False,
@@ -1230,7 +1269,7 @@ def plot_parameters_objectives(
     if mark_kwds is None:
         mark_kwds = {}
 
-    ignore = set(ignore)
+    ignore = _MatchSet(ignore)
 
     if highlight_levels is None:
         highlight_levels = []
@@ -1244,9 +1283,13 @@ def plot_parameters_objectives(
         p for p in trials.varying_parameters.keys() if p not in ignore
     )
 
+    if only is not None:
+        varying_parameters = [p for p in varying_parameters if p in only]
+
     data = pd.DataFrame(
         (
             {
+                "__id": t.id,
                 **{p: t.get(p) for p in varying_parameters},
                 **{target: t.result.get(target) for target in objectives},
             }
@@ -1256,14 +1299,30 @@ def plot_parameters_objectives(
         dtype=object,
     )
 
+    # Guess type of objectives
     for t in objectives:
         data[t] = data[t].infer_objects()
 
+    # Guess type of parameters
     for p in varying_parameters:
         if not isinstance(dimensions.get(p), Categorical):
             data[p] = data[p].infer_objects()
 
-    data = data.dropna(subset=objectives)
+    # Check if objectives is N/A
+    mask = data[objectives].isna()
+    if mask.any().any():
+        any_col = mask.any(axis=0)
+        any_row = mask.any(axis=1)
+        warnings.warn(
+            "Objectives "
+            + (", ".join(any_col[any_col].index))
+            + " contain NaN for trials "
+            + (", ".join(data.loc[any_row, "__id"]))
+        )
+
+        data = data[~any_row]
+
+    # data = data.dropna(subset=objectives)
 
     # Sort varying_parameters by position in dimensions
     parameter_position = {k: i for i, k in enumerate(dimensions.keys())}
@@ -1386,15 +1445,18 @@ def plot_parameters_objectives(
                 ):
                     axes[j, i].get_xaxis().set_major_formatter(parameter.formatter)
 
-                if isinstance(parameter, Numeric) and parameter.ticks is not None:
-                    axes[j, i].set_xticks(parameter.prepare(parameter.ticks))
-                    ticks = parameter.ticks
-                    if parameter.formatter is not None:
-                        ticks = [parameter.formatter(t, None) for t in ticks]
-                    axes[j, i].set_xticklabels(ticks)
+                if isinstance(parameter, Numeric):
+                    axes[j, i].set_xlim(parameter.low, parameter.high)
+                    if parameter.ticks is not None:
+                        axes[j, i].set_xticks(parameter.prepare(parameter.ticks))
+                        ticks = parameter.ticks
+                        if parameter.formatter is not None:
+                            ticks = [parameter.formatter(t, None) for t in ticks]
+                        axes[j, i].set_xticklabels(ticks)
 
             if i == 0:
                 axes[j, i].set_ylabel(target.label)
+                axes[j, i].set_ylim(target.low, target.high)
                 if target.formatter is not None:
                     axes[j, i].get_yaxis().set_major_formatter(target.formatter)
 
@@ -1409,3 +1471,5 @@ def plot_parameters_objectives(
 
     fig.align_ylabels(axes)
     fig.align_xlabels(axes)
+
+    return fig, axes
