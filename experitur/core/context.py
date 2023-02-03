@@ -93,7 +93,10 @@ class Context:
     }
 
     def __init__(
-        self, wdir: str = None, config: Optional[Mapping] = None, writable: bool = False
+        self,
+        wdir: Optional[str] = None,
+        config: Optional[Mapping] = None,
+        writable: bool = False,
     ):
         self.registered_experiments = []
 
@@ -157,6 +160,18 @@ class Context:
             if not running_trials:
                 # Clear stop
                 self.stop(False)
+
+    @contextlib.contextmanager
+    def config_context(self, config: Optional[Mapping] = None, **kwargs):
+        if config is None:
+            config = {}
+
+        old_config = self.config.copy()
+        self.config = {**self.config, **config, **kwargs}
+
+        yield self
+
+        self.config = old_config
 
     def collect(self, results_fn: Union[str, Path], failed=False):
         """

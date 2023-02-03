@@ -47,6 +47,9 @@ T = TypeVar("T")
 
 
 def _get_object_name(obj):
+    if obj is None:
+        return "None"
+
     try:
         return obj.__name__
     except AttributeError:
@@ -640,7 +643,12 @@ class Trial(collections.abc.MutableMapping):
 
         entry_name = self[parameter_name]
 
-        return mapping[entry_name]
+        try:
+            return mapping[entry_name]
+        except KeyError:
+            raise ValueError(
+                f"Unknown option {entry_name!r}. Options are: {sorted(mapping.keys())!r}"
+            )
 
     # TODO: Rework logging: channels, log to storage, ...
     def log(self, values=None, **kwargs):
