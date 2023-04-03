@@ -9,6 +9,7 @@ try:
 except ImportError as exc:
     pytestmark = pytest.mark.skip(str(exc))
 
+
 # TODO: Check correct optimization direction
 def test_SKOpt(tmp_path):
     config = {"skip_existing": True}

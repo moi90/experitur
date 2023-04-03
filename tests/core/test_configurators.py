@@ -1,17 +1,18 @@
 from typing import Union
+
+import pytest
+
 from experitur.core.configurators import (
     Const,
-    parameter_product,
     Grid,
     RandomGrid,
-    AdditiveConfiguratorChain,
-    MultiplicativeConfiguratorChain,
+    parameter_product,
 )
 from experitur.testing.configurators import (
     assert_sampler_contains_subset_of_all_samples,
     assert_sampler_contains_superset_of_all_samples,
 )
-import pytest
+from experitur.util import unset
 
 
 def test_empty_parameter_product():
@@ -114,7 +115,7 @@ def test_AdditiveConfiguratorChain():
     # Assert correct behavior of "parameter_values"
     assert configurator.parameter_values == {
         "a": (1, 2, 4, 5),
-        "b": (3, 4),
+        "b": (3, 4, unset),
         "c": (10, 11, 0),
     }
 
@@ -145,3 +146,13 @@ def test_AdditiveConfiguratorChain():
         (("a", 4), ("c", 0)),
         (("a", 5), ("c", 0)),
     ]
+
+
+def test_AdditiveConst():
+    configurator = Const(a=1) * (Const() + Const(a=2, b=1) + Const(a=3, b=1))
+
+    # Assert correct behavior of "parameter_values"
+    assert configurator.parameter_values == {
+        "a": (1, 2, 3),
+        "b": (unset, 1),
+    }

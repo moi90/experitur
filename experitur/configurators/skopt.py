@@ -1,21 +1,17 @@
-from experitur.core.configurators import (
-    ConfigurationSampler,
-    Configurator,
-)
 import logging
 from collections import OrderedDict
-from typing import Container, Iterator, Optional, Set, TYPE_CHECKING, Any, Mapping
-
-from unavailable_object import UnavailableObject, check_available
-
-from experitur.core.context import get_current_context
-from experitur.core.trial import Trial
-from experitur.helpers.merge_dicts import merge_dicts
-from experitur.util import format_parameters
+from typing import Any, Container, Iterator, Mapping, Optional, Set
 
 import skopt
 import skopt.space
 import skopt.utils
+from unavailable_object import check_available
+
+from experitur.core.configurators import ConfigurationSampler, Configurator
+from experitur.core.context import get_current_context
+from experitur.core.trial import Trial
+from experitur.helpers.merge_dicts import merge_dicts
+from experitur.util import format_parameters, unset
 
 
 def convert_objective(value, maximize):
@@ -51,7 +47,8 @@ def convert_trial(
         result = (result, (time_end - time_start).total_seconds())
 
     point = skopt.utils.point_aslist(
-        space, {k: v for k, v in parameters.items() if k in space},
+        space,
+        {k: v for k, v in parameters.items() if k in space},
     )
 
     return (point, result)
@@ -70,6 +67,21 @@ def point_as_native_dict(space, point_as_list):
             v = float(v)
         params_dict[k] = v
     return params_dict
+
+
+class _DimensionWrapper(Container):
+    def __init__(self, dim) -> None:
+        super().__init__()
+        self.dim = dim
+
+    def __contains__(self, x: object) -> bool:
+        if x is unset:
+            return False
+
+        return x in self.dim
+
+    def __str__(self) -> str:
+        return str(self.dim)
 
 
 class SKOpt(Configurator):
@@ -135,7 +147,7 @@ class SKOpt(Configurator):
     @property
     def parameter_values(self) -> Mapping[str, Container]:
         return {
-            k: v.categories if isinstance(v, self.Categorical) else v
+            k: v.categories if isinstance(v, self.Categorical) else _DimensionWrapper(v)
             for k, v in self.space.items()
         }
 
@@ -143,7 +155,6 @@ class SKOpt(Configurator):
         configurator: "SKOpt"
 
         def sample(self, exclude: Optional[Set] = None) -> Iterator[Mapping]:
-
             space, exclude = self.prepare_values_exclude(
                 self.configurator.space, exclude
             )

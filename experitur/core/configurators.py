@@ -22,6 +22,7 @@ from typing import (
 from typing_extensions import final
 
 from experitur.helpers.merge_dicts import merge_dicts
+from experitur.util import unset
 
 
 class BaseConfigurationSampler(metaclass=ABCMeta):
@@ -277,12 +278,43 @@ class Configurator(BaseConfigurator):
         )
 
 
+def combine_parameter_values(v_left, v_right, drop_unset=False):
+    if isinstance(v_left, tuple) and isinstance(v_right, tuple):
+        if drop_unset:
+            v_right = tuple(v for v in v_right if v is not unset)
+
+        v_right = tuple(v for v in v_right if v not in v_left)
+        return v_left + v_right
+
+    raise NotImplementedError(
+        f"extend_parameter_values not implemented for {v_left!r} + {v_right!r}"
+    )  # pragma: no cover
+
+
 def replace_parameter_values(
     left: Dict[str, Container], right: Mapping[str, Container]
 ) -> None:
     """Replace values in `left` with matching in `right`."""
-    for k, v in right.items():
-        left[k] = v
+    for k, v_right in right.items():
+        if unset in v_right:
+            left[k] = combine_parameter_values(
+                left.get(k, (unset,)), v_right, drop_unset=True
+            )
+        else:
+            left[k] = v_right
+
+
+def extend_parameter_values(
+    left: Dict[str, Container], right: Mapping[str, Container]
+) -> None:
+    """Extend `left` with `right`."""
+
+    for k, v_right in right.items():
+        if k not in left:
+            left[k] = v_right
+            continue
+
+        left[k] = combine_parameter_values(left[k], v_right)
 
 
 class MultiplicativeConfiguratorChain(Configurator):
@@ -322,27 +354,6 @@ class MultiplicativeConfiguratorChain(Configurator):
         return "(" + (" * ".join(str(c) for c in self.configurators)) + ")"
 
 
-def extend_parameter_values(
-    left: Dict[str, Container], right: Mapping[str, Container]
-) -> None:
-    """Extend `left` with `right`."""
-
-    for k, v_right in right.items():
-        if k not in left:
-            left[k] = v_right
-            continue
-
-        v_left = left[k]
-
-        if isinstance(v_left, tuple) and isinstance(v_right, tuple):
-            left[k] = v_left + tuple(v for v in v_right if v not in v_left)
-            continue
-
-        raise NotImplementedError(
-            f"extend_parameter_values not implemented for {v_left!r} + {v_right!r}"
-        )  # pragma: no cover
-
-
 class AdditiveConfiguratorChain(Configurator):
     """
     Additive configurator chain.
@@ -373,6 +384,10 @@ class AdditiveConfiguratorChain(Configurator):
         parameter_values = {}
         for c in self.configurators:
             extend_parameter_values(parameter_values, c.parameter_values)
+        for c in self.configurators:
+            for k in parameter_values.keys():
+                if k not in c.parameter_values and unset not in parameter_values[k]:
+                    parameter_values[k] = parameter_values[k] + (unset,)
         return parameter_values
 
     def __add__(self, other) -> "BaseConfigurator":
@@ -467,7 +482,6 @@ class Const(Configurator):
         configurator: "Const"
 
         def sample(self, exclude: Optional[Set] = None) -> Iterator[Mapping]:
-
             values, exclude = self.prepare_values_exclude(
                 self.configurator.values, exclude
             )
@@ -568,7 +582,6 @@ class Grid(Configurator):
         configurator: "Grid"
 
         def sample(self, exclude: Optional[Set] = None) -> Iterator[Mapping]:
-
             grid, exclude = self.prepare_values_exclude(self.configurator.grid, exclude)
 
             grid_product = list(parameter_product(grid))
