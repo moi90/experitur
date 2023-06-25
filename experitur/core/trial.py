@@ -1,4 +1,5 @@
 import collections.abc
+import contextlib
 import copy
 import datetime
 import glob
@@ -85,7 +86,11 @@ class _PrefixedTrialDataSetView(collections.abc.MutableSet):
         return x in self.data()
 
     def __iter__(self):
-        return _filter_prefixed(self.trial._prefix, self.data())
+        return iter(set(_filter_prefixed(self.trial._prefix, self.data())))
+
+    def __repr__(self):
+        items = ", ".join(repr(o) for o in self)
+        return f"<_PrefixedTrialDataSetView {{{items}}}>"
 
     def __len__(self):
         return sum(1 for _ in self)
@@ -219,9 +224,12 @@ class Trial(collections.abc.MutableMapping):
 
         return self.resolved_parameters[name]
 
+    def __eq__(self, o: object) -> bool:
+        return self is o
+
     @property
-    def unused_parameters(self):
-        return sorted(set(self.resolved_parameters) - set(self.used_parameters))
+    def unused_parameters(self) -> Set:
+        return set(self.resolved_parameters) - set(self.used_parameters)
 
     def __setitem__(self, name, value):
         """Set the value of a parameter."""
@@ -233,6 +241,17 @@ class Trial(collections.abc.MutableMapping):
 
     def __iter__(self):
         return iter(self.resolved_parameters)
+
+    def items(self):
+        with self.record_used_parameters(False):
+            return super().items()
+
+    @contextlib.contextmanager
+    def record_used_parameters(self, record=True):
+        old_value = self._record_used_parameters
+        self._record_used_parameters = record
+        yield
+        self._record_used_parameters = old_value
 
     def todict(self, with_prefix=False):
         """
@@ -324,7 +343,8 @@ class Trial(collections.abc.MutableMapping):
         return super().get(key, default)
 
     def save(self):
-        # Compact used parameters
+        # Store and compact used and unused parameters
+        self._data["used_parameters"] = sorted(self.used_parameters)
         self._data["unused_parameters"] = sorted(self.unused_parameters)
 
         # Write to the store

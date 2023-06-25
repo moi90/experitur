@@ -52,14 +52,18 @@ def test_trial_parameters(tmp_path):
 
         @Experiment(configurator={"a": [1], "b": [2], "c": ["{a}"]})
         def experiment(trial: Trial):
-            assert ctx.current_trial == trial
+            assert ctx.current_trial is trial
+
+            assert trial.used_parameters == set()
+            assert trial.unused_parameters == {"a", "b", "c"}
 
             assert trial["a"] == 1
             assert trial["b"] == 2
             assert trial["c"] == trial["a"]
             assert len(trial) == 3
 
-            print(trial["a"], trial["c"])
+            assert trial.used_parameters == {"a", "b", "c"}
+            assert trial.unused_parameters == set()
 
             for k, v in trial.items():
                 pass
@@ -85,7 +89,7 @@ def test_trial_parameters(tmp_path):
                 trial["prefix__" + k] = v
                 trial["prefix1__" + k] = v
 
-            assert trial.prefixed("prefix__") == seed
+            assert trial.prefixed("prefix__").todict() == seed
 
             # test call
             def identity(a, b, c=4, d=5):
@@ -104,7 +108,7 @@ def test_trial_parameters(tmp_path):
 
             # test record_defaults
             trial.prefixed("prefix2__").record_defaults(identity)
-            assert trial.prefixed("prefix2__") == {"c": 4, "d": 5}
+            assert trial.prefixed("prefix2__").todict() == {"c": 4, "d": 5}
 
             # test call: functools.partial
 
@@ -125,7 +129,7 @@ def test_trial_parameters(tmp_path):
             # Keyword arguments will *not* be recorded and can *not* be overwritten
             identity_a8_kwd = functools.partial(identity, a=8)
             trial.prefixed("prefix4_").record_defaults(identity_a8_kwd)
-            assert trial.prefixed("prefix4_") == {"c": 4, "d": 5}
+            assert trial.prefixed("prefix4_").todict() == {"c": 4, "d": 5}
 
             with pytest.raises(TypeError):
                 trial.prefixed("prefix5_").record_defaults(identity_a8_kwd, a=9)
@@ -146,7 +150,7 @@ def test_trial_parameters(tmp_path):
                 4,
                 9,
             )
-            assert trial.prefixed("prefix7__") == {"c": 4}
+            assert trial.prefixed("prefix7__").todict() == {"c": 4}
 
             with pytest.raises(TypeError):
                 trial.prefixed("prefix7__").call(identity_d9_kwd, 1, 2, 5, 10)
@@ -165,7 +169,7 @@ def test_trial_parameters(tmp_path):
             # setdefaults
             assert trial.prefixed("prefix8__").setdefaults(
                 dict(a=1, b=2, c=3, d=4), e=10
-            ) == dict(a=1, b=2, c=3, d=4, e=10)
+            ).todict() == dict(a=1, b=2, c=3, d=4, e=10)
             assert dict(trial.prefixed("prefix8__")) == dict(a=1, b=2, c=3, d=4, e=10)
 
             # Make sure that the default value is recorded when using .get

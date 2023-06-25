@@ -506,9 +506,7 @@ class Experiment(Configurable):
                 ).as_dict(),
             )
 
-            trial = self.ctx.trials.create(
-                trial_configuration, record_used_parameters=True
-            )
+            trial = self.ctx.trials.create(trial_configuration)
             os.makedirs(trial.wdir, exist_ok=True)
 
             yield trial
@@ -653,7 +651,7 @@ class Experiment(Configurable):
         self._handle_event("on_pre_run", trial)
 
         try:
-            with self.ctx.set_current_trial(trial):
+            with self.ctx.set_current_trial(trial), trial.record_used_parameters():
                 result = self.func(trial, *args, **kwargs)
 
             # Merge returned result into existing result
