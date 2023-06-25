@@ -49,21 +49,35 @@ class LoggerBase(ABC):
 
         return pd.json_normalize(self.read())
 
-    def aggregate(self, include) -> Dict:
-        include = set(include)
+    def aggregate(self, include=None, exclude=None) -> Dict:
+        """
+        Aggregate (min/max/mean/final) each field in the log.
+
+        Args:
+            include (Collection, optional): If not None, include only these fields.
+            exclude (Collection, optional): If not None, exclude these fields.
+        """
+
+        include = set(include) if include is not None else None
+        exclude = set(exclude) if exclude is not None else None
 
         metrics = defaultdict(list)
         for entry in self.read():
             for k, v in entry.items():
-                if k in include:
-                    metrics[k].append(v)
+                if include is not None and k not in include:
+                    continue
+
+                if exclude is not None and k in exclude:
+                    continue
+
+                metrics[k].append(v)
 
         result = {}
         for k in metrics:
             result[f"max_{k}"] = max(metrics[k])
             result[f"min_{k}"] = min(metrics[k])
-            result[f"final_{k}"] = metrics[k][-1]
             result[f"mean_{k}"] = sum(metrics[k]) / len(metrics[k])
+            result[f"final_{k}"] = metrics[k][-1]
 
         return result
 
