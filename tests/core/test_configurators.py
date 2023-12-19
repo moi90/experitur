@@ -20,13 +20,18 @@ def test_empty_parameter_product():
 
 
 def test_Const():
-    configurator = Const({"a": 1, "b": 2}, c=3)
+    configurator = Const({"a": 1, "b": 2}, c=3, d=unset)
 
     # Test __str__
     str(configurator)
 
     # Assert correct behavior of "parameter_values"
-    assert configurator.parameter_values == {"a": (1,), "b": (2,), "c": (3,)}
+    assert configurator.parameter_values == {
+        "a": (1,),
+        "b": (2,),
+        "c": (3,),
+        "d": (unset,),
+    }
 
     sampler = configurator.build_sampler()
 
@@ -39,19 +44,26 @@ def test_Const():
 
     # Assert exististence of all grid  cells
     assert samples == {
-        (("a", 1), ("b", 2), ("c", 3)),
+        (("a", 1), ("b", 2), ("c", 3), ("d", unset)),
     }
 
 
 @pytest.mark.parametrize("cls", [Grid, RandomGrid])
 def test_Grid(cls):
-    configurator: Union[Grid, RandomGrid] = cls({"a": [1, 2], "b": [3, 4], "c": [0]})
+    configurator: Union[Grid, RandomGrid] = cls(
+        {"a": [1, 2], "b": [3, 4], "c": [0], "d": [0, unset]}
+    )
 
     # Test __str__
     str(configurator)
 
     # Assert correct behavior of "parameter_values"
-    assert configurator.parameter_values == {"a": (1, 2), "b": (3, 4), "c": (0,)}
+    assert configurator.parameter_values == {
+        "a": (1, 2),
+        "b": (3, 4),
+        "c": (0,),
+        "d": (0, unset),
+    }
 
     sampler = configurator.build_sampler()
 
@@ -65,10 +77,14 @@ def test_Grid(cls):
 
     # Assert exististence of all grid  cells
     assert samples == {
-        (("a", 2), ("b", 4), ("c", 0)),
-        (("a", 1), ("b", 4), ("c", 0)),
-        (("a", 2), ("b", 3), ("c", 0)),
-        (("a", 1), ("b", 3), ("c", 0)),
+        (("a", 2), ("b", 4), ("c", 0), ("d", 0)),
+        (("a", 1), ("b", 4), ("c", 0), ("d", 0)),
+        (("a", 2), ("b", 3), ("c", 0), ("d", 0)),
+        (("a", 1), ("b", 3), ("c", 0), ("d", 0)),
+        (("a", 2), ("b", 4), ("c", 0), ("d", unset)),
+        (("a", 1), ("b", 4), ("c", 0), ("d", unset)),
+        (("a", 2), ("b", 3), ("c", 0), ("d", unset)),
+        (("a", 1), ("b", 3), ("c", 0), ("d", unset)),
     }
 
 

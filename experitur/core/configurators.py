@@ -173,26 +173,29 @@ class ConfigurationSampler(BaseConfigurationSampler):
         if exclude is None:
             exclude = set()
 
-        values = {
+        # The parameter values that should contain the supplied configuration, without `exclude`ed
+        # If the values contain <unset>, a trial can assume any value.
+        parameter_values = {
             k: v
             for k, v in self.configurator.parameter_values.items()
-            if k not in exclude
+            if (k not in exclude) and (unset not in v)
         }
-
-        exclude = exclude.union(self.configurator.parameter_values.keys())
 
         conf_parameters = configuration.get("parameters", {})
 
         # Check if all configured parameters are contained
         if any(
             k not in conf_parameters or conf_parameters[k] not in v
-            for k, v in values.items()
+            for k, v in parameter_values.items()
         ):
             return False
 
-        parent_params = {k: v for k, v in conf_parameters.items() if k not in values}
+        parent_params = {
+            k: v for k, v in conf_parameters.items() if k not in parameter_values
+        }
 
         # Let parents check the rest of the configuration
+        exclude = exclude.union(self.configurator.parameter_values.keys())
         return self.parent.contains_subset_of(
             dict(configuration, parameters=parent_params), exclude=exclude
         )
@@ -202,7 +205,7 @@ class ConfigurationSampler(BaseConfigurationSampler):
         Return True if there exists a sample that is a superset of `configuration`.
 
         - `configuration` does not match if it contains additional keys not produced by the sampler (or its parents).
-        - `configuration` matches  if it lacks keys produced by the sampler.
+        - `configuration` matches if it lacks keys produced by the sampler.
         - `configuration` does not match if values for existing keys are different.
         """
 
