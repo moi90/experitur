@@ -2,6 +2,7 @@ import collections.abc
 import contextlib
 import copy
 import datetime
+import functools
 import glob
 import inspect
 import itertools
@@ -38,7 +39,7 @@ import numpy as np
 
 from experitur.core.logger import YAMLLogger
 from experitur.optimization import Objective, Optimization
-from experitur.util import callable_to_name, freeze
+from experitur.util import callable_to_name, freeze, unset
 
 if TYPE_CHECKING:  # pragma: no cover
     from experitur.core.experiment import Experiment
@@ -47,7 +48,7 @@ if TYPE_CHECKING:  # pragma: no cover
 T = TypeVar("T")
 
 
-def _get_object_name(obj):
+def _get_object_name(obj) -> str:
     try:
         return obj.__name__
     except AttributeError:
@@ -170,6 +171,7 @@ class Trial(collections.abc.MutableMapping):
     id: str
     wdir: str
     # resolved_parameters: Dict
+    experiment: Dict
 
     def __init__(
         self,
@@ -281,6 +283,7 @@ class Trial(collections.abc.MutableMapping):
         status=False,
         replace=None,
         include=None,
+        default="[default]",
     ):
         parameters = dict(self)
 
@@ -315,7 +318,7 @@ class Trial(collections.abc.MutableMapping):
         descr = ", ".join(f"{k}={_to_str(v)}" for k, v in sorted(parameters.items()))
 
         if not descr:
-            descr = "[default]"
+            descr = default
 
         # Status indicator
         status_chr = _trial_status_chr(self, success="")
@@ -338,7 +341,8 @@ class Trial(collections.abc.MutableMapping):
         If key is not present, it is initialized with the provided default, just like :py:meth:`Trial.setdefault`.
         """
         if setdefault:
-            return self.setdefault(key, default)
+            # Do not return so that `__getitem__` (called by `super().get`) records the usage of the parameter
+            self.setdefault(key, default)
 
         return super().get(key, default)
 
@@ -609,9 +613,11 @@ class Trial(collections.abc.MutableMapping):
         )
 
         if kwargs_present:
+            # We need to pass all parameters in `self`
             parameters = dict(self)
         else:
-            parameters = {k: v for k, v in self.items() if k in callable_names}
+            # We need to pass (and record usage) only for specified parameters
+            parameters = {k: self[k] for k in callable_names if k in self}
 
         # Bind known arguments and calculate missing
         bound_arguments = signature.bind_partial(*args, **parameters)
@@ -630,14 +636,12 @@ class Trial(collections.abc.MutableMapping):
 
         try:
             return func(*args, **parameters)
-        except Exception as exc:
+        except:
             print("signature", signature)
             print("callable_names", callable_names)
             print("parameters", parameters)
             print("bound_arguments", bound_arguments)
-            raise type(exc)(
-                f"Error calling {func} {signature} with args={args}, kwargs={parameters}, trial={self}"
-            ) from exc
+            raise
 
     def prefixed(self, prefix: str) -> "Trial":
         """
@@ -695,6 +699,28 @@ class Trial(collections.abc.MutableMapping):
             self.setdefault(key, value)
         return self
 
+    def _validate_choices(
+        self, parameter_name, choices: Union[Mapping[Any, T], Iterable[T]], default
+    ) -> Tuple[Mapping[Any, T], Any]:
+        if isinstance(choices, collections.abc.Mapping):
+            mapping = choices
+        elif isinstance(choices, collections.abc.Iterable):
+            names_values = [(_get_object_name(v), v) for v in choices]
+            mapping = OrderedDict(names_values)
+            if len(mapping) != len(names_values):
+                raise ValueError("Duplicate names in {choices}")
+        else:
+            raise ValueError(f"Unexpected type of choices: {choices!r}")
+
+        if default is None:
+            # Select first item as default
+            for default in mapping:
+                break
+
+        key = self.setdefault(parameter_name, default)
+
+        return mapping, key
+
     def choice(
         self,
         parameter_name: str,
@@ -715,26 +741,27 @@ class Trial(collections.abc.MutableMapping):
             The configured value from the iterable.
 
         """
-        if isinstance(choices, collections.abc.Mapping):
-            mapping = choices
-        elif isinstance(choices, collections.abc.Iterable):
-            names_values = [(_get_object_name(v), v) for v in choices]
-            mapping = OrderedDict(names_values)
-            if len(mapping) != len(names_values):
-                raise ValueError("Duplicate names in {choices}")
-        else:
-            raise ValueError(f"Unexpected type of choices: {choices!r}")
 
-        if default is None:
-            # Select first item as default
-            for default in mapping:
-                break
+        choices, key = self._validate_choices(parameter_name, choices, default)
 
-        self.setdefault(parameter_name, default)
+        return choices[key]
 
-        entry_name = self[parameter_name]
+    one_of = choice
 
-        return mapping[entry_name]
+    def partial_one_of(
+        self,
+        parameter_name: str,
+        choices: Union[Mapping[Any, Callable], Iterable[Callable]],
+        default=None,
+    ):
+        """
+        Return one of the specified callables prepared for parameter recording.
+        """
+        choices, key = self._validate_choices(parameter_name, choices, default)
+
+        return functools.partial(
+            self.prefixed(f"{parameter_name}_{key}_").call, choices[key]
+        )
 
     # TODO: Rework logging: channels, log to storage, ...
     def log(self, values=None, **kwargs):
@@ -929,6 +956,62 @@ class Trial(collections.abc.MutableMapping):
             self._record_used_parameters,
         )
 
+    def require_dependency(self, dependency: "Experiment", **kwargs):
+        """Request the results of another experiment."""
+        from experitur.access import get_current_trial
+        from experitur.core.configurators import Const
+        from experitur.core.context import ContextError
+        from experitur.core.experiment import SkipTrial
+
+        dependency = dependency.child(configurator=Const(self, **kwargs))
+
+        # See if we're currently running an experiment
+        running = True
+        try:
+            get_current_trial()
+        except (ValueError, ContextError):
+            running = False
+
+        if running:
+            dependency.run()
+
+        dependency_trials = dependency.get_matching_trials()
+
+        if not dependency_trials:
+            raise ValueError(f"No matching trial found for dependency {dependency}")
+
+        if len(dependency_trials) > 1:
+            if dependency_trials.varying_parameters:
+                descriptions = [t.descr(dependency_trials) for t in dependency_trials]
+            else:
+                descriptions = [t.id for t in dependency_trials]
+            raise ValueError(
+                f"Multiple matching trials found for dependency {dependency}: {descriptions}"
+            )
+
+        dependency_trial = dependency_trials.one()
+
+        if running:
+            if not (
+                dependency_trial.is_successful
+                or dependency_trial.is_failed
+                or dependency_trial.is_zombie
+            ):
+                raise SkipTrial(
+                    f"Waiting for dependency '{dependency.name}' ({dependency_trial.experiment.get('meta', {}).get('hostname', '')}:{dependency_trial.experiment.get('meta', {}).get('pid', '')})"
+                )
+
+            if dependency_trial.is_failed or dependency_trial.is_zombie:
+                raise ValueError(f"Trial {dependency_trial.id} was unsuccessful")
+
+            self.update(dependency_trial)
+            self.update_result(dependency_trial.result)
+            self.update_used_parameters(
+                set(self.keys()) & set(dependency_trial.used_parameters)
+            )
+
+        return dependency_trial
+
 
 def _normalize_runtime(runtime: Optional[datetime.timedelta]):
     if runtime is None:
@@ -936,9 +1019,6 @@ def _normalize_runtime(runtime: Optional[datetime.timedelta]):
 
     # 1s resolution
     return datetime.timedelta(seconds=runtime // datetime.timedelta(seconds=1))
-
-
-Trial.get
 
 
 class BaseTrialCollection(Collection[Trial]):
@@ -1135,7 +1215,7 @@ class BaseTrialCollection(Collection[Trial]):
         def make_key(trial: Trial):
             key = {}
             if parameters is not None:
-                key.update({p: freeze(trial.get(p)) for p in parameters})
+                key.update({p: freeze(trial.get(p, unset)) for p in parameters})
             if experiment:
                 key["__experiment"] = trial.experiment["name"]
 
@@ -1267,7 +1347,7 @@ class BaseTrialCollection(Collection[Trial]):
         return "\n".join(output)
 
     def best_n(
-        self, n, minimize: Objective = None, maximize: Objective = None
+        self, n, *, minimize: Objective = None, maximize: Objective = None
     ) -> "TrialCollection":
         trial_results = self.to_minimization(
             minimize=minimize, maximize=maximize, include_na=False
@@ -1354,7 +1434,7 @@ class TrialCollection(MutableSequence[Trial], BaseTrialCollection):
         ...
 
     @overload
-    def __getitem__(self, index: int) -> Trial:
+    def __getitem__(self, index: Union[int, str]) -> Trial:
         ...
 
     def __getitem__(self, index):
