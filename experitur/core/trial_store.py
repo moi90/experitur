@@ -140,6 +140,9 @@ class FileTrialStore(TrialStore):
         return sum(1 for _ in self)
 
     def __getitem__(self, trial_id):
+        if not trial_id:
+            raise KeyError(trial_id)
+
         path = self._get_trial_fn(trial_id)
 
         try:
@@ -157,7 +160,6 @@ class FileTrialStore(TrialStore):
         return trial_data
 
     def iter(self, prefix=None):
-
         if prefix is None:
             pattern = "**"
         else:
@@ -186,6 +188,9 @@ class FileTrialStore(TrialStore):
     def _create(self, trial_data: dict):
         trial_id = trial_data["id"]
 
+        if not trial_id:
+            raise KeyError(trial_id)
+
         # Set revision
         trial_data["revision"] = uuid.uuid4().hex
 
@@ -208,6 +213,9 @@ class FileTrialStore(TrialStore):
 
     def __setitem__(self, trial_id: str, trial_data: dict):
         self.check_writable()
+
+        if not trial_id:
+            raise KeyError(trial_id)
 
         if not isinstance(trial_data, dict):
             raise ValueError(f"trial_data has to be dict, got {trial_data!r}")
