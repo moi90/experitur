@@ -99,7 +99,6 @@ class RootTrialCollection(BaseTrialCollection):
                 new_independent_parameters.append(name)
 
         if new_independent_parameters:
-
             trial_id = _format_trial_id(
                 experiment_name,
                 trial_parameters,
@@ -145,15 +144,16 @@ def _format_trial_id(
     independent_parameters: List[str],
     shorten=True,
 ):
-    if len(independent_parameters) > 0:
-        parameter_values = sorted(
-            (
-                "{}-{!s}".format(k, trial_parameters.get(k, "na"))
-                for k in independent_parameters
-            ),
-            key=len,
-        )
+    parameter_values = sorted(
+        (
+            "{}-{!s}".format(k, trial_parameters[k])
+            for k in independent_parameters
+            if k in trial_parameters
+        ),
+        key=len,
+    )
 
+    if len(parameter_values) > 0:
         hashed = []
         while True:
             hashed_str = hashlib.sha1("".join(hashed).encode()).hexdigest()[:7]
