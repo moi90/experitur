@@ -24,6 +24,7 @@ from typing import (
 import click
 
 from experitur.core.configurators import (
+    BaseConfigurationSampler,
     BaseConfigurator,
     Configurable,
     MultiplicativeConfiguratorChain,
@@ -195,7 +196,7 @@ class Experiment(Configurable):
         name: Optional[str] = None,
         parameters=None,
         configurator=None,
-        parent: "Experiment" = None,
+        parent: Optional["Experiment"] = None,
         meta: Optional[Mapping] = None,
         active: bool = True,
         volatile: Optional[bool] = None,
@@ -432,30 +433,8 @@ class Experiment(Configurable):
     def _configurators(self) -> List[BaseConfigurator]:
         return self._base_configurators + self._own_configurators
 
-    @property
-    def configurator(self) -> BaseConfigurator:
-        return MultiplicativeConfiguratorChain(*self._configurators)
-
-    @property
-    def parameters(self) -> List[str]:
-        """Names of the configured parameters."""
-        return sorted(self.configurator.parameter_values.keys())
-
-    @property
-    def varying_parameters(self) -> List[str]:
-        """Names of varying parameters, i.e. parameters that can assume more than one value."""
-        return sorted(
-            k
-            for k, v in self.configurator.parameter_values.items()
-            if not is_invariant(v)
-        )
-
-    @property
-    def invariant_parameters(self) -> List[str]:
-        """Names of invariant parameters, i.e. parameters that assume only one single value."""
-        return sorted(
-            k for k, v in self.configurator.parameter_values.items() if is_invariant(v)
-        )
+    def build_sampler(self):
+        return MultiplicativeConfiguratorChain(*self._configurators).build_sampler()
 
     def __str__(self):
         if self.name is not None:
@@ -465,18 +444,18 @@ class Experiment(Configurable):
     def __repr__(self):  # pragma: no cover
         return "Experiment(name={})".format(self.name)
 
-    def _trial_generator(self):
+    def _trial_generator(self, sampler: BaseConfigurationSampler):
         """Yields readily created trials."""
         # Generate trial configurations
-
-        sampler = self.configurator.build_sampler()
 
         skip_cache = _SkipCache(self)
 
         for trial_configuration in sampler:
             # Inject experiment data into trial_configuration
             # TODO: Insert runtime meta elsewhere
-            trial_configuration = self._setup_trial_configuration(trial_configuration)
+            trial_configuration = self._setup_trial_configuration(
+                trial_configuration, sampler
+            )
 
             # Remove "unset" parameters
             parameters = trial_configuration["parameters"] = clean_unset(
@@ -531,16 +510,18 @@ class Experiment(Configurable):
 
         print("Experiment", self)
 
+        sampler = self.build_sampler()
+
         # Print varying parameters of this experiment
         print("Varying parameters:")
-        for k, v in sorted(self.configurator.parameter_values.items()):
+        for k, v in sorted(sampler.parameter_values.items()):
             if is_invariant(v):
                 continue
 
             print("{}: {}".format(k, v))
         print()
 
-        trials = self._trial_generator()
+        trials = self._trial_generator(sampler)
 
         if self.ctx.config["resume_failed"]:
             hostname = self.meta.get("hostname", object())
@@ -728,9 +709,17 @@ class Experiment(Configurable):
 
         return trial.result
 
-    def _setup_trial_configuration(self, trial_configuration):
+    def _setup_trial_configuration(
+        self, trial_configuration: Dict, sampler: BaseConfigurationSampler
+    ):
         trial_configuration.setdefault("parameters", {})
         trial_configuration.setdefault("tags", [])
+
+        independent_parameters = sorted(sampler.parameter_values.keys())
+        varying_parameters = sorted(
+            k for k, v in sampler.parameter_values.items() if not is_invariant(v)
+        )
+
         return merge_dicts(
             trial_configuration,
             experiment={
@@ -739,8 +728,8 @@ class Experiment(Configurable):
                 "func": callable_to_name(self.func),
                 "meta": self.meta,
                 # Names of parameters that where actually configured.
-                "independent_parameters": self.parameters,
-                "varying_parameters": self.varying_parameters,
+                "independent_parameters": independent_parameters,
+                "varying_parameters": varying_parameters,
                 "minimize": self.minimize,
                 "maximize": self.maximize,
             },
@@ -887,16 +876,10 @@ class Experiment(Configurable):
         This includes all trials with matching configuration, regardless whether they belong to this or to another experiment.
         """
 
-        parameters = self.parameters
-
-        if exclude is not None:
-            if isinstance(exclude, str):
-                exclude = [exclude]
-
-            parameters = [k for k in parameters if k not in exclude]
-
-        sampler = self.configurator.build_sampler()
+        sampler = self.build_sampler()
 
         return self.ctx.trials.match(func=self.func).filter(
-            lambda trial: sampler.contains_subset_of({"parameters": dict(trial)})
+            lambda trial: sampler.contains_subset_of(
+                {"parameters": dict(trial)}, exclude
+            )
         )

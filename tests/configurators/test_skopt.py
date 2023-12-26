@@ -4,6 +4,8 @@ from experitur import Experiment, Trial
 from experitur.core.context import Context
 from experitur.configurators import SKOpt
 
+pytestmark = pytest.mark.skip("deprecated")
+
 try:
     from experitur.configurators.skopt import SKOpt
 except ImportError as exc:

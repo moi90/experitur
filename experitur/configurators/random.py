@@ -15,7 +15,11 @@ import sklearn.model_selection
 from scipy.stats import distributions
 
 from experitur import get_current_context
-from experitur.core.configurators import ConfigurationSampler, Configurator
+from experitur.core.configurators import (
+    ConfigurationSampler,
+    Configurator,
+    merge_parameter_values,
+)
 from experitur.helpers.merge_dicts import merge_dicts
 
 
@@ -73,18 +77,10 @@ class Random(Configurator):
         self.distributions = distributions
         self.n_iter = n_iter
 
-    @property
-    def parameter_values(self) -> Mapping[str, Container]:
-        return {
-            k: tuple(v) if isinstance(v, Iterable) else _DistWrapper(v)
-            for k, v in self.distributions.items()
-        }
-
     class _Sampler(ConfigurationSampler):
         configurator: "Random"
 
         def sample(self, exclude: Optional[Set] = None) -> Iterator[Mapping]:
-
             distributions, exclude = self.prepare_values_exclude(
                 self.configurator.distributions, exclude
             )
@@ -137,3 +133,13 @@ class Random(Configurator):
                         break
 
                     yield merge_dicts(parent_configuration, parameters=params)
+
+        @property
+        def parameter_values(self) -> Mapping[str, Container]:
+            return merge_parameter_values(
+                self.parent.parameter_values,
+                {
+                    k: tuple(v) if isinstance(v, Iterable) else _DistWrapper(v)
+                    for k, v in self.configurator.distributions.items()
+                },
+            )

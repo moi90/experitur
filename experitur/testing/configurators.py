@@ -4,10 +4,9 @@ import itertools
 from experitur.core.configurators import (
     BaseConfigurationSampler,
     GenerativeContainer,
-    ParameterSpace,
 )
 
-from experitur.util import unset
+from experitur.util import clean_unset, unset
 
 
 def all_parameter_subsets(configuration: Mapping):
@@ -59,6 +58,8 @@ def assert_sampler_contains_superset_of_all_samples(
     """
 
     for conf in sampler:
+        conf = dict(conf, parameters=clean_unset(conf.get("parameters", {})))
+
         if with_subsets:
             for subset in all_parameter_subsets(conf):
                 assert sampler.contains_superset_of(
@@ -71,7 +72,7 @@ def assert_sampler_contains_superset_of_all_samples(
 
 
 def sampler_parameter_values(sampler: BaseConfigurationSampler):
-    parameter_values = ParameterSpace()
+    parameter_values = {}
 
     for conf in sampler:
         for k, v in conf.get("parameters", {}).items():

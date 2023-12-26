@@ -56,7 +56,7 @@ def test_Random(tmp_path):
             }
 
             # Assert correct behavior of independent_parameters
-            assert configurator.parameter_values == {
+            assert sampler.parameter_values == {
                 "a": (1, 2),
                 "b": (3, 4),
                 "c": (0,),

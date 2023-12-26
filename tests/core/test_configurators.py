@@ -26,15 +26,15 @@ def test_Const():
     # Test __str__
     str(configurator)
 
+    sampler = configurator.build_sampler()
+
     # Assert correct behavior of "parameter_values"
-    assert configurator.parameter_values == {
+    assert sampler.parameter_values == {
         "a": (1,),
         "b": (2,),
         "c": (3,),
         "d": (unset,),
     }
-
-    sampler = configurator.build_sampler()
 
     assert_sampler_contains_subset_of_all_samples(sampler, include_parameters={"d": 4})
     assert_sampler_contains_superset_of_all_samples(sampler)
@@ -58,15 +58,15 @@ def test_Grid(cls):
     # Test __str__
     str(configurator)
 
+    sampler = configurator.build_sampler()
+
     # Assert correct behavior of "parameter_values"
-    assert configurator.parameter_values == {
+    assert sampler.parameter_values == {
         "a": (1, 2),
         "b": (3, 4),
         "c": (0,),
         "d": (0, unset),
     }
-
-    sampler = configurator.build_sampler()
 
     # Test contains_subset_of and contains_superset_of
     assert_sampler_contains_subset_of_all_samples(sampler, include_parameters={"d": 4})
@@ -97,10 +97,10 @@ def test_MultiplicativeConfiguratorChain():
     # Test __str__
     str(configurator)
 
-    # Assert correct behavior of "parameter_values"
-    assert configurator.parameter_values == {"a": (4, 5), "b": (3, 4), "c": (0,)}
-
     sampler = configurator.build_sampler()
+
+    # Assert correct behavior of "parameter_values"
+    assert sampler.parameter_values == {"a": (4, 5), "b": (3, 4), "c": (0,)}
 
     # Test contains_subset_of and contains_superset_of
     assert_sampler_contains_subset_of_all_samples(sampler, include_parameters={"d": 4})
@@ -129,14 +129,14 @@ def test_AdditiveConfiguratorChain():
     # Test __str__
     str(configurator)
 
+    sampler = configurator.build_sampler()
+
     # Assert correct behavior of "parameter_values"
-    assert configurator.parameter_values == {
+    assert sampler.parameter_values == {
         "a": (1, 2, 4, 5),
         "b": (3, 4, unset),
         "c": (10, 11, 0),
     }
-
-    sampler = configurator.build_sampler()
 
     # Test contains_subset_of and contains_superset_of
     assert_sampler_contains_subset_of_all_samples(sampler, include_parameters={"d": 4})
@@ -168,8 +168,10 @@ def test_AdditiveConfiguratorChain():
 def test_AdditiveConst():
     configurator = Const(a=1) * (Const() + Const(a=2, b=1) + Const(a=3, b=1))
 
+    sampler = configurator.build_sampler()
+
     # Assert correct behavior of "parameter_values"
-    assert configurator.parameter_values == {
+    assert sampler.parameter_values == {
         "a": {1, 2, 3},
         "b": {unset, 1},
     }
@@ -178,7 +180,7 @@ def test_AdditiveConst():
 def test_Unset():
     # FIXME: Unset is currently inherently broken.
     # The problem is that Unset("b") does not have access to the outer parameter b
-    # during Configurator.parameter_values
+    # during sampler.parameter_values
     # Solution: Shift parameter_values to sampler, so it has access to the parent's parameter_values.
     # This way, all the parameter_values building logic is moved from a global to the specific sampler.
 
@@ -188,20 +190,18 @@ def test_Unset():
     # Test __str__
     str(configurator)
 
-    # # Assert correct behavior of "parameter_values"
-    # assert configurator.parameter_values == {
-    #     "a": (1, 2),
-    #     "b": (2, unset),
-    #     "c": (3,),
-    # }
-
     sampler = configurator.build_sampler()
 
-    parameter_values_expected = sampler_parameter_values(sampler)
+    parameter_values_expected = {
+        "a": (1, 2),
+        "b": (2, unset),
+        "c": (3,),
+    }
 
-    print("parameter_values_expected", parameter_values_expected)
+    # Assert correct behavior of "parameter_values"
+    assert sampler.parameter_values == parameter_values_expected
 
-    assert configurator.parameter_values == parameter_values_expected
+    assert sampler_parameter_values(sampler) == parameter_values_expected
 
     # Test contains_subset_of and contains_superset_of
     assert_sampler_contains_subset_of_all_samples(sampler, include_parameters={"d": 4})

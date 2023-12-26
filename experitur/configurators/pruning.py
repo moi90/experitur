@@ -42,10 +42,6 @@ class Prune(Configurator):
             "min_count": min_count,
         }
 
-    @property
-    def parameter_values(self):
-        return {}
-
     class _Sampler(ConfigurationSampler):
         configurator: "Prune"
 
@@ -58,3 +54,7 @@ class Prune(Configurator):
                 )
 
                 yield merge_dicts(parent_configuration, pruning_config=pruning_config)
+
+        @property
+        def parameter_values(self):
+            return self.parent.parameter_values

@@ -35,10 +35,15 @@ class BaseConfigurationSampler(metaclass=ABCMeta):
     def __iter__(self):
         return self.sample()
 
+    @abstractproperty
+    def parameter_values(self) -> Mapping[str, Container]:  # pragma: no cover
+        """Information about the values that every parameter can assume."""
+        ...
+
     @abstractmethod
     def sample(
         self, exclude: Optional[Set] = None
-    ) -> Iterator[Mapping]:  # pragma: no cover
+    ) -> Iterator[Dict]:  # pragma: no cover
         """Sample trial configurations."""
         while False:
             yield {}
@@ -74,6 +79,10 @@ class _RootSampler(BaseConfigurationSampler):
 
     def sample(self, exclude=None) -> Iterator[Mapping]:
         yield {"parameters": {}}
+
+    @property
+    def parameter_values(self) -> Mapping[str, Container]:
+        return {}
 
     def contains_subset_of(
         self, configuration: Mapping, exclude: Optional[Set] = None
@@ -120,10 +129,10 @@ class BaseConfigurator:
     ) -> BaseConfigurationSampler:  # pragma: no cover
         pass
 
-    @abstractproperty
-    def parameter_values(self) -> Mapping[str, Container]:  # pragma: no cover
-        """Information about the values that every parameter configured here can assume."""
-        return {}
+    @property
+    @final
+    def parameter_values(self):
+        raise NotImplementedError()
 
     def __add__(self, other) -> "AdditiveConfiguratorChain":
         if not isinstance(other, BaseConfigurator):  # pragma: no cover
@@ -179,7 +188,7 @@ class ConfigurationSampler(BaseConfigurationSampler):
         # If the values contain <unset>, the respective parameter of a trial can assume any value.
         parameter_values = {
             k: v
-            for k, v in self.configurator.parameter_values.items()
+            for k, v in self.parameter_values.items()
             if (k not in exclude) and (unset not in v)
         }
 
@@ -197,7 +206,7 @@ class ConfigurationSampler(BaseConfigurationSampler):
         }
 
         # Let parents check the rest of the configuration
-        exclude = exclude.union(self.configurator.parameter_values.keys())
+        exclude = exclude.union(self.parameter_values.keys())
         return self.parent.contains_subset_of(
             dict(configuration, parameters=parent_params), exclude=exclude
         )
@@ -211,7 +220,7 @@ class ConfigurationSampler(BaseConfigurationSampler):
         - `configuration` does not match if values for existing keys are different.
         """
 
-        values = self.configurator.parameter_values
+        values = self.parameter_values
 
         own_params, parent_params = split_dict(
             configuration.get("parameters", {}), values
@@ -262,6 +271,10 @@ class Configurator(BaseConfigurator):
                                 parent_configuration,
                                 parameters={"foo": self.configurator.foo}
                             )
+
+                    @property
+                    def parameter_values(self) -> Mapping[str, Container]:
+                        return self.parent.parameter_values + ...
     """
 
     _Sampler: Type[ConfigurationSampler]
@@ -327,13 +340,6 @@ class MultiplicativeConfiguratorChain(BaseConfigurator):
             sampler = c.build_sampler(sampler)
 
         return sampler
-
-    @property
-    def parameter_values(self) -> Mapping[str, Container]:
-        parameter_values = ParameterSpace()
-        for c in self.configurators:
-            parameter_values.update_multiplicative(c.parameter_values)
-        return parameter_values
 
     def __mul__(self, other) -> "MultiplicativeConfiguratorChain":
         if not isinstance(other, BaseConfigurator):  # pragma: no cover
@@ -423,48 +429,26 @@ class GenerativeContainer(collections.abc.Container):
         return len(self.values) < 2 and not self.children
 
 
-class ParameterSpace(Dict[str, GenerativeContainer]):
-    def update(self, *args, **kwargs):
-        raise NotImplementedError("Use update_additive or update_multiplicative")
+def merge_parameter_values(
+    *parameter_spaces: Mapping[str, Container], **kwargs: Container
+) -> Mapping[str, Container]:
+    parameter_spaces = parameter_spaces + (kwargs,)
 
-    def update_additive(
-        self, *parameter_spaces: Mapping[str, Container], **kwargs: Container
-    ):
-        parameter_spaces = parameter_spaces + (kwargs,)
+    result: Dict[str, GenerativeContainer] = {}
 
-        for p_space in parameter_spaces:
-            if isinstance(p_space, _UnsetParameterSpace):
-                continue
-
-            for k, v in p_space.items():
-                v = GenerativeContainer(v)
-                if k not in self:
-                    self[k] = v
+    for p_space in parameter_spaces:
+        for k, v in p_space.items():
+            v = GenerativeContainer(v)
+            if k not in result:
+                result[k] = v
+            else:
+                if unset not in v:
+                    result[k] = v
                 else:
-                    self[k].update(v)
+                    v.discard(unset)
+                    result[k].update(v)
 
-    def update_multiplicative(
-        self, *parameter_spaces: Mapping[str, Container], **kwargs: Container
-    ):
-        parameter_spaces = parameter_spaces + (kwargs,)
-
-        for p_space in parameter_spaces:
-            if isinstance(p_space, _UnsetParameterSpace):
-                for k in self.keys():
-                    if k in p_space:
-                        self[k] = GenerativeContainer((unset,))
-                continue
-
-            for k, v in p_space.items():
-                v = GenerativeContainer(v)
-                if k not in self:
-                    self[k] = v
-                else:
-                    if unset not in v:
-                        self[k] = v
-                    else:
-                        v.discard(unset)
-                        self[k].update(v)
+    return result
 
 
 class AdditiveConfiguratorChain(BaseConfigurator):
@@ -492,23 +476,6 @@ class AdditiveConfiguratorChain(BaseConfigurator):
             shuffle=self.shuffle,
         )
 
-    @property
-    def parameter_values(self) -> Mapping[str, Container]:
-        parameter_values = ParameterSpace()
-
-        # Update values
-        for c in self.configurators:
-            parameter_values.update_additive(c.parameter_values)
-
-        # Add unset for all parameters that are missing in one of the child configurators
-        for c in self.configurators:
-            for missing_key in set(parameter_values.keys()) - (
-                c.parameter_values.keys()
-            ):
-                parameter_values[missing_key].add(unset)
-
-        return parameter_values
-
     def __add__(self, other) -> "BaseConfigurator":
         if not isinstance(other, BaseConfigurator):  # pragma: no cover
             return NotImplemented
@@ -520,14 +487,14 @@ class AdditiveConfiguratorChain(BaseConfigurator):
 
     class _Sampler(BaseConfigurationSampler):
         def __init__(
-            self, samplers: Iterable[BaseConfigurationSampler], shuffle: bool
+            self, children: Iterable[BaseConfigurationSampler], shuffle: bool
         ) -> None:
-            self.samplers = samplers
+            self.children = children
             self.shuffle = shuffle
 
         def sample(self, exclude=None) -> Iterator[Mapping]:
             if self.shuffle:
-                generators = [s.sample(exclude) for s in self.samplers]
+                generators = [child.sample(exclude) for child in self.children]
                 while generators:
                     g = random.choice(generators)
                     try:
@@ -535,8 +502,28 @@ class AdditiveConfiguratorChain(BaseConfigurator):
                     except StopIteration:
                         generators.remove(g)
 
-            for s in self.samplers:
-                yield from s.sample(exclude)  # pylint: disable=protected-access
+            for child in self.children:
+                yield from child.sample(exclude)  # pylint: disable=protected-access
+
+        @property
+        def parameter_values(self) -> Mapping[str, Container]:
+            result: Dict[str, GenerativeContainer] = {}
+
+            # Merge the parameter_values of each child
+            for child in self.children:
+                for k, v in child.parameter_values.items():
+                    v = GenerativeContainer(v)
+                    if k not in result:
+                        result[k] = v
+                    else:
+                        result[k].update(v)
+
+            # Add unset for all parameters that are missing in one of the child configurators
+            for child in self.children:
+                for missing_key in set(result.keys()) - (child.parameter_values.keys()):
+                    result[missing_key].add(unset)
+
+            return result
 
         def contains_subset_of(
             self, configuration: Mapping, exclude: Optional[Set] = None
@@ -544,13 +531,13 @@ class AdditiveConfiguratorChain(BaseConfigurator):
             """Return True if there exists a sample that is a subset of `configuration`, i.e. if there is one in a child."""
 
             return any(
-                s.contains_subset_of(configuration, exclude) for s in self.samplers
+                s.contains_subset_of(configuration, exclude) for s in self.children
             )
 
         def contains_superset_of(self, configuration: Mapping) -> bool:
             """Return True if there exists a sample that is a superset of `configuration`, i.e. if there is one in a child."""
 
-            return any(s.contains_superset_of(configuration) for s in self.samplers)
+            return any(s.contains_superset_of(configuration) for s in self.children)
 
 
 def split_dict(mapping: Mapping, indicator):
@@ -593,10 +580,6 @@ class Const(Configurator):
         else:
             self.values = {**values, **kwargs}
 
-    @property
-    def parameter_values(self) -> Mapping[str, Container]:
-        return {k: (v,) for k, v in self.values.items()}
-
     class _Sampler(ConfigurationSampler):
         configurator: "Const"
 
@@ -609,6 +592,13 @@ class Const(Configurator):
                 # print(self.configurator, ":", values)
                 yield merge_dicts(parent_configuration, parameters=values)
 
+        @property
+        def parameter_values(self) -> Mapping[str, Container]:
+            return merge_parameter_values(
+                self.parent.parameter_values,
+                {k: (v,) for k, v in self.configurator.values.items()},
+            )
+
 
 class ZeroConfigurator(Configurator):
     """
@@ -619,16 +609,16 @@ class ZeroConfigurator(Configurator):
 
     __str_attrs__ = tuple()
 
-    @property
-    def parameter_values(self) -> Mapping[str, Container]:
-        return {}
-
     class _Sampler(ConfigurationSampler):
         configurator: "ZeroConfigurator"
 
         def sample(self, exclude: Optional[Set] = None) -> Iterator[Mapping]:
             while False:
                 yield {}
+
+        @property
+        def parameter_values(self) -> Mapping[str, Container]:
+            return self.parent.parameter_values
 
 
 def parameter_product(p: Mapping[str, Iterable]):
@@ -693,10 +683,6 @@ class Grid(Configurator):
             if not isinstance(v, collections.abc.Iterable):
                 raise ValueError(f"Value {v!r} for parameter {k} is not Iterable")
 
-    @property
-    def parameter_values(self) -> Mapping[str, Container]:
-        return {k: tuple(v) for k, v in self.grid.items()}
-
     class _Sampler(ConfigurationSampler):
         configurator: "Grid"
 
@@ -711,6 +697,13 @@ class Grid(Configurator):
 
                 for values in grid_product:
                     yield merge_dicts(parent_configuration, parameters=values)
+
+        @property
+        def parameter_values(self) -> Mapping[str, Container]:
+            return merge_parameter_values(
+                self.parent.parameter_values,
+                {k: tuple(v) for k, v in self.configurator.grid.items()},
+            )
 
 
 class RandomGrid(Grid):
@@ -771,10 +764,6 @@ class FilterConfig(Configurator):
     def __init__(self, filter_func: Callable):
         self.filter_func = filter_func
 
-    @property
-    def parameter_values(self):
-        return {}
-
     class _Sampler(ConfigurationSampler):
         configurator: "FilterConfig"
 
@@ -786,6 +775,10 @@ class FilterConfig(Configurator):
                     continue
 
                 yield parent_configuration
+
+        @property
+        def parameter_values(self):
+            return self.parent.parameter_values
 
 
 class _UnsetParameterSpace(Mapping[str, Container]):
@@ -823,10 +816,6 @@ class Clear(Configurator):
     def __init__(self, *patterns: str):
         self.patterns = patterns
 
-    @property
-    def parameter_values(self):
-        return _UnsetParameterSpace(self.patterns)
-
     class _Sampler(ConfigurationSampler):
         configurator: "Clear"
 
@@ -837,15 +826,24 @@ class Clear(Configurator):
 
                 # Remove parameters that match any of the provided names
                 parent_configuration["parameters"] = {
-                    k: v
-                    if not any(
-                        fnmatch.fnmatchcase(k, n) for n in self.configurator.patterns
-                    )
-                    else unset
+                    k: v if not self._matches(k) else unset
                     for k, v in parent_configuration.get("parameters", {}).items()
                 }
 
                 yield parent_configuration
+
+        @property
+        def parameter_values(self):
+            return {
+                k: v
+                for k, v in self.parent.parameter_values.items()
+                if not self._matches(k)
+            }
+
+        def _matches(self, name):
+            return any(
+                fnmatch.fnmatchcase(name, pat) for pat in self.configurator.patterns
+            )
 
         def contains_subset_of(
             self, configuration: Mapping, exclude: Optional[Set] = None
@@ -861,19 +859,12 @@ class Clear(Configurator):
 
             conf_parameters = configuration.get("parameters", {})
 
-            if any(
-                fnmatch.fnmatchcase(k, n)
-                for n in self.configurator.patterns
-                for k, v in conf_parameters.items()
-                if v != unset
-            ):
+            if any(self._matches(k) for k, v in conf_parameters.items() if v != unset):
                 return False
 
-            for k, v in conf_parameters.items():
-                if any(fnmatch.fnmatchcase(k, n) for n in self.configurator.patterns):
+            for k in conf_parameters.keys():
+                if self._matches(k):
                     exclude.add(k)
-
-            print(f"Parents...")
 
             # Let parents check the rest of the configuration
             return self.parent.contains_subset_of(configuration, exclude=exclude)
@@ -882,22 +873,10 @@ class Clear(Configurator):
             """
             Return True if there exists a sample that is a superset of `configuration`.
 
-            - `configuration` does not match if it contains additional keys not produced by the sampler (or its parents).
+            - `configuration` does not match if it contains additional keys not produced by the parents.
             - `configuration` matches if it lacks keys produced by the sampler.
             - `configuration` does not match if values for existing keys are different.
             """
 
-            values = self.configurator.parameter_values
-
-            own_params, parent_params = split_dict(
-                configuration.get("parameters", {}), values
-            )
-
-            # Check parameters configured here
-            if any(v not in values[k] for k, v in own_params.items()):
-                return False
-
             # Let parents check the rest of the configuration
-            return self.parent.contains_superset_of(
-                dict(configuration, parameters=parent_params)
-            )
+            return self.parent.contains_superset_of(configuration)
