@@ -36,7 +36,7 @@ def _try_get_experiment(ctx: Context, name: str):
     try:
         return ctx.get_experiment(name)
     except KeyError:
-        messages = [f"Unknown experiment: {name}."]
+        messages = [f"Unknown experiment: {name}"]
         known_experiments = sorted(
             filter(None, (e.name for e in ctx.registered_experiments))
         )
@@ -49,7 +49,7 @@ def _try_get_experiment(ctx: Context, name: str):
 
 @cli.command()
 @click.argument("dox_fn")
-@click.argument("experiments", nargs=-1)
+@click.argument("experiment_names", nargs=-1)
 @click.option(
     "--skip-existing/--no-skip-existing", default=True, help="Skip existing trials."
 )
@@ -63,7 +63,11 @@ def _try_get_experiment(ctx: Context, name: str):
 @click.option("--reload", "-r", is_flag=True, help="Reload DOX file if modified.")
 @click.option("--resume/--no-resume", default=False, help="Resume interrupted trials.")
 @click.option(
-    "-n", "n_trials", type=int, default=None, help="Run a maximum of n_trials trials.",
+    "-n",
+    "n_trials",
+    type=int,
+    default=None,
+    help="Run a maximum of n_trials trials.",
 )
 @click.option(
     "--capture-locals/--no-capture-locals",
@@ -72,7 +76,7 @@ def _try_get_experiment(ctx: Context, name: str):
 )
 def run(
     dox_fn,
-    experiments,
+    experiment_names,
     skip_existing,
     catch,
     clean_failed,
@@ -129,15 +133,15 @@ def run(
                 raise exc.__cause__ from None
             cprint("Loading done.", color="white", attrs=["dark"])
 
-            if experiments:
-                experiments = [_try_get_experiment(ctx, e) for e in experiments]
+            if experiment_names:
+                experiments = [_try_get_experiment(ctx, e) for e in experiment_names]
             else:
                 experiments = None
 
             # Run
             ctx.run(experiments)
 
-        # TODO: Reload only first-party
+        # Reload modules
         dox_mtime = os.path.getmtime(dox_fn)
         if not ctx.should_stop() and reload and dox_mtime > time_started:
             # Reload modules and redo loop
@@ -151,15 +155,19 @@ def run(
                 if isinstance(getattr(module, "__loader__", None), ExtensionFileLoader):
                     continue
 
-                # TODO: Skip modules that were not changed since time_started
+                # Skip modules without a known file
+                if module.__file__ is None:
+                    continue
+
+                # Skip modules that were not changed since time_started
                 if os.path.getmtime(module.__file__) <= time_started:
                     continue
 
                 try:
                     importlib.reload(module)
-                except:  # pylint: disable=bare-except
-                    # Errors are ignored
-                    print(f"Error reloading {module}")
+                except Exception as exc:  # pylint: disable=bare-except
+                    # Ignore errors
+                    print(f"Error reloading {module}: {exc}")
             continue
 
         # Exit from loop
