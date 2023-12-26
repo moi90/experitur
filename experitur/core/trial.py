@@ -1511,9 +1511,9 @@ class TrialCollectionGroupby(collections.abc.Sized, collections.abc.Iterable):
 
         return TrialCollectionGroupby({k: v.filter(fn) for k, v in self.groups.items()})
 
-    def best_n(self, n, minimize: Objective = None, maximize: Objective = None):
+    def best_n(self, n, *, minimize: Objective = None, maximize: Objective = None):
         return TrialCollectionGroupby(
-            {k: v.best_n(n, minimize, maximize) for k, v in self.groups.items()}
+            {k: v.best_n(n, minimize=minimize, maximize=maximize) for k, v in self.groups.items()}
         )
 
     def pareto_optimal(self, minimize: Objective = None, maximize: Objective = None):

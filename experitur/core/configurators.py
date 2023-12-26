@@ -818,7 +818,7 @@ class Clear(Configurator):
         *names (str): Parameter names to remove from the configuration.
     """
 
-    __str_attrs__ = ("names",)
+    __str_attrs__ = ("patterns",)
 
     def __init__(self, *patterns: str):
         self.patterns = patterns

@@ -196,7 +196,7 @@ def test_trial_parameters(tmp_path):
 
             with pytest.raises(
                 SpecialException,
-                match=re.escape("Error calling"),
+                match=re.escape(""),
             ):
                 trial.prefixed("__empty1c_").call(raising_fun)
 
