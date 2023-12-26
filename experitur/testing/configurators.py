@@ -1,7 +1,13 @@
 from experitur.helpers.merge_dicts import merge_dicts
 from typing import Mapping, Optional
 import itertools
-from experitur.core.configurators import BaseConfigurationSampler
+from experitur.core.configurators import (
+    BaseConfigurationSampler,
+    GenerativeContainer,
+    ParameterSpace,
+)
+
+from experitur.util import unset
 
 
 def all_parameter_subsets(configuration: Mapping):
@@ -62,3 +68,18 @@ def assert_sampler_contains_superset_of_all_samples(
             assert sampler.contains_superset_of(
                 conf
             ), f"No superset of {conf} in sampler"
+
+
+def sampler_parameter_values(sampler: BaseConfigurationSampler):
+    parameter_values = ParameterSpace()
+
+    for conf in sampler:
+        for k, v in conf.get("parameters", {}).items():
+            parameter_values.setdefault(k, GenerativeContainer()).add(v)
+
+    for conf in sampler:
+        for k in parameter_values.keys():
+            if k not in conf.get("parameters", {}):
+                parameter_values[k].add(unset)
+
+    return parameter_values

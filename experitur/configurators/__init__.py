@@ -9,6 +9,7 @@ from experitur.core.configurators import (
     Grid,
     MultiplicativeConfiguratorChain,
     RandomGrid,
+    Clear,
 )
 
 from .conditions import Conditions
@@ -23,6 +24,7 @@ __all__ = [
     "MultiplicativeConfiguratorChain",
     "Prune",
     "RandomGrid",
+    "Clear",
 ]
 
 try:

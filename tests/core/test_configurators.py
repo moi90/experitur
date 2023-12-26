@@ -1,16 +1,17 @@
 from typing import Union
 
 import pytest
-
 from experitur.core.configurators import (
     Const,
     Grid,
     RandomGrid,
+    Clear,
     parameter_product,
 )
 from experitur.testing.configurators import (
     assert_sampler_contains_subset_of_all_samples,
     assert_sampler_contains_superset_of_all_samples,
+    sampler_parameter_values,
 )
 from experitur.util import unset
 
@@ -169,6 +170,39 @@ def test_AdditiveConst():
 
     # Assert correct behavior of "parameter_values"
     assert configurator.parameter_values == {
-        "a": (1, 2, 3),
-        "b": (unset, 1),
+        "a": {1, 2, 3},
+        "b": {unset, 1},
     }
+
+
+def test_Unset():
+    # FIXME: Unset is currently inherently broken.
+    # The problem is that Unset("b") does not have access to the outer parameter b
+    # during Configurator.parameter_values
+    # Solution: Shift parameter_values to sampler, so it has access to the parent's parameter_values.
+    # This way, all the parameter_values building logic is moved from a global to the specific sampler.
+
+    configurator = Const(a=1, b=2, c=3) * (Const() + (Const(a=2) * Clear("b")))
+    # configurator = Const(a=1, b=2) * Unset("b")
+
+    # Test __str__
+    str(configurator)
+
+    # # Assert correct behavior of "parameter_values"
+    # assert configurator.parameter_values == {
+    #     "a": (1, 2),
+    #     "b": (2, unset),
+    #     "c": (3,),
+    # }
+
+    sampler = configurator.build_sampler()
+
+    parameter_values_expected = sampler_parameter_values(sampler)
+
+    print("parameter_values_expected", parameter_values_expected)
+
+    assert configurator.parameter_values == parameter_values_expected
+
+    # Test contains_subset_of and contains_superset_of
+    assert_sampler_contains_subset_of_all_samples(sampler, include_parameters={"d": 4})
+    assert_sampler_contains_superset_of_all_samples(sampler)
