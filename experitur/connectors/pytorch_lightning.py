@@ -1,14 +1,14 @@
-from typing import Dict, Optional
 import logging
+from typing import Dict, Optional
 
 import pytorch_lightning
 import pytorch_lightning.callbacks
-from pytorch_lightning.loggers.base import LightningLoggerBase
+from pytorch_lightning.loggers.logger import Logger
 
 from experitur.core.trial import Trial
 
 
-class PytorchLightningLogger(LightningLoggerBase):
+class PytorchLightningLogger(Logger):
     def __init__(self, trial: Trial):
         super().__init__()
 
