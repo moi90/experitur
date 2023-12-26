@@ -188,11 +188,9 @@ class Context:
             :obj:`KeyError` if no experiment with this name is found.
         """
 
-        experiments = [e for e in self.registered_experiments if e.name == name]
-
         try:
-            return experiments[0]
-        except IndexError:
+            return next(e for e in self.registered_experiments if e.name == name)
+        except StopIteration:
             raise KeyError(name) from None
 
     def get_trials(
