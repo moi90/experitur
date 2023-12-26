@@ -90,6 +90,7 @@ class Context:
         "run_n_trials": None,
         "traceback_capture_locals": False,
         "resume_failed": False,
+        "pm": False,
     }
 
     def __init__(

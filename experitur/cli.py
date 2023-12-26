@@ -74,6 +74,11 @@ def _try_get_experiment(ctx: Context, name: str):
     default=False,
     help="Capture all local variables in tracebacks.",
 )
+@click.option(
+    "--pm/--no-pm",
+    default=False,
+    help="Start the PDB post-mortem debugger if an error occurs.",
+)
 def run(
     dox_fn,
     experiment_names,
@@ -85,6 +90,7 @@ def run(
     n_trials,
     resume,
     capture_locals,
+    pm,
 ):
     """Run experiments."""
 
@@ -100,6 +106,7 @@ def run(
         "run_n_trials": n_trials,
         "traceback_capture_locals": capture_locals,
         "resume_failed": resume,
+        "pm": pm,
     }
 
     while True:

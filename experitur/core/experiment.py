@@ -3,6 +3,7 @@ import datetime
 import functools
 import itertools
 import os
+import pdb
 import socket
 import traceback
 import warnings
@@ -693,6 +694,13 @@ class Experiment(Configurable):
                 color="red",
                 attrs=["bold"],
             )
+
+            if self.ctx.config["pm"] and not isinstance(
+                exc, (KeyboardInterrupt, SkipTrial, ExperimentStoppedError)
+            ):
+                pdb.post_mortem()
+                # Prevent all further trials from running
+                self.ctx.stop()
 
             raise exc
         else:
