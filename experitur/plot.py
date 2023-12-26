@@ -1,4 +1,5 @@
 import difflib
+import fnmatch
 import warnings
 from abc import ABC, abstractmethod
 from inspect import signature
@@ -93,7 +94,9 @@ class Normalize(Transformer):
         if np.any(X < self.low - 1e-8):
             raise ValueError(f"All values should be greater than {self.low}")
 
-        return (X - self.low) / (self.high - self.low)
+        denominator = (self.high - self.low) or 1
+
+        return (X - self.low) / denominator
 
     def inverse_transform(self, Xt):
         Xt: np.ndarray = np.asarray(Xt)
@@ -176,7 +179,6 @@ class Dimension(ABC):
 
     @staticmethod
     def get_instance(name, values, dimension_or_label: Optional["Dimension"] = None):
-
         if isinstance(dimension_or_label, Dimension):
             dimension = dimension_or_label
         else:
@@ -310,7 +312,7 @@ class Numeric(Dimension):
             pass
 
         self._transformer = Normalize(
-            self.low, self.high, is_int=isinstance(self, Integer),
+            self.low, self.high, is_int=isinstance(self, Integer)
         )
 
         return self._transformer
@@ -524,7 +526,7 @@ class Space:
 
 
 def partial_dependence(
-    space: Space, model, i, j=None, sample_points=None, n_points=40,
+    space: Space, model, i, j=None, sample_points=None, n_points=40
 ) -> Union[Tuple[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """
     Calculates the partial dependence of one parameter or a pair of parameters.
@@ -680,7 +682,7 @@ def _plot_partial_dependence_nd(
 ):
     n_parameters = len(varying_parameters)
 
-    fig = plt.figure(constrained_layout=True, figsize=(12, 12),)
+    fig = plt.figure(constrained_layout=True, figsize=(12, 12))
 
     ratios = [4.0] * (n_parameters - 1)
     gs = GridSpec(
@@ -774,9 +776,7 @@ def _plot_partial_dependence_nd(
 
         if show_optima:
             # Show optimum
-            axes_i[i].axhline(
-                results_i.loc[idx_opt], c="r", ls="--",
-            )
+            axes_i[i].axhline(results_i.loc[idx_opt], c="r", ls="--")
 
         for l in highlight_levels:
             axes_i[i].axvline(l, c="red", ls="dashed")
@@ -846,9 +846,7 @@ def _plot_partial_dependence_nd(
 
                 if show_optima:
                     # Show optimum
-                    axes_j[j].axvline(
-                        results_j.loc[idx_opt], c="r", ls="--",
-                    )
+                    axes_j[j].axvline(results_j.loc[idx_opt], c="r", ls="--")
 
                 for l in highlight_levels:
                     axes_j[j].axhline(l, c="red", ls="dashed")
@@ -903,7 +901,7 @@ def _plot_partial_dependence_nd(
                 # Plot optimum
                 # TODO:
                 axes_ij[i, j].scatter(
-                    results_j.loc[idx_opt], results_i.loc[idx_opt], fc="none", ec="r",
+                    results_j.loc[idx_opt], results_i.loc[idx_opt], fc="none", ec="r"
                 )
 
     for ax in axes_i[:-1]:
@@ -948,7 +946,7 @@ def _plot_partial_dependence_1d(
     show_optima,
     title,
 ):
-    fig = plt.figure(constrained_layout=True, figsize=(12, 12),)
+    fig = plt.figure(constrained_layout=True, figsize=(12, 12))
     ax = fig.add_subplot(111)
 
     fig.suptitle(title)
@@ -990,9 +988,7 @@ def _plot_partial_dependence_1d(
 
     if show_optima:
         # Show optimum
-        ax.axvline(
-            results.loc[idx_opt, parameter], c="r", ls="--",
-        )
+        ax.axvline(results.loc[idx_opt, parameter], c="r", ls="--")
 
 
 _RUNTIME_DIVISORS = {"s": 1, "min": 60, "h": 60 * 60, "d": 24 * 60 * 60}
@@ -1216,7 +1212,10 @@ def plot_parameters_objectives(
     xticklabels_kwargs=None,
     number_points=False,
     mark_kwds=None,
+    xlabel_kwargs=None,
 ):
+    if not pd.api.types.is_list_like(objectives):
+        objectives = [objectives]
 
     if dimensions is None:
         dimensions = {}
@@ -1230,7 +1229,8 @@ def plot_parameters_objectives(
     if mark_kwds is None:
         mark_kwds = {}
 
-    ignore = set(ignore)
+    if xlabel_kwargs is None:
+        xlabel_kwargs = {}
 
     if highlight_levels is None:
         highlight_levels = []
@@ -1241,7 +1241,9 @@ def plot_parameters_objectives(
     highlight_levels = sorted(highlight_levels)
 
     varying_parameters = sorted(
-        p for p in trials.varying_parameters.keys() if p not in ignore
+        p
+        for p in trials.varying_parameters.keys()
+        if not any(fnmatch.fnmatch(p, pat) for pat in ignore)
     )
 
     data = pd.DataFrame(
@@ -1282,7 +1284,9 @@ def plot_parameters_objectives(
         [Dimension.get_instance(t, data[t], dimensions.get(t)) for t in objectives]
     )
 
-    print(parameter_space)
+    print("Parameter space:")
+    for d in parameter_space.dimensions:
+        print(repr(d))
 
     # Prepare results
     for p, dim in zip(varying_parameters, parameter_space.dimensions):
@@ -1317,6 +1321,9 @@ def plot_parameters_objectives(
             yi = target.inverse_transform(y)
 
             data_p = data[parameter.name]
+
+            if isinstance(target, Numeric):
+                axes[j, i].set_ylim(target.low, target.high)
 
             if isinstance(parameter, Categorical):
                 xi = parameter.to_numeric(xi)
@@ -1380,7 +1387,7 @@ def plot_parameters_objectives(
                 )
 
             if j == len(objective_space.dimensions) - 1:
-                axes[j, i].set_xlabel(parameter.label)
+                axes[j, i].set_xlabel(parameter.label, **xlabel_kwargs)
                 if parameter.formatter is not None and not isinstance(
                     parameter, Categorical
                 ):
