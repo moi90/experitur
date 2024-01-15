@@ -22,11 +22,11 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    final,
 )
 
 from experitur.helpers.merge_dicts import merge_dicts
 from experitur.util import unset
-from typing_extensions import final
 
 
 class BaseConfigurationSampler(metaclass=ABCMeta):
