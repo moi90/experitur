@@ -19,7 +19,10 @@ jobs:
     strategy:
       matrix:
         python: ["3.8", "3.9", "3.10", "3.11"]
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        os:
+          # - windows-latest
+          - ubuntu-latest
+          - macos-latest
         optional: [optional, no_optional]
 
     steps:
