@@ -1,5 +1,6 @@
 import collections
 import contextlib
+import importlib.util
 import os.path
 import sys
 import time
@@ -122,6 +123,39 @@ class Context:
 
         self.run_n_trials = self.config["run_n_trials"]
         self._initial_stop_timestamp = self._read_stop_timestamp()
+
+    def load_experiments(self, filename):
+        # Insert the location of the experiments file to sys.path
+        # so that experiments can import stuff relative to their location
+        experiment_path = os.path.abspath(os.path.dirname(filename))
+        sys.path.insert(0, experiment_path)
+
+        name = os.path.splitext(os.path.basename(filename))[0]
+
+        spec = importlib.util.spec_from_file_location(name, filename)
+
+        if spec is None:
+            raise ImportError(f"Could not load spec for module '{name}' at: {filename}")
+
+        try:
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+        except Exception as exc:
+            raise ImportError(f"Error loading {filename}!") from exc
+
+        # Insert into sys.modules
+        sys.modules[module.__name__] = module
+
+        from experitur.core.experiment import Experiment
+
+        # Guess experiment names from variable name in module
+        for name in dir(module):
+            experiment: Experiment = getattr(module, name)
+            if not isinstance(experiment, Experiment):
+                continue
+
+            if not experiment.name:
+                experiment.name = name
 
     def _register_experiment(self, experiment):
         self.registered_experiments.append(experiment)

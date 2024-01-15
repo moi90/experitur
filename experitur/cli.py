@@ -6,12 +6,10 @@ from importlib.machinery import ExtensionFileLoader
 
 import click
 import dictdiffer
-
 from experitur import __version__
 from experitur.core.context import Context
 from experitur.core.experiment import CommandNotFoundError, TrialNotFoundError
 from experitur.core.trial import Trial
-from experitur.dox import DOXError, load_dox
 from experitur.util import cprint
 
 
@@ -133,11 +131,7 @@ def run(
                             trial.remove()
 
             cprint("Loading {}...".format(dox_fn), color="white", attrs=["dark"])
-            # Load the DOX
-            try:
-                load_dox(dox_fn)
-            except DOXError as exc:
-                raise exc.__cause__ from None
+            ctx.load_experiments(dox_fn)
             cprint("Loading done.", color="white", attrs=["dark"])
 
             if experiment_names:
@@ -204,11 +198,7 @@ def update(dox_fn, experiment, yes):
 
     with Context(wdir, config, writable=True) as ctx:
         cprint("Loading {}...".format(dox_fn), color="white", attrs=["dark"])
-        # Load the DOX
-        try:
-            load_dox(dox_fn)
-        except DOXError as exc:
-            raise exc.__cause__ from None
+        ctx.load_experiments(dox_fn)
         cprint("Loading done.", color="white", attrs=["dark"])
 
         _experiment = _try_get_experiment(ctx, experiment)
@@ -255,8 +245,7 @@ def do(click_ctx: click.Context, dox_fn, target, cmd, cmd_args):
     os.makedirs(wdir, exist_ok=True)
 
     with Context(wdir) as ctx:
-        # Load the DOX
-        load_dox(dox_fn)
+        ctx.load_experiments(dox_fn)
 
         # Run
         try:
@@ -368,7 +357,7 @@ def collect(dox_fn, results_fn, failed):
     click.echo("Collecting results from {} into {}...".format(dox_fn, results_fn))
 
     with Context(wdir) as ctx:
-        load_dox(dox_fn)
+        ctx.load_experiments(dox_fn)
 
         ctx.collect(results_fn, failed=failed)
 
@@ -384,7 +373,7 @@ def private_run_trial(dox_fn, fd):
     os.makedirs(wdir, exist_ok=True)
 
     with Connection(fd) as connection, Context(wdir, writable=True) as ctx:
-        load_dox(dox_fn)
+        ctx.load_experiments(dox_fn)
 
         # Notify ready
         connection.send(("ready",))
