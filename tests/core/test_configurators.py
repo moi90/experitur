@@ -142,6 +142,8 @@ def test_AdditiveConfiguratorChain():
     assert_sampler_contains_subset_of_all_samples(sampler, include_parameters={"d": 4})
     assert_sampler_contains_superset_of_all_samples(sampler)
 
+    # TODO: Test that every combination of parameter_values is subset in non-strict mode
+
     samples = sorted(
         tuple(sorted(configuration["parameters"].items())) for configuration in sampler
     )
@@ -177,15 +179,8 @@ def test_AdditiveConst():
     }
 
 
-def test_Unset():
-    # FIXME: Unset is currently inherently broken.
-    # The problem is that Unset("b") does not have access to the outer parameter b
-    # during sampler.parameter_values
-    # Solution: Shift parameter_values to sampler, so it has access to the parent's parameter_values.
-    # This way, all the parameter_values building logic is moved from a global to the specific sampler.
-
-    configurator = Const(a=1, b=2, c=3) * (Const() + (Const(a=2) * Clear("b")))
-    # configurator = Const(a=1, b=2) * Unset("b")
+def test_Clear():
+    configurator = Const(a=1, b=2, c=3) * (Const() + (Const(a=2) * Clear("b*")))
 
     # Test __str__
     str(configurator)
