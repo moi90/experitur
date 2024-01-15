@@ -148,7 +148,8 @@ class FileTrialStore(TrialStore):
         try:
             with open(path) as f:
                 trial_data = yaml.load(f, Loader=yaml.Loader)
-        except (FileNotFoundError, IsADirectoryError) as exc:
+        except (FileNotFoundError, IsADirectoryError, PermissionError) as exc:
+            # Apparently, Windows raises a PermissionError instead of a IsADirectoryError
             raise KeyError(trial_id) from exc
         except:
             print(f"Error reading {path}")
