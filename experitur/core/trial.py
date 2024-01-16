@@ -74,7 +74,7 @@ def _filter_prefixed(prefix, values: Iterable):
     return (k[start:] for k in values if k.startswith(prefix))
 
 
-class _PrefixedTrialDataSetView(collections.abc.MutableSet):
+class _PrefixedTrialAttributeSetView(collections.abc.MutableSet):
     def __init__(self, trial: "Trial", key) -> None:
         self.trial = trial
         self.key = key
@@ -105,28 +105,25 @@ class _PrefixedTrialDataSetView(collections.abc.MutableSet):
         self.data().append(value)
 
 
-class _PrefixedTrialDataDictView(collections.abc.MutableMapping):
-    def __init__(self, trial: "Trial", key) -> None:
+class _PrefixedTrialAttributeDictView(collections.abc.MutableMapping):
+    def __init__(self, trial: "Trial", fieldname) -> None:
         self.trial = trial
-        self.key = key
-
-    def data(self):
-        return self.trial._data.setdefault(self.key, {})
+        self.field: Dict = self.trial._data.setdefault(fieldname, {})
 
     def __getitem__(self, key):
         key = f"{self.trial._prefix}{key}"
-        return self.data()[key]
+        return self.field[key]
 
     def __setitem__(self, key, value):
         key = f"{self.trial._prefix}{key}"
-        self.data()[key] = value
+        self.field[key] = value
 
     def __delitem__(self, key):
         key = f"{self.trial._prefix}{key}"
-        del self.data()[key]
+        del self.field[key]
 
     def __iter__(self):
-        return _filter_prefixed(self.trial._prefix, self.data())
+        return _filter_prefixed(self.trial._prefix, self.field)
 
     def __len__(self):
         return sum(1 for _ in self)
@@ -203,11 +200,15 @@ class Trial(collections.abc.MutableMapping):
 
     @property
     def used_parameters(self):
-        return _PrefixedTrialDataSetView(self, "used_parameters")
+        return _PrefixedTrialAttributeSetView(self, "used_parameters")
 
     @property
     def resolved_parameters(self):
-        return _PrefixedTrialDataDictView(self, "resolved_parameters")
+        return _PrefixedTrialAttributeDictView(self, "resolved_parameters")
+
+    @property
+    def default_parameters(self):
+        return _PrefixedTrialAttributeDictView(self, "default_parameters")
 
     # MutableMapping provides concrete generic implementations of all
     # methods except for __getitem__, __setitem__, __delitem__,
@@ -224,7 +225,17 @@ class Trial(collections.abc.MutableMapping):
         if self._record_used_parameters:
             self.used_parameters.add(name)
 
-        return self.resolved_parameters[name]
+        try:
+            return self.resolved_parameters[name]
+        except KeyError:
+            pass
+
+        # If the name was not found, look into the defaults.
+        # This might raise a KeyError as well, then we give up.
+        default = self.default_parameters[name]
+
+        # If a default was found, record its value and return
+        return self.resolved_parameters.setdefault(name, default)
 
     def __eq__(self, o: object) -> bool:
         return self is o
@@ -956,42 +967,69 @@ class Trial(collections.abc.MutableMapping):
             self._record_used_parameters,
         )
 
-    def require_dependency(self, dependency: "Experiment", **kwargs):
+    def require_dependency(
+        self,
+        dependency: "Experiment",
+        *,
+        run_dependency=True,
+        extra_parameters: Optional[Mapping[str, Any]] = None,
+        defaults=None,
+    ):
         """Request the results of another experiment."""
         from experitur.access import get_current_trial
-        from experitur.core.configurators import Const
+        from experitur.core.configurators import Const, Defaults
         from experitur.core.context import ContextError
         from experitur.core.experiment import SkipTrial
 
-        dependency = dependency.child(configurator=Const(self, **kwargs))
+        if extra_parameters is None:
+            extra_parameters = {}
 
-        # See if we're currently running an experiment
-        running = True
-        try:
-            get_current_trial()
-        except (ValueError, ContextError):
-            running = False
+        if defaults is None:
+            defaults = {}
 
-        if running:
+        dependency = dependency.child(
+            configurator=[Const(self, **extra_parameters), Defaults(defaults)]
+        )
+
+        # Only run dependency, if we're actually in a running trial context
+        if run_dependency:
+            try:
+                get_current_trial()
+            except (ValueError, ContextError):
+                raise ValueError(
+                    f"Not in a running trial context. Set run_dependency=False."
+                )
+
             dependency.run()
 
         dependency_trials = dependency.get_matching_trials()
 
         if not dependency_trials:
-            raise ValueError(f"No matching trial found for dependency {dependency}")
+            # We just requested the dependency to run. If there is no corresponding trial, it might have been skipped.
+            raise SkipTrial(f"Waiting for dependency '{dependency.name}' (not running)")
 
         if len(dependency_trials) > 1:
-            if dependency_trials.varying_parameters:
-                descriptions = [t.descr(dependency_trials) for t in dependency_trials]
-            else:
-                descriptions = [t.id for t in dependency_trials]
-            raise ValueError(
-                f"Multiple matching trials found for dependency {dependency}: {descriptions}"
-            )
+            trial_ids = [t.id for t in dependency_trials]
+
+            lines = [
+                f"{len(trial_ids)} matching trials found for dependency {dependency}:"
+            ]
+
+            for t in dependency_trials:
+                lines.append(
+                    "  "
+                    + (
+                        ": ".join(
+                            filter(None, [t.id, t.descr(dependency_trials, default="")])
+                        )
+                    )
+                )
+
+            raise ValueError("\n".join(lines))
 
         dependency_trial = dependency_trials.one()
 
-        if running:
+        if run_dependency:
             if not (
                 dependency_trial.is_successful
                 or dependency_trial.is_failed
@@ -1004,11 +1042,11 @@ class Trial(collections.abc.MutableMapping):
             if dependency_trial.is_failed or dependency_trial.is_zombie:
                 raise ValueError(f"Trial {dependency_trial.id} was unsuccessful")
 
-            self.update(dependency_trial)
-            self.update_result(dependency_trial.result)
-            self.update_used_parameters(
-                set(self.keys()) & set(dependency_trial.used_parameters)
-            )
+        self.update(dependency_trial)
+        self.update_result(dependency_trial.result)
+        self.update_used_parameters(
+            set(self.keys()) & set(dependency_trial.used_parameters)
+        )
 
         return dependency_trial
 

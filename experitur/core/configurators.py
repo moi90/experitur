@@ -622,6 +622,56 @@ class Const(Configurator):
             )
 
 
+class Defaults(Configurator):
+    """
+    Default parameter configurator.
+
+    Parameters may be passed as a mapping and/or as keyword arguments.
+
+    This differs from Const in that it sets the "defaults" field of a trial configuration which is
+    only consulted if a key is not found in the regularly configured parameters.
+
+    Parameters:
+        values (Mapping): The parameters, as a dictionary mapping parameter names to values.
+        **kwargs: Additional parameters.
+
+    Example:
+        .. code-block:: python
+
+            from experitur import Experiment, Trial
+            from experitur.configurators import Const
+
+            @Defaults({"a": 1, "b": 2}, c=3)
+            @Experiment()
+            def example1(parameters: Trial):
+                print(parameters["a"], parameters["b"], parameters["c"])
+
+        This example will produce "1 2 3".
+    """
+
+    __str_attrs__ = ("values",)
+
+    def __init__(self, values: Optional[Mapping[str, Any]] = None, **kwargs):
+        if values is None:
+            self.values = kwargs
+        else:
+            self.values = {**values, **kwargs}
+
+    class _Sampler(ConfigurationSampler):
+        configurator: "Defaults"
+
+        def sample(self, exclude: Optional[Set] = None) -> Iterator[Mapping]:
+            values, _ = self.prepare_values_exclude(self.configurator.values, exclude)
+
+            for parent_configuration in self.parent.sample(exclude=exclude):
+                # print(self.configurator, ":", values)
+                yield merge_dicts(parent_configuration, default_parameters=values)
+
+        @property
+        def parameter_values(self) -> Mapping[str, Container]:
+            return self.parent.parameter_values
+
+
 class ZeroConfigurator(Configurator):
     """
     Empty parameter configurator.

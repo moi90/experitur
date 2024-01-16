@@ -7,7 +7,7 @@ from experitur.core.experiment import (
     format_trial_parameters,
     _detect_keyboard_interrupt,
 )
-from experitur.core.configurators import Configurator, Const, Grid
+from experitur.core.configurators import Configurator, Const, Defaults, Grid
 from experitur.core.trial import Trial
 from experitur import unset
 
@@ -31,7 +31,6 @@ def test_meta(tmp_path):
 def test_merge(tmp_path):
     config = {"skip_existing": False}
     with Context(str(tmp_path), config, writable=True) as ctx:
-
         configurator = Grid({"a": [1, 2]})
 
         @Experiment(
@@ -283,7 +282,6 @@ def test_minimize_maximize_list(tmp_path):
 def test_minimize_maximize_exclusive(tmp_path):
     config = {"skip_existing": False, "catch_exceptions": False}
     with Context(str(tmp_path), config):
-
         # Check that the same metric is not at the same time marked as minimized and maximized
         with pytest.raises(ValueError):
 
@@ -309,7 +307,6 @@ def test_mimimize_nonexisting(tmp_path):
 def test_trials(tmp_path):
     config = {"skip_existing": False}
     with Context(str(tmp_path), config, writable=True) as ctx:
-
         sampler = Grid({"a": [1, 2]})
 
         @Experiment("a", configurator=Grid({"a": [1, 2], "b": [3, 4]}))
@@ -429,7 +426,6 @@ def test_checkpoint_resume(tmp_path):
 def test_get_matching_trials(tmp_path):
     config = {"skip_existing": True, "catch_exceptions": False}
     with Context(str(tmp_path), config=config, writable=True) as ctx:
-
         # Run many experiments of the same kind with different parameter settings
 
         @Const(a=0)
@@ -456,3 +452,28 @@ def test_get_matching_trials(tmp_path):
         all_trial_ids = sorted(t.id for t in ctx.trials)
 
         assert matching_trial_ids == all_trial_ids
+
+
+def test_Defaults_configurator(tmp_path):
+    config = {"skip_existing": True, "catch_exceptions": False}
+    with Context(str(tmp_path), config=config, writable=True) as ctx:
+
+        def func(d=1, e=2):
+            pass
+
+        @Experiment(
+            configurator=(Const(a=1, b=2, c=3) + Const(a=1, b=2)) * Defaults(c=3, d=4)
+        )
+        def experiment0(trial: Trial):
+            assert "c" in trial._data["default_parameters"]
+            assert trial.default_parameters["c"] == 3
+
+            assert "c" in trial
+            assert trial["c"] == 3
+
+            # TODO: Make sure that configured defaults override keyword parameters
+            trial.record_defaults(func)
+            assert trial["d"] == 4
+            assert trial["e"] == 2
+
+        experiment0.run()

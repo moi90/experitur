@@ -6,6 +6,7 @@ from experitur.core.configurators import (
     Grid,
     RandomGrid,
     Clear,
+    Defaults,
     parameter_product,
 )
 from experitur.testing.configurators import (
@@ -191,6 +192,30 @@ def test_Clear():
         "a": (1, 2),
         "b": (2, unset),
         "c": (3,),
+    }
+
+    # Assert correct behavior of "parameter_values"
+    assert sampler.parameter_values == parameter_values_expected
+
+    assert sampler_parameter_values(sampler) == parameter_values_expected
+
+    # Test contains_subset_of and contains_superset_of
+    assert_sampler_contains_subset_of_all_samples(sampler, include_parameters={"d": 4})
+    assert_sampler_contains_superset_of_all_samples(sampler)
+
+
+def test_Defaults():
+    configurator = (Const(a=1, b=2, c=3) + Const(a=1, b=2)) * Defaults(c=4)
+
+    # Test __str__
+    str(configurator)
+
+    sampler = configurator.build_sampler()
+
+    parameter_values_expected = {
+        "a": (1,),
+        "b": (2,),
+        "c": (3, unset),
     }
 
     # Assert correct behavior of "parameter_values"
