@@ -160,6 +160,10 @@ def run(
                 if module.__file__ is None:
                     continue
 
+                # Skip experiments module, we already (re)loaded that in the code above
+                if os.path.abspath(module.__file__) == os.path.abspath(dox_fn):
+                    continue
+
                 # Skip modules that were not changed since time_started
                 if os.path.getmtime(module.__file__) <= time_started:
                     continue
