@@ -463,8 +463,12 @@ class AdditiveConfiguratorChain(BaseConfigurator):
         shuffle (bool, optional): Shuffle child configurations.
     """
 
-    def __init__(self, *configurators: BaseConfigurator, shuffle=False) -> None:
-        self.configurators = configurators
+    def __init__(
+        self, *configurators: Optional[BaseConfigurator], shuffle=False
+    ) -> None:
+        # Drop None entries
+        # (This allows `AdditiveConfiguratorChain(foo if bar else None)`.)
+        self.configurators = [c for c in configurators if c is not None]
         self.shuffle = shuffle
 
     def build_sampler(
